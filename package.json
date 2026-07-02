@@ -1,0 +1,29 @@
+{
+  "name": "@hdauven/dusk-domains-indexer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Standalone event indexer and read API for Dusk Domains.",
+  "scripts": {
+    "start": "node server/local-indexer.mjs",
+    "test": "vitest run",
+    "check": "vitest run",
+    "smoke": "node scripts/local-indexer-smoke.mjs",
+    "backfill:check": "node scripts/local-indexer-backfill-check.mjs",
+    "health": "node scripts/indexer-health-probe.mjs",
+    "monitor": "node scripts/indexer-monitor.mjs",
+    "backup": "node scripts/indexer-backup.mjs",
+    "disk": "node scripts/indexer-disk-budget.mjs",
+    "production:check": "node scripts/production-indexer-check.mjs"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

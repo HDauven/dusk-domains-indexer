@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+.env
+.env.*
+target/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.jsonl
+*.log

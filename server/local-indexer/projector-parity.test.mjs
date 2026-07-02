@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   duskDomainsIndexedEventTypes,
-} from '../../src/names/indexerEventCatalog.mjs'
+} from '@hdauven/dusk-domains-sdk/event-catalog'
 import { replayEventLog } from './event-log-store.mjs'
 import {
   createIndexerParityEvents,

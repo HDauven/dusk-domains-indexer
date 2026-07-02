@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+target
+coverage
+.env*
+*.log
+npm-debug.log*
+Dockerfile
+README.md

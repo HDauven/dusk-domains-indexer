@@ -1,0 +1,22 @@
+[Unit]
+Description=Dusk Domains indexer API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dusk-domains
+Group=dusk-domains
+WorkingDirectory=/opt/dusk-domains-indexer
+EnvironmentFile=-/etc/dusk-domains/indexer.env
+ExecStart=/usr/bin/env node /opt/dusk-domains-indexer/server/local-indexer.mjs --host ${DUSK_DOMAINS_INDEXER_HOST} --port ${DUSK_DOMAINS_INDEXER_PORT} --sqlite ${DUSK_DOMAINS_INDEXER_SQLITE} --event-log ${DUSK_DOMAINS_INDEXER_EVENT_LOG} --cursor ${DUSK_DOMAINS_INDEXER_CURSOR} --checkpoint ${DUSK_DOMAINS_INDEXER_CHECKPOINT} --strict-health --watch --cors-origin ${DUSK_DOMAINS_INDEXER_CORS_ORIGIN} --max-lag-blocks ${DUSK_DOMAINS_INDEXER_MAX_LAG_BLOCKS}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dusk-domains /var/log/dusk-domains /var/backups/dusk-domains
+
+[Install]
+WantedBy=multi-user.target

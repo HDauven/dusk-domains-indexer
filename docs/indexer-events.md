@@ -7,8 +7,8 @@ Dusk Domains indexers should treat DuskDS contract events as the source for sear
 Implementation references:
 
 - `scripts/indexer-operator/event-decoder.mjs` normalizes decoded W3sper/data-driver contract event payloads into stable JSON event envelopes.
-- `src/names/indexerEventCatalog.mjs` is the runtime-safe event type catalog shared by the public SDK and Node indexer router.
-- `src/names/indexerKit.ts` and `src/names/lifecycleProjector.ts` define the shared SDK/operator projector semantics for those envelopes.
+- `@hdauven/dusk-domains-sdk/event-catalog` is the runtime-safe event type catalog shared by the SDK and Node indexer router.
+- `@hdauven/dusk-domains-sdk` defines shared SDK/operator projector semantics for normalized envelopes.
 - `server/local-indexer/*` owns persistence, HTTP routes, health, SQLite/WAL import, and checkpointing around the shared event semantics.
 
 ## Shared Rules

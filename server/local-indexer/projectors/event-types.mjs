@@ -7,7 +7,7 @@ import {
   isReverseEventType,
   isSubnameEventType,
   isTreasuryEventType,
-} from '../../../src/names/indexerEventCatalog.mjs'
+} from '@hdauven/dusk-domains-sdk/event-catalog'
 
 export function isLifecycleEvent(type) {
   return isLifecycleEventType(type)

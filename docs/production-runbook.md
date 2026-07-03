@@ -14,6 +14,8 @@ This service is the Dusk Domains read API. It is not the archive node and it doe
 
 The indexer can be rebuilt from the event journal and the archive-node snapshot that covers the deployment start height.
 
+`/health` must be treated as the SDK/indexer handshake. It exposes the indexer package version, pinned SDK dependency, API version, event schema version, read-model schema version, SQLite schema version, and the deployment binding derived from indexed event metadata.
+
 ## Server Layout
 
 Recommended paths:
@@ -131,6 +133,7 @@ Verify and stage restore:
 npm run backup -- \
   --verify \
   --require-sqlite \
+  --verify-sqlite-boot \
   --manifest /var/backups/dusk-domains/<backup-id>/manifest.json \
   --restore-dir /tmp/dusk-domains-indexer-restore
 ```
@@ -141,8 +144,9 @@ npm run backup -- \
 2. Run `npm ci`.
 3. Run `npm test`.
 4. Run `npm run production:check` against a copy of the current event journal.
-5. Restart the service.
-6. Confirm `/health` reports `ok: true`.
+5. Verify a staged backup with `--verify-sqlite-boot`.
+6. Restart the service.
+7. Confirm `/health` reports `ok: true` and that SDK compatibility checks report `compatible`.
 
 ## Incident Checklist
 

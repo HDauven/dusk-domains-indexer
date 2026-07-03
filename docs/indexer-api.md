@@ -23,12 +23,20 @@ Response fields:
 | `currentBlockHeight` | Best known local chain height, derived from the live collector cursor when available. |
 | `routes` | Advertised local-live read routes served by this indexer instance. |
 | `names` | Number of active indexed names currently served by list/search/resolve routes. |
+| `apiVersion` | Public HTTP API version, currently `v1`. |
+| `eventSchemaVersion` | Dusk Domains event schema version interpreted by the indexer. |
+| `readModelSchemaVersion` | Read-model response schema version. |
+| `package` | Indexer package name/version, source commit when configured, and pinned SDK dependency. |
+| `deployment` | Best-effort deployment binding derived from indexed event metadata: chain ID, core/treasury contract IDs, event counts, deployment start height and conflicts. |
+| `sqlite` | Present in SQLite mode; includes WAL journal mode and schema migration version. |
 | `degradedReason` | Reason code and message when `ok=false`; omitted when the indexer is healthy. |
 | `warnings` | Non-fatal replay warnings, such as malformed skipped event-log rows. |
 | `cursor` | Optional live collector status when a collector cursor file is available. |
 | `checkpoint` | Optional event-log replay checkpoint derived from the log itself. |
 
 `checkpoint` is a local-live diagnostic, not canonical protocol state. It reports the number of deduped events replayed, raw event rows, duplicate count, warning count, and the last replayed event's contract, event name, transaction ID, and block height when those fields are known.
+
+`deployment.complete` is true only when the indexed journal proves non-conflicting `core` and `treasury` contract IDs. If deployment metadata is absent, SDK compatibility checks should treat the indexer as degraded for release-manifest-bound integrations.
 
 ## Forward Resolution
 

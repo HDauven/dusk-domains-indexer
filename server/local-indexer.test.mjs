@@ -149,6 +149,83 @@ describe('local indexer event-log API', () => {
     }
   })
 
+  it('exposes package, schema and deployment binding metadata in health', async () => {
+    const coreContract = `0x${'11'.repeat(32)}`
+    const treasuryContract = `0x${'22'.repeat(32)}`
+    const eventLogFile = await writeEventLog([
+      {
+        event: {
+          type: 'name_registered',
+          node: `0x${'aa'.repeat(32)}`,
+          label: 'aurora',
+          actor: '0xowner',
+          owner: '0xowner',
+          expiresAt: '2027-06-17T00:00:00.000Z',
+          graceEndsAt: '2027-07-17T00:00:00.000Z',
+          feeLux: 10,
+        },
+        meta: {
+          chainId: 'dusk:2',
+          contractKey: 'core',
+          contractId: coreContract,
+          txId: 'tx-register',
+          blockHeight: 100,
+        },
+      },
+      {
+        event: {
+          type: 'treasury_initialized',
+          operator: '0xoperator',
+          operatorRecipient: 'dusk1operator',
+          allowedFeeSources: [coreContract],
+        },
+        meta: {
+          chainId: 'dusk:2',
+          contractKey: 'treasury',
+          contractId: treasuryContract,
+          txId: 'tx-treasury',
+          blockHeight: 101,
+        },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
+        ok: true,
+        apiVersion: 'v1',
+        schemaVersion: 1,
+        eventSchemaVersion: '1',
+        readModelSchemaVersion: 1,
+        package: {
+          name: '@hdauven/dusk-domains-indexer',
+          sdk: {
+            package: '@hdauven/dusk-domains-sdk',
+          },
+        },
+        deployment: {
+          chainId: 'dusk:2',
+          deploymentStartHeight: 100,
+          lastEventBlockHeight: 101,
+          complete: true,
+          contracts: {
+            core: {
+              contractId: coreContract,
+              eventCount: 1,
+            },
+            treasury: {
+              contractId: treasuryContract,
+              eventCount: 1,
+            },
+          },
+        },
+      })
+    } finally {
+      await close()
+    }
+  })
+
   it('serves finalized commitment block state from replayed controller events', async () => {
     const commitment = `0x${'aa'.repeat(32)}`
     const node = `0x${'bb'.repeat(32)}`

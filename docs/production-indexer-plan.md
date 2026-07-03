@@ -28,8 +28,7 @@ Implemented:
 
 Known production gaps:
 
-- Initial SQLite event-ledger schema exists; normalized read-model tables and migrations are still pending.
-- No production migration/versioning story.
+- Initial SQLite event-ledger schema exists with a `schema_migrations` baseline; normalized read-model tables and future migrations are still pending.
 - No database-backed archive-node replay from deployment height yet.
 - No chain-level event-envelope metadata capture yet; W3sper's convenience contract event API decodes payloads but does not currently pass through raw RUES tx/block/event-index headers to the collector.
 - No hosted alerting target is configured in this repo.
@@ -154,6 +153,12 @@ The current MVP should keep displaying transaction confirmation separately from 
 | `mode` | `database`, `snapshot`, `event-log`, or `degraded`. |
 | `chainId` | Active chain. |
 | `schemaVersion` | Read-model schema version. |
+| `apiVersion` | HTTP API version. |
+| `eventSchemaVersion` | Dusk Domains event schema version. |
+| `readModelSchemaVersion` | Read-model response version. |
+| `package` | Package name/version, source commit when configured, and SDK dependency. |
+| `deployment` | Derived chain ID, core/treasury contract IDs, event counts, first/last heights, missing contracts and conflicts. |
+| `sqlite` | SQLite mode metadata including schema migration version and WAL mode. |
 | `currentBlockHeight` | Best observed node height. |
 | `finalizedBlockHeight` | Best finalized/projected block. |
 | `lagBlocks` | `currentBlockHeight - finalizedBlockHeight`, when known. |

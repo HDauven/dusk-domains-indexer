@@ -5,6 +5,10 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import {
+  healthResponseForStore,
+  loadSqliteStore,
+} from '../server/local-indexer.mjs'
 
 const defaultFiles = Object.freeze([
   { key: 'eventLog', path: 'target/dusk-names-devnet-indexer.events.jsonl', required: true },
@@ -142,6 +146,13 @@ export async function verifyIndexerBackup(options = {}) {
           sha256: restoredSha256,
           ok,
         })
+        if (args.verifySqliteBoot && key === 'sqliteDb') {
+          await verifyRestoredSqlite({
+            checks,
+            sqlitePath: restorePath,
+            loadStore: args.loadSqliteStore ?? loadSqliteStore,
+          })
+        }
       }
     }
   }
@@ -184,6 +195,7 @@ export function parseArgs(argv) {
     else if (arg === '--browser-write-proof') parsed.browserWriteProof = requiredValue(argv, ++index, arg)
     else if (arg === '--sqlite') parsed.sqliteDb = requiredValue(argv, ++index, arg)
     else if (arg === '--require-sqlite') parsed.requireSqlite = true
+    else if (arg === '--verify-sqlite-boot') parsed.verifySqliteBoot = true
     else throw new Error(`Unknown option: ${arg}`)
   }
   return parsed
@@ -204,6 +216,8 @@ function normalizeOptions(options = {}) {
     browserWriteProof: options.browserWriteProof,
     sqliteDb: options.sqliteDb,
     requireSqlite: Boolean(options.requireSqlite),
+    verifySqliteBoot: Boolean(options.verifySqliteBoot),
+    loadSqliteStore: options.loadSqliteStore,
   }
 }
 
@@ -242,6 +256,22 @@ async function resolveBackupFile(manifestFile, file) {
   return candidates[0] ?? resolve(dirname(manifestFile), String(file.key ?? 'file'))
 }
 
+async function verifyRestoredSqlite({ checks, sqlitePath, loadStore }) {
+  const push = (id, ok, message) => checks.push({ id, ok, message })
+  try {
+    const store = await loadStore(sqlitePath, { strictHealth: false })
+    const health = healthResponseForStore(store)
+    push('sqlite_restore_boot', health.mode === 'sqlite', health.mode === 'sqlite'
+      ? `Restored SQLite database boots with ${health.eventCount ?? 0} indexed event(s).`
+      : `Restored SQLite database booted as unexpected mode ${health.mode ?? 'unknown'}.`)
+    push('sqlite_restore_schema', store.sqlite?.schemaVersion === store.sqlite?.expectedSchemaVersion, store.sqlite?.schemaVersion === store.sqlite?.expectedSchemaVersion
+      ? `Restored SQLite schema version ${store.sqlite?.schemaVersion} is current.`
+      : `Restored SQLite schema version ${store.sqlite?.schemaVersion ?? 'unknown'} does not match expected ${store.sqlite?.expectedSchemaVersion ?? 'unknown'}.`)
+  } catch (error) {
+    push('sqlite_restore_boot', false, `Restored SQLite database did not boot: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 function timestampId(date) {
   return date.toISOString().replace(/[-:]/gu, '').replace(/\..+$/u, 'Z')
 }
@@ -272,6 +302,7 @@ Options:
   --browser-write-proof <file>    Optional installed-wallet browser proof JSON.
   --sqlite <file>                 Optional SQLite database; matching -wal and -shm sidecars are included when present.
   --require-sqlite                Verification fails unless the manifest includes the SQLite database.
+  --verify-sqlite-boot            With --verify and --restore-dir, boot the restored SQLite DB and check schema.
   --help                          Show this message.`
 }
 

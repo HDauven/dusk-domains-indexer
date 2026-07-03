@@ -1,5 +1,11 @@
-import { LOCAL_INDEXER_SCHEMA_VERSION } from './constants.mjs'
+import {
+  LOCAL_INDEXER_API_VERSION,
+  LOCAL_INDEXER_EVENT_SCHEMA_VERSION,
+  LOCAL_INDEXER_READ_MODEL_SCHEMA_VERSION,
+  LOCAL_INDEXER_SCHEMA_VERSION,
+} from './constants.mjs'
 import { LOCAL_INDEXER_ROUTE_LIST, numberOrNull } from './http.mjs'
+import { LOCAL_INDEXER_PACKAGE_INFO } from './package-info.mjs'
 
 export function healthResponseForStore(store) {
   const currentBlockHeight = storeCurrentBlockHeight(store)
@@ -21,10 +27,14 @@ export function healthResponseForStore(store) {
 
   return {
     ok,
+    apiVersion: LOCAL_INDEXER_API_VERSION,
     generatedAt: store.generatedAt,
     source: store.source,
     mode: store.mode,
     schemaVersion: LOCAL_INDEXER_SCHEMA_VERSION,
+    eventSchemaVersion: LOCAL_INDEXER_EVENT_SCHEMA_VERSION,
+    readModelSchemaVersion: LOCAL_INDEXER_READ_MODEL_SCHEMA_VERSION,
+    package: LOCAL_INDEXER_PACKAGE_INFO,
     currentBlockHeight,
     finalizedBlockHeight,
     lagBlocks,
@@ -32,6 +42,8 @@ export function healthResponseForStore(store) {
     lastEvent,
     routes: LOCAL_INDEXER_ROUTE_LIST,
     names: store.namesByCanonical.size,
+    ...(store.deployment ? { deployment: store.deployment } : {}),
+    ...(store.sqlite ? { sqlite: store.sqlite } : {}),
     ...(store.durability ? { durability: store.durability } : {}),
     ...(degradedReason ? { degradedReason } : {}),
     ...(warnings.length || degradedReason ? { warnings: [...warnings, ...(degradedReason ? [degradedReason] : [])] } : {}),

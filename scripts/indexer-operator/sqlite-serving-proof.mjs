@@ -48,6 +48,9 @@ export async function checkSqliteServingProof({
         push('sqlite_journal_mode', journalMode === 'wal', journalMode === 'wal'
           ? 'SQLite database is using WAL mode.'
           : `SQLite database journal mode is ${store.sqlite?.journalMode ?? 'unknown'}, expected wal.`)
+        push('sqlite_schema_version', store.sqlite?.schemaVersion === store.sqlite?.expectedSchemaVersion, store.sqlite?.schemaVersion === store.sqlite?.expectedSchemaVersion
+          ? `SQLite schema version ${store.sqlite?.schemaVersion} is current.`
+          : `SQLite schema version ${store.sqlite?.schemaVersion ?? 'unknown'} does not match expected ${store.sqlite?.expectedSchemaVersion ?? 'unknown'}.`)
 
         const missingRoutes = requiredRoutes.filter((route) => !sqliteHealth.routes?.includes(route))
         push('sqlite_route_manifest', missingRoutes.length === 0, missingRoutes.length === 0

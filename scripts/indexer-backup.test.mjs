@@ -41,6 +41,7 @@ describe('indexer backup', () => {
       '--sqlite',
       'indexer.sqlite',
       '--require-sqlite',
+      '--verify-sqlite-boot',
     ])).toEqual({
       help: false,
       outputDir: 'backups',
@@ -56,6 +57,7 @@ describe('indexer backup', () => {
       browserWriteProof: 'browser.json',
       sqliteDb: 'indexer.sqlite',
       requireSqlite: true,
+      verifySqliteBoot: true,
     })
   })
 
@@ -176,6 +178,51 @@ describe('indexer backup', () => {
       .resolves.toBe('eventLog\n')
     await expect(readFile(result.restored.find((file) => file.key === 'sqliteDb').path, 'utf8'))
       .resolves.toBe('sqliteDb\n')
+  })
+
+  it('can boot-check a restored SQLite backup when explicitly requested', async () => {
+    const dir = await tempDir()
+    const fixture = await writeBackupFixture(dir)
+    const backup = await createIndexerBackup({
+      outputDir: join(dir, 'backups'),
+      backupId: 'launch',
+      eventLog: fixture.eventLog,
+      cursor: fixture.cursor,
+      checkpoint: fixture.checkpoint,
+      envFile: fixture.envFile,
+      deploymentProof: fixture.deploymentProof,
+      sqliteDb: fixture.sqliteDb,
+    })
+
+    const result = await verifyIndexerBackup({
+      manifest: join(backup.outputDir, 'manifest.json'),
+      restoreDir: join(dir, 'restore'),
+      requireSqlite: true,
+      verifySqliteBoot: true,
+      loadSqliteStore: async (sqlitePath) => {
+        expect(sqlitePath).toContain('sqliteDb-indexer.sqlite')
+        return {
+          generatedAt: '2026-06-28T00:00:00.000Z',
+          source: 'local-indexer-sqlite',
+          mode: 'sqlite',
+          sqlite: {
+            schemaVersion: 1,
+            expectedSchemaVersion: 1,
+          },
+          namesByCanonical: new Map(),
+          warnings: [],
+          checkpoint: {
+            eventCount: 1,
+          },
+        }
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'sqlite_restore_boot', ok: true }),
+      expect.objectContaining({ id: 'sqlite_restore_schema', ok: true }),
+    ]))
   })
 
   it('fails required SQLite verification when the manifest lacks a database copy', async () => {

@@ -40,6 +40,9 @@ describe('local indexer event-log HTTP API', () => {
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
       ok: true,
+      apiVersion: 'v1',
+      eventSchemaVersion: '1',
+      readModelSchemaVersion: 1,
       mode: 'event-log',
       routes: expectedLocalIndexerRoutes,
       names: 1,
@@ -128,6 +131,16 @@ describe('local indexer event-log HTTP API', () => {
       ok: true,
       source: 'local-indexer-sqlite',
       mode: 'sqlite',
+      sqlite: {
+        schemaVersion: 1,
+        expectedSchemaVersion: 1,
+        migrations: [
+          expect.objectContaining({
+            version: 1,
+            name: 'initial_event_ledger',
+          }),
+        ],
+      },
       routes: expectedLocalIndexerRoutes,
       names: 1,
       cursor: {

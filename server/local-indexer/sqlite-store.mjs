@@ -12,7 +12,12 @@ import {
   eventLogEntryKey,
   parseEventLog,
 } from './event-log.mjs'
+import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { replayEventLog } from './event-log-store.mjs'
+import {
+  migrateIndexerDatabase,
+  sqliteSchemaState,
+} from './sqlite-migrations.mjs'
 
 const eventsTable = 'events'
 const kvTable = 'indexer_kv'
@@ -45,6 +50,7 @@ export async function loadSqliteStore(dbFile, options = {}) {
       ? { ok: true, value: storedCheckpoint }
       : { ok: false, message: 'SQLite checkpoint metadata is missing.' }
     const cursor = kvGet(db, 'cursor') ?? await loadCursor(options.cursorFile)
+    const schema = sqliteSchemaState(db)
     const durability = indexerDurabilityState({
       cursor,
       checkpoint,
@@ -66,8 +72,12 @@ export async function loadSqliteStore(dbFile, options = {}) {
         dbFile,
         journalMode: kvGet(db, 'journal_mode') ?? 'wal',
         importedAt: kvGet(db, 'imported_at'),
+        schemaVersion: schema.version,
+        expectedSchemaVersion: schema.expectedVersion,
+        migrations: schema.migrations,
       },
       warnings,
+      deployment: deploymentBindingFromEvents(events),
       cursor,
       checkpoint,
       durableCheckpoint: durableCheckpoint.ok ? durableCheckpoint.value : null,
@@ -169,32 +179,7 @@ async function openIndexerDatabase(dbFile) {
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA synchronous = FULL')
   db.exec('PRAGMA journal_mode = WAL')
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${eventsTable} (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_key TEXT NOT NULL UNIQUE,
-      event_type TEXT NOT NULL,
-      chain_id TEXT,
-      block_height INTEGER,
-      tx_id TEXT,
-      event_index INTEGER,
-      contract_key TEXT,
-      contract_id TEXT,
-      observed_at TEXT,
-      event_json TEXT NOT NULL,
-      meta_json TEXT NOT NULL
-    )
-  `)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${kvTable} (
-      key TEXT PRIMARY KEY,
-      value_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `)
-  db.exec(`CREATE INDEX IF NOT EXISTS events_height_idx ON ${eventsTable}(block_height, tx_id, event_index)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS events_type_idx ON ${eventsTable}(event_type)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS events_contract_idx ON ${eventsTable}(contract_key, contract_id)`)
+  migrateIndexerDatabase(db)
   return db
 }
 

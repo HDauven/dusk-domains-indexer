@@ -61,7 +61,11 @@ export const SUPPORTED_ENDPOINT_TYPES = new Set([
 ])
 
 export const PUBLIC_PRIMARY_ENDPOINT_TYPES = new Set(['moonlight_address'])
+export const LOCAL_INDEXER_API_VERSION = 'v1'
 export const LOCAL_INDEXER_SCHEMA_VERSION = 1
+export const LOCAL_INDEXER_EVENT_SCHEMA_VERSION = '1'
+export const LOCAL_INDEXER_READ_MODEL_SCHEMA_VERSION = 1
+export const LOCAL_INDEXER_SQLITE_SCHEMA_VERSION = 1
 export const LUX_PER_DUSK = 1_000_000_000
 
 export const DEFAULT_FEE_CONFIG = {
@@ -77,4 +81,3 @@ export const DEFAULT_FEE_CONFIG = {
   txId: null,
   blockHeight: null,
 }
-

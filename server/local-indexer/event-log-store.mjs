@@ -19,6 +19,7 @@ import {
   dedupeEventLogEntries,
   parseEventLog,
 } from './event-log.mjs'
+import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { normalizeName, normalizeNode } from './http.mjs'
 import {
   applyControllerEvent,
@@ -65,6 +66,7 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
     mode: 'event-log',
     warnings,
     events,
+    deployment: deploymentBindingFromEvents(events),
     cursor,
     checkpoint,
     durableCheckpoint: durableCheckpoint?.ok ? durableCheckpoint.value : null,

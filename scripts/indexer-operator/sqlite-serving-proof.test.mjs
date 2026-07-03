@@ -46,6 +46,7 @@ describe('sqlite serving proof', () => {
       expect.objectContaining({ id: 'sqlite_strict_health', ok: true }),
       expect.objectContaining({ id: 'sqlite_event_count', ok: true }),
       expect.objectContaining({ id: 'sqlite_journal_mode', ok: true }),
+      expect.objectContaining({ id: 'sqlite_schema_version', ok: true }),
       expect.objectContaining({ id: 'sqlite_route_manifest', ok: true }),
     ]))
   })
@@ -77,6 +78,8 @@ describe('sqlite serving proof', () => {
         sqlite: {
           dbFile: 'indexer.sqlite',
           journalMode: 'delete',
+          schemaVersion: 2,
+          expectedSchemaVersion: 1,
         },
       }),
       requiredRoutes: ['/health', '/missing-route'],
@@ -94,6 +97,11 @@ describe('sqlite serving proof', () => {
         ok: false,
         message: expect.stringContaining('/missing-route'),
       }),
+      expect.objectContaining({
+        id: 'sqlite_schema_version',
+        ok: false,
+        message: expect.stringContaining('does not match expected'),
+      }),
     ]))
   })
 })
@@ -106,6 +114,8 @@ function healthyStore() {
     sqlite: {
       dbFile: 'indexer.sqlite',
       journalMode: 'wal',
+      schemaVersion: 1,
+      expectedSchemaVersion: 1,
     },
     namesByCanonical: new Map(),
     warnings: [],

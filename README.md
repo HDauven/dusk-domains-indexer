@@ -97,7 +97,7 @@ For production setup and recovery, see:
 
 ## Event Catalog
 
-The indexer consumes event definitions from `@hdauven/dusk-domains-sdk/event-catalog`. Event-family changes should land in the SDK first, then be consumed here with an exact dependency update.
+The indexer consumes event definitions from `@duskdomains/sdk/event-catalog`. Event-family changes should land in the SDK first, then be consumed here with an exact dependency update.
 
 ## License
 

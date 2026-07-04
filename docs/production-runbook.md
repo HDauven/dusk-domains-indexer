@@ -10,7 +10,7 @@ This service is the Dusk Domains read API. It is not the archive node and it doe
 - Event source: decoded Dusk Domains event journal from the archive-node or collector process.
 - Read store: SQLite/WAL plus cursor and checkpoint files.
 - API: `/health`, `/search`, `/resolve`, `/name`, `/records`, `/record`, `/record-history`, `/names`, `/activity`, `/reverse`, `/subnames`, `/subname`, `/treasury`, `/referrals`, `/fee-config`.
-- Shared schema: `@hdauven/dusk-domains-sdk/event-catalog`.
+- Shared schema: `@duskdomains/sdk/event-catalog`.
 
 The indexer can be rebuilt from the event journal and the archive-node snapshot that covers the deployment start height.
 

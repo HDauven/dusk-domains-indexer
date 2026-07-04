@@ -9,8 +9,8 @@ export const LOCAL_INDEXER_PACKAGE_INFO = Object.freeze({
   version: String(packageJson.version ?? '0.0.0'),
   sourceCommit: process.env.DUSK_DOMAINS_INDEXER_SOURCE_COMMIT || null,
   sdk: {
-    package: '@hdauven/dusk-domains-sdk',
-    dependency: String(packageJson.dependencies?.['@hdauven/dusk-domains-sdk'] ?? ''),
+    package: '@duskdomains/sdk',
+    dependency: String(packageJson.dependencies?.['@duskdomains/sdk'] ?? ''),
   },
 })
 

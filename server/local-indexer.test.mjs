@@ -201,7 +201,7 @@ describe('local indexer event-log API', () => {
         package: {
           name: '@hdauven/dusk-domains-indexer',
           sdk: {
-            package: '@hdauven/dusk-domains-sdk',
+            package: '@duskdomains/sdk',
           },
         },
         deployment: {

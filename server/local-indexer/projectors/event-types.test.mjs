@@ -8,7 +8,7 @@ import {
   reverseEventTypes,
   subnameEventTypes,
   treasuryEventTypes,
-} from '@hdauven/dusk-domains-sdk/event-catalog'
+} from '@duskdomains/sdk/event-catalog'
 import {
   isControllerEvent,
   isFeeConfigEvent,

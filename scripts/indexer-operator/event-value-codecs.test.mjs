@@ -29,7 +29,7 @@ describe('event value codecs', () => {
     expect(bytesToHex('abcd')).toBe('0xabcd')
     expect(withHexPrefix('0xabcd')).toBe('0xabcd')
     expect(withHexPrefix('abcd')).toBe('0xabcd')
-    expect(bytesToUtf8([104, 101, 105, 110])).toBe('aurora')
+    expect(bytesToUtf8([97, 117, 114, 111, 114, 97])).toBe('aurora')
     expect(bytesToUtf8('aurora')).toBe('aurora')
     expect(bytesToBase58([1, 2, 3])).toBe('Ldp')
   })

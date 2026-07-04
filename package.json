@@ -33,7 +33,7 @@
     "production:check": "node scripts/production-indexer-check.mjs"
   },
   "dependencies": {
-    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#4efd2f8",
+    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#0920146b9b4e",
     "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {

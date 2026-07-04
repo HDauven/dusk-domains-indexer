@@ -17,7 +17,7 @@
     "production:check": "node scripts/production-indexer-check.mjs"
   },
   "dependencies": {
-    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#15f12e2",
+    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#96fb214",
     "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 # Production Runbook
 
-Status: private beta operator guide
+Status: pre-production beta operator guide
 
 This service is the Dusk Domains read API. It is not the archive node and it does not hold wallet mnemonics. Its job is to serve read models from a Dusk Domains event journal, with SQLite/WAL as the durable local store.
 
@@ -44,7 +44,7 @@ cd /opt/dusk-domains-indexer
 npm ci
 ```
 
-The current package depends on a private SDK GitHub repo. Use an SSH deploy key or an authenticated GitHub environment for `npm ci`.
+The current package depends on the Dusk Domains SDK GitHub repo. Use an exact SDK commit and make sure the runtime has read access before running `npm ci`.
 
 Copy the environment template and edit values:
 
@@ -80,7 +80,7 @@ Use a 5-10 second collector cadence for public beta unless node load or finality
 
 ## Docker
 
-Private GitHub dependencies require BuildKit SSH forwarding:
+Private or SSH GitHub dependencies require BuildKit SSH forwarding:
 
 ```bash
 DOCKER_BUILDKIT=1 docker build --ssh default -t dusk-domains-indexer .

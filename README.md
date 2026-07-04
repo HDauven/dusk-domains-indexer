@@ -1,6 +1,6 @@
 # Dusk Domains Indexer
 
-Private standalone indexer and read API for Dusk Domains.
+Pre-production standalone indexer and read API for Dusk Domains.
 
 This repository was extracted from `HDauven/dusk-names` so the event ingestion, SQLite-backed read models and operator tooling can be developed and deployed independently from the web app.
 

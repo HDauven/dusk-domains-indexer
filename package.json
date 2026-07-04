@@ -2,6 +2,7 @@
   "name": "@hdauven/dusk-domains-indexer",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "type": "module",
   "description": "Standalone event indexer and read API for Dusk Domains.",
   "scripts": {

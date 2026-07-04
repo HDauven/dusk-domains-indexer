@@ -40,3 +40,7 @@ npm start -- \
 The indexer is non-canonical. It decodes Dusk Domains events into JSON/read models for search, reverse lookup, activity, treasury and referral views. Canonical ownership and records remain on-chain.
 
 For hosted deployment, see `docs/production-runbook.md`.
+
+## License
+
+MIT.

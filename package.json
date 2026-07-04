@@ -5,6 +5,21 @@
   "license": "MIT",
   "type": "module",
   "description": "Standalone event indexer and read API for Dusk Domains.",
+  "files": [
+    "server",
+    "scripts",
+    "deploy",
+    "docs",
+    "Dockerfile",
+    ".dockerignore",
+    "README.md",
+    "LICENSE",
+    "!server/**/*.test.mjs",
+    "!server/**/*test-helpers.mjs",
+    "!server/**/*event-fixtures.mjs",
+    "!scripts/**/*.test.mjs",
+    "!scripts/test-fixtures"
+  ],
   "scripts": {
     "start": "node server/local-indexer.mjs",
     "test": "vitest run",
@@ -18,7 +33,7 @@
     "production:check": "node scripts/production-indexer-check.mjs"
   },
   "dependencies": {
-    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#96fb214",
+    "@hdauven/dusk-domains-sdk": "github:HDauven/dusk-domains-sdk#b14ee8e",
     "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {

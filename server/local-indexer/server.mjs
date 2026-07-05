@@ -32,7 +32,7 @@ export function sourceFromArgs(args) {
       mode: 'sqlite',
       file: resolve(args.sqlite),
       eventLogFile: args.eventLog ? resolve(args.eventLog) : '',
-      cursorFile: resolve(args.cursor || 'target/dusk-names-local-indexer.cursor.json'),
+      cursorFile: resolve(args.cursor || 'target/dusk-domains-local-indexer.cursor.json'),
       strictHealth: args.strictHealth,
       maxLagBlocks: args.maxLagBlocks,
     }
@@ -42,8 +42,8 @@ export function sourceFromArgs(args) {
     return {
       mode: 'event-log',
       file: resolve(args.eventLog),
-      cursorFile: resolve(args.cursor || 'target/dusk-names-local-indexer.cursor.json'),
-      checkpointFile: resolve(args.checkpoint || 'target/dusk-names-local-indexer.checkpoint.json'),
+      cursorFile: resolve(args.cursor || 'target/dusk-domains-local-indexer.cursor.json'),
+      checkpointFile: resolve(args.checkpoint || 'target/dusk-domains-local-indexer.checkpoint.json'),
       strictHealth: args.strictHealth,
       maxLagBlocks: args.maxLagBlocks,
     }
@@ -63,17 +63,17 @@ export function usage() {
 
 Usage:
   npm run indexer:local
-  npm run indexer:local -- --snapshot target/dusk-names-local-indexer.json --port 8787
-  npm run indexer:local -- --event-log target/dusk-names-local-indexer.events.jsonl --port 8787
-  npm run indexer:local -- --sqlite target/dusk-names-local-indexer.sqlite --event-log target/dusk-names-local-indexer.events.jsonl --port 8787
+  npm run indexer:local -- --snapshot target/dusk-domains-local-indexer.json --port 8787
+  npm run indexer:local -- --event-log target/dusk-domains-local-indexer.events.jsonl --port 8787
+  npm run indexer:local -- --sqlite target/dusk-domains-local-indexer.sqlite --event-log target/dusk-domains-local-indexer.events.jsonl --port 8787
   npm run indexer:local -- --watch
 
 Options:
-  --snapshot <file>  Snapshot JSON written by npm run e2e:local. Default: target/dusk-names-local-indexer.json.
+  --snapshot <file>  Snapshot JSON written by npm run e2e:local. Default: target/dusk-domains-local-indexer.json.
   --event-log <file> Replay JSON/JSONL indexer events instead of a snapshot.
   --sqlite <file>    Serve from a SQLite/WAL event store. With --event-log, rebuild/import the DB before serving.
-  --cursor <file>    Optional collector cursor JSON exposed on /health. Default with --event-log: target/dusk-names-local-indexer.cursor.json.
-  --checkpoint <file> Optional persisted replay checkpoint JSON exposed on /health. Default with --event-log: target/dusk-names-local-indexer.checkpoint.json.
+  --cursor <file>    Optional collector cursor JSON exposed on /health. Default with --event-log: target/dusk-domains-local-indexer.cursor.json.
+  --checkpoint <file> Optional persisted replay checkpoint JSON exposed on /health. Default with --event-log: target/dusk-domains-local-indexer.checkpoint.json.
   --strict-health    Fail /health when cursor/checkpoint/finality state is missing, stale, or unsafe.
   --host <host>      Host to bind. Default: 127.0.0.1.
   --port <port>      Port to bind. Default: 8787.

@@ -9,8 +9,7 @@ const coreContracts = [
   {
     key: 'core',
     envKey: 'VITE_DUSK_DOMAINS_CORE_CONTRACT_ID',
-    legacyEnvKey: 'VITE_DUSK_NAMES_CORE_CONTRACT_ID',
-    driverFile: 'dusk-names-core.data-driver.wasm',
+    driverFile: 'dusk-domains-core.data-driver.wasm',
     events: [
       'registration_committed',
       'registration_revealed',
@@ -28,8 +27,7 @@ const coreContracts = [
   {
     key: 'treasury',
     envKey: 'VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID',
-    legacyEnvKey: 'VITE_DUSK_NAMES_TREASURY_CONTRACT_ID',
-    driverFile: 'dusk-name-treasury.data-driver.wasm',
+    driverFile: 'dusk-domains-treasury.data-driver.wasm',
     events: ['treasury_initialized', 'treasury_operator_changed', 'treasury_fee_received', 'treasury_claimed', 'referral_reward_accrued', 'referral_reward_claimed'],
   },
 ]
@@ -39,17 +37,16 @@ export async function loadCollectorConfig(options = {}) {
   const env = existsSync(envFile) ? parseEnvFile(await readFile(envFile, 'utf8')) : {}
   const nodeUrl = options.nodeUrl
     ?? env.VITE_DUSK_DOMAINS_NODE_URL
-    ?? env.VITE_DUSK_NAMES_NODE_URL
     ?? 'http://127.0.0.1:18180/'
-  const eventLog = resolve(rootDir, options.eventLog ?? 'target/dusk-names-local-indexer.events.jsonl')
-  const cursorFile = resolve(rootDir, options.cursorFile ?? 'target/dusk-names-local-indexer.cursor.json')
+  const eventLog = resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl')
+  const cursorFile = resolve(rootDir, options.cursorFile ?? 'target/dusk-domains-local-indexer.cursor.json')
   const publicDir = resolve(rootDir, options.publicDir ?? 'public/contracts')
   const ruskDir = resolve(rootDir, options.ruskDir ?? '../rusk-private-w3sper-contract-deploy')
   const w3sperDir = resolve(ruskDir, 'w3sper.js')
   const denoConfig = resolve(w3sperDir, 'deno.json')
   const configuredContracts = coreContracts.map((contract) => ({
     ...contract,
-    contractId: normalizeContractId(env[contract.envKey] ?? env[contract.legacyEnvKey]),
+    contractId: normalizeContractId(env[contract.envKey]),
   }))
   const missing = configuredContracts
     .filter((contract) => !isContractId(contract.contractId))
@@ -125,8 +122,8 @@ export function parseArgs(argv) {
   const parsed = {
     help: false,
     envFile: '.env.local',
-    eventLog: 'target/dusk-names-local-indexer.events.jsonl',
-    cursorFile: 'target/dusk-names-local-indexer.cursor.json',
+    eventLog: 'target/dusk-domains-local-indexer.events.jsonl',
+    cursorFile: 'target/dusk-domains-local-indexer.cursor.json',
     publicDir: 'public/contracts',
     ruskDir: '../rusk-private-w3sper-contract-deploy',
     nodeUrl: '',
@@ -159,13 +156,13 @@ export function usage() {
 
 Usage:
   npm run indexer:collect
-  npm run indexer:collect -- --event-log target/dusk-names-local-indexer.events.jsonl
+  npm run indexer:collect -- --event-log target/dusk-domains-local-indexer.events.jsonl
   npm run indexer:collect -- --duration-ms 30000
 
 Options:
   --env-file <file>      Env file with local contract IDs. Default: .env.local.
-  --event-log <file>     JSONL event log to append. Default: target/dusk-names-local-indexer.events.jsonl.
-  --cursor-file <file>   Collector status/cursor file. Default: target/dusk-names-local-indexer.cursor.json.
+  --event-log <file>     JSONL event log to append. Default: target/dusk-domains-local-indexer.events.jsonl.
+  --cursor-file <file>   Collector status/cursor file. Default: target/dusk-domains-local-indexer.cursor.json.
   --public-dir <dir>     Directory containing data-driver WASM files. Default: public/contracts.
   --rusk-dir <dir>       Local rusk-private checkout. Default: ../rusk-private-w3sper-contract-deploy.
   --node-url <url>       Override VITE_DUSK_DOMAINS_NODE_URL from env.

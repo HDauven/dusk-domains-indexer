@@ -11,11 +11,11 @@ import {
 } from '../server/local-indexer.mjs'
 
 const defaultFiles = Object.freeze([
-  { key: 'eventLog', path: 'target/dusk-names-devnet-indexer.events.jsonl', required: true },
-  { key: 'cursor', path: 'target/dusk-names-devnet-indexer.cursor.json', required: true },
-  { key: 'checkpoint', path: 'target/dusk-names-devnet-indexer.checkpoint.json', required: true },
+  { key: 'eventLog', path: 'target/dusk-domains-devnet-indexer.events.jsonl', required: true },
+  { key: 'cursor', path: 'target/dusk-domains-devnet-indexer.cursor.json', required: true },
+  { key: 'checkpoint', path: 'target/dusk-domains-devnet-indexer.checkpoint.json', required: true },
   { key: 'envFile', path: '.env.devnet.local', required: true },
-  { key: 'deploymentProof', path: 'target/dusk-names-devnet-proof.json', required: true },
+  { key: 'deploymentProof', path: 'target/dusk-domains-devnet-proof.json', required: true },
   { key: 'browserWriteProof', path: 'target/browser-smoke-devnet-write/proof.json', required: false },
 ])
 

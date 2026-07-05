@@ -25,7 +25,7 @@ export const expectedLocalIndexerRoutes = [
 ]
 
 export async function writeSnapshot(options = {}, context = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-local-indexer-api-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-local-indexer-api-test-'))
   context.trackTempDir?.(dir)
   const file = join(dir, 'snapshot.json')
   const node = `0x${'aa'.repeat(32)}`
@@ -184,7 +184,7 @@ export async function writeSnapshot(options = {}, context = {}) {
 }
 
 export async function writeEventLog(options = {}, context = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-local-indexer-event-log-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-local-indexer-event-log-test-'))
   context.trackTempDir?.(dir)
   const eventLogFile = join(dir, 'events.jsonl')
   const cursorFile = join(dir, 'cursor.json')

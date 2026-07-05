@@ -41,7 +41,7 @@ export { denoCollectorSource } from './local-event-collector/deno-source.mjs'
 
 async function runCollector(options) {
   const config = await loadCollectorConfig(options)
-  const tempDir = await mkdtemp(resolve(tmpdir(), 'dusk-names-event-collector-'))
+  const tempDir = await mkdtemp(resolve(tmpdir(), 'dusk-domains-event-collector-'))
   const scriptFile = resolve(tempDir, 'collector.mjs')
   const decoderUrl = pathToFileURL(resolve(rootDir, 'scripts/indexer-operator/event-decoder.mjs')).href
 

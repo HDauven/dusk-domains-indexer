@@ -83,7 +83,7 @@ describe('production indexer durability check', () => {
       archiveSnapshot: 'target/archive-snapshots/public-beta-devnet-archive-marker.json',
       backupManifest: 'target/indexer-backups/public-beta-devnet/manifest.json',
       backupRestoreDir: 'target/indexer-backups/restore-stage-public-beta-devnet',
-      sqlite: 'target/dusk-names-devnet-indexer.sqlite',
+      sqlite: 'target/dusk-domains-devnet-indexer.sqlite',
       requireArchiveSnapshot: true,
       requireBackup: true,
       requireSqlite: true,
@@ -129,24 +129,6 @@ describe('production indexer durability check', () => {
       durability: {
         ok: true,
       },
-    })
-  })
-
-  it('keeps legacy Dusk Names active contract env as compatibility aliases', async () => {
-    const fixture = await writeDurableFixture({ legacyActiveEnv: true })
-    const result = await checkProductionIndexer({
-      eventLog: fixture.eventLog,
-      cursor: fixture.cursor,
-      checkpoint: fixture.checkpoint,
-      envFile: fixture.envFile,
-      proofReport: fixture.proofReport,
-      rebuild: true,
-      now: '2026-06-22T00:00:00.000Z',
-    })
-
-    expect(result.ok).toBe(true)
-    expect(result.checks.find((check) => check.id === 'deployment_surface')).toMatchObject({
-      ok: true,
     })
   })
 

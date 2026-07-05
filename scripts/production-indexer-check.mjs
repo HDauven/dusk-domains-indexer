@@ -19,12 +19,12 @@ import {
   writeIndexerCheckpointFile,
 } from '../server/local-indexer.mjs'
 
-const defaultEventLog = 'target/dusk-names-devnet-indexer.events.jsonl'
-const defaultCursor = 'target/dusk-names-devnet-indexer.cursor.json'
-const defaultCheckpoint = 'target/dusk-names-devnet-indexer.checkpoint.json'
-const defaultSqlite = 'target/dusk-names-devnet-indexer.sqlite'
+const defaultEventLog = 'target/dusk-domains-devnet-indexer.events.jsonl'
+const defaultCursor = 'target/dusk-domains-devnet-indexer.cursor.json'
+const defaultCheckpoint = 'target/dusk-domains-devnet-indexer.checkpoint.json'
+const defaultSqlite = 'target/dusk-domains-devnet-indexer.sqlite'
 const defaultEnvFile = '.env.devnet.local'
-const defaultProofReport = 'target/dusk-names-devnet-proof.json'
+const defaultProofReport = 'target/dusk-domains-devnet-proof.json'
 const defaultArchiveSnapshot = publicBetaEvidenceDefaults.archiveSnapshot
 const defaultBackupManifest = publicBetaEvidenceDefaults.backupManifest
 const defaultBackupRestoreDir = publicBetaEvidenceDefaults.backupRestoreDir

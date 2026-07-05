@@ -9,7 +9,7 @@ export async function createSanitizedEventLogFixture(source, {
   force = false,
   fs = { mkdtemp, readFile, writeFile },
   tempRoot = tmpdir(),
-  prefix = 'dusk-names-sanitized-event-log-',
+  prefix = 'dusk-domains-sanitized-event-log-',
 } = {}) {
   if (source.mode !== 'event-log') {
     throw new Error('Sanitized event-log fixture requires event-log mode.')

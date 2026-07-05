@@ -1,7 +1,7 @@
 # Production Indexer Plan
 
 Status: P1 readiness plan with SQLite/WAL event-store gate and operator commands
-Owner issue: [#114 Production indexer and event pipeline](https://github.com/HDauven/dusk-names/issues/114)
+Owner issue: [#114 Production indexer and event pipeline](https://github.com/HDauven/dusk-domains-protocol/issues/114)
 
 The current indexer is good enough for local and devnet proof work: it can serve a snapshot, replay a JSONL event log, persist the observed event ledger into SQLite/WAL, expose stable API routes, and support browser refetches after writes. It now has an initial durable gate for observed events: append-only JSONL ingestion, SQLite event storage, atomic live cursor writes, persisted replay checkpoint metadata, strict health, and operator check commands. It is still not a full production indexer with normalized database projections or archive-node historical extraction.
 
@@ -15,7 +15,7 @@ Implemented:
 - Event projectors cover lifecycle, commitments, resolver records, reverse records, subnames, treasury events, and referral events.
 - Data-driver event normalization is extracted to `scripts/indexer-operator/event-decoder.mjs`; the local collector now subscribes and appends normalized envelopes instead of owning decode semantics inline.
 - `server/local-indexer/projector-parity.test.mjs` compares local-indexer replay with the shared SDK projector using the same normalized fixture events.
-- `npm run indexer:checkpoint` rebuilds `target/dusk-names-devnet-indexer.checkpoint.json` from the observed event journal.
+- `npm run indexer:checkpoint` rebuilds `target/dusk-domains-devnet-indexer.checkpoint.json` from the observed event journal.
 - `npm run indexer:local -- --sqlite <db> --event-log <events.jsonl>` imports the event journal into a SQLite/WAL ledger and serves the same API routes from that durable store.
 - `npm run check:indexer-sqlite` smoke-checks the SQLite path against the local event journal.
 - `npm run check:indexer-production` reloads the journal in strict mode and fails if cursor/checkpoint/replay/finality health is unsafe.
@@ -175,15 +175,15 @@ Wallets and value-bearing app flows should refuse indexed success if `ok` is fal
 Initial operator commands:
 
 ```text
-npm run indexer:collect -- --env-file .env.devnet.local --event-log target/dusk-names-devnet-indexer.events.jsonl --cursor-file target/dusk-names-devnet-indexer.cursor.json
-npm run check:indexer-production -- --rebuild --json --sqlite target/dusk-names-devnet-indexer.sqlite --require-sqlite --require-archive-snapshot --require-backup --require-sqlite-backup --derive-deployment-start-height --archive-snapshot-height <snapshot-height> --archive-snapshot <snapshot-file> --backup-manifest <backup-manifest> --backup-restore-dir <restore-dir> --max-source-age-minutes 10
-npm run indexer:local -- --sqlite target/dusk-names-devnet-indexer.sqlite --event-log target/dusk-names-devnet-indexer.events.jsonl --cursor target/dusk-names-devnet-indexer.cursor.json --strict-health
+npm run indexer:collect -- --env-file .env.devnet.local --event-log target/dusk-domains-devnet-indexer.events.jsonl --cursor-file target/dusk-domains-devnet-indexer.cursor.json
+npm run check:indexer-production -- --rebuild --json --sqlite target/dusk-domains-devnet-indexer.sqlite --require-sqlite --require-archive-snapshot --require-backup --require-sqlite-backup --derive-deployment-start-height --archive-snapshot-height <snapshot-height> --archive-snapshot <snapshot-file> --backup-manifest <backup-manifest> --backup-restore-dir <restore-dir> --max-source-age-minutes 10
+npm run indexer:local -- --sqlite target/dusk-domains-devnet-indexer.sqlite --event-log target/dusk-domains-devnet-indexer.events.jsonl --cursor target/dusk-domains-devnet-indexer.cursor.json --strict-health
 npm run check:indexer-sqlite -- --json
-npm run indexer:local -- --event-log target/dusk-names-devnet-indexer.events.jsonl --cursor target/dusk-names-devnet-indexer.cursor.json --checkpoint target/dusk-names-devnet-indexer.checkpoint.json --strict-health
+npm run indexer:local -- --event-log target/dusk-domains-devnet-indexer.events.jsonl --cursor target/dusk-domains-devnet-indexer.cursor.json --checkpoint target/dusk-domains-devnet-indexer.checkpoint.json --strict-health
 npm run indexer:health -- --health-url http://127.0.0.1:8787/health --max-lag-blocks 12 --max-source-age-minutes 10
 npm run indexer:monitor -- --health-url http://127.0.0.1:8787/health --require-alert-webhook --alert-webhook-url https://alerts.example/dusk-domains --max-source-age-minutes 10
-npm run indexer:disk -- --live-dir /var/lib/dusk-domains --backup-dir /var/backups/dusk-domains --out target/dusk-names-devnet-indexer.disk.json
-npm run indexer:backup -- --output-dir target/indexer-backups --sqlite target/dusk-names-devnet-indexer.sqlite
+npm run indexer:disk -- --live-dir /var/lib/dusk-domains --backup-dir /var/backups/dusk-domains --out target/dusk-domains-devnet-indexer.disk.json
+npm run indexer:backup -- --output-dir target/indexer-backups --sqlite target/dusk-domains-devnet-indexer.sqlite
 npm run indexer:backup -- --verify --manifest target/indexer-backups/<backup-id>/manifest.json --restore-dir target/indexer-backups/restore-stage
 ```
 

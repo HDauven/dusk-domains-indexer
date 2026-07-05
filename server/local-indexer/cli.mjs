@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 export function parseArgs(argv, env = process.env) {
   const parsed = {
     help: false,
-    snapshot: 'target/dusk-names-local-indexer.json',
+    snapshot: 'target/dusk-domains-local-indexer.json',
     eventLog: '',
     sqlite: '',
     cursor: '',
@@ -33,7 +33,7 @@ export function parseArgs(argv, env = process.env) {
     else throw new Error(`Unknown option: ${arg}`)
   }
 
-  if (parsed.sqlite && parsed.snapshot !== 'target/dusk-names-local-indexer.json') {
+  if (parsed.sqlite && parsed.snapshot !== 'target/dusk-domains-local-indexer.json') {
     throw new Error('Use either --sqlite or --snapshot, not both')
   }
 

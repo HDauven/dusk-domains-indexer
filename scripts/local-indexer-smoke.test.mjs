@@ -80,8 +80,8 @@ describe('local indexer smoke check', () => {
     ])
   })
 
-  it('keeps legacy Dusk Names indexer env as a compatibility alias', async () => {
-    const envFile = await fixtures.writeEnvFile('VITE_DUSK_NAMES_INDEXER_URL=http://127.0.0.1:8789\n')
+  it('uses the Dusk Domains indexer env URL', async () => {
+    const envFile = await fixtures.writeEnvFile('VITE_DUSK_DOMAINS_INDEXER_URL=http://127.0.0.1:8789\n')
     const result = await smokeLocalIndexer({
       envFile,
       name: 'aurora',

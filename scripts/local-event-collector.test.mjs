@@ -56,12 +56,12 @@ describe('local event collector config', () => {
   it('parses simple dotenv files with comments, quotes, and equals signs in values', () => {
     expect(parseEnvFile(`
       # local event collector
-      VITE_DUSK_NAMES_NODE_URL="http://127.0.0.1:18180/"
-      VITE_DUSK_NAMES_CORE_CONTRACT_ID='0x${'77'.repeat(32)}'
+      VITE_DUSK_DOMAINS_NODE_URL="http://127.0.0.1:18180/"
+      VITE_DUSK_DOMAINS_CORE_CONTRACT_ID='0x${'77'.repeat(32)}'
       VALUE_WITH_EQUALS=a=b=c
     `)).toEqual({
-      VITE_DUSK_NAMES_NODE_URL: 'http://127.0.0.1:18180/',
-      VITE_DUSK_NAMES_CORE_CONTRACT_ID: `0x${'77'.repeat(32)}`,
+      VITE_DUSK_DOMAINS_NODE_URL: 'http://127.0.0.1:18180/',
+      VITE_DUSK_DOMAINS_CORE_CONTRACT_ID: `0x${'77'.repeat(32)}`,
       VALUE_WITH_EQUALS: 'a=b=c',
     })
   })
@@ -124,29 +124,10 @@ describe('local event collector config', () => {
     ])
   })
 
-  it('keeps legacy Dusk Names collector env as compatibility aliases', async () => {
-    const fixture = await createCollectorFixture({
-      env: legacyEnv(),
-    })
-    const config = await loadCollectorConfig({
-      envFile: fixture.envFile,
-      publicDir: fixture.publicDir,
-      ruskDir: fixture.ruskDir,
-      eventLog: fixture.eventLog,
-      cursorFile: fixture.cursorFile,
-    })
-
-    expect(config.nodeUrl).toBe('http://127.0.0.1:18180/')
-    expect(config.contracts.map((contract) => [contract.key, contract.contractId])).toEqual([
-      ['core', '77'.repeat(32)],
-      ['treasury', '66'.repeat(32)],
-    ])
-  })
-
   it('fails clearly when contract IDs are missing or malformed', async () => {
     const fixture = await createCollectorFixture({
       env: `
-VITE_DUSK_NAMES_CORE_CONTRACT_ID=not-a-contract-id
+VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=not-a-contract-id
 `,
     })
 
@@ -159,7 +140,7 @@ VITE_DUSK_NAMES_CORE_CONTRACT_ID=not-a-contract-id
 
   it('fails clearly when a data-driver is missing', async () => {
     const fixture = await createCollectorFixture({
-      skipDriver: 'dusk-names-core.data-driver.wasm',
+      skipDriver: 'dusk-domains-core.data-driver.wasm',
     })
 
     await expect(loadCollectorConfig({
@@ -171,7 +152,7 @@ VITE_DUSK_NAMES_CORE_CONTRACT_ID=not-a-contract-id
 })
 
 async function createCollectorFixture(options = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-collector-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-collector-test-'))
   tempDirs.push(dir)
 
   const publicDir = join(dir, 'public', 'contracts')
@@ -186,8 +167,8 @@ async function createCollectorFixture(options = {}) {
   await writeFile(join(w3sperDir, 'deno.json'), '{}\n', 'utf8')
 
   for (const driverFile of [
-    'dusk-names-core.data-driver.wasm',
-    'dusk-name-treasury.data-driver.wasm',
+    'dusk-domains-core.data-driver.wasm',
+    'dusk-domains-treasury.data-driver.wasm',
   ]) {
     if (driverFile !== options.skipDriver) {
       await writeFile(join(publicDir, driverFile), '', 'utf8')
@@ -211,13 +192,5 @@ function validEnv() {
 VITE_DUSK_DOMAINS_NODE_URL=http://127.0.0.1:18180/
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=0x${'77'.repeat(32)}
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'66'.repeat(32)}
-`
-}
-
-function legacyEnv() {
-  return `
-VITE_DUSK_NAMES_NODE_URL=http://127.0.0.1:18180/
-VITE_DUSK_NAMES_CORE_CONTRACT_ID=0x${'77'.repeat(32)}
-VITE_DUSK_NAMES_TREASURY_CONTRACT_ID=0x${'66'.repeat(32)}
 `
 }

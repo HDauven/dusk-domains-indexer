@@ -280,7 +280,7 @@ describe('indexer backup', () => {
 })
 
 async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-indexer-backup-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-indexer-backup-'))
   tempDirs.push(dir)
   return dir
 }

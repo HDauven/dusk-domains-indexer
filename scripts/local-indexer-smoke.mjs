@@ -18,12 +18,11 @@ import { createLocalIndexerHandler, createStaticLocalIndexerStore } from '../ser
 const defaultEnvFile = '.env.local'
 const defaultBaseUrl = 'http://127.0.0.1:8787'
 const defaultName = 'aurora.dusk'
-const defaultSnapshot = 'target/dusk-names-local-indexer.json'
-const defaultEventLog = 'target/dusk-names-local-indexer.events.jsonl'
-const defaultCursor = 'target/dusk-names-local-indexer.cursor.json'
-const defaultSqlite = 'target/dusk-names-local-indexer.sqlite'
+const defaultSnapshot = 'target/dusk-domains-local-indexer.json'
+const defaultEventLog = 'target/dusk-domains-local-indexer.events.jsonl'
+const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
+const defaultSqlite = 'target/dusk-domains-local-indexer.sqlite'
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
-const legacyEnvPrefix = 'VITE_DUSK_NAMES'
 
 if (isCliEntry()) {
   try {
@@ -288,9 +287,9 @@ function usage() {
 Usage:
   npm run check:indexer-local
   npm run check:indexer-local -- --base-url http://127.0.0.1:8787 --name aurora.dusk --json
-  npm run check:indexer-local -- --event-log target/dusk-names-local-indexer.events.jsonl
-  npm run check:indexer-local -- --sqlite target/dusk-names-local-indexer.sqlite --event-log target/dusk-names-local-indexer.events.jsonl
-  npm run check:indexer-local -- --snapshot target/dusk-names-local-indexer.json
+  npm run check:indexer-local -- --event-log target/dusk-domains-local-indexer.events.jsonl
+  npm run check:indexer-local -- --sqlite target/dusk-domains-local-indexer.sqlite --event-log target/dusk-domains-local-indexer.events.jsonl
+  npm run check:indexer-local -- --snapshot target/dusk-domains-local-indexer.json
 
 Options:
   --env-file <file>  Env file containing VITE_DUSK_DOMAINS_INDEXER_URL. Default: .env.local.
@@ -306,7 +305,7 @@ Options:
 }
 
 function envValue(env, suffix) {
-  return env[`${preferredEnvPrefix}_${suffix}`] ?? env[`${legacyEnvPrefix}_${suffix}`]
+  return env[`${preferredEnvPrefix}_${suffix}`]
 }
 
 function parseArgs(argv) {

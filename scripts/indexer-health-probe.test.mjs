@@ -47,18 +47,11 @@ describe('indexer health probe', () => {
     })
   })
 
-  it('uses the Dusk Domains health URL env before the legacy alias', () => {
+  it('uses the Dusk Domains health URL env', () => {
     expect(parseArgs([], {
       DUSK_DOMAINS_INDEXER_HEALTH_URL: 'https://indexer.example/health',
-      DUSK_NAMES_INDEXER_HEALTH_URL: 'https://legacy.example/health',
     })).toMatchObject({
       healthUrl: 'https://indexer.example/health',
-    })
-
-    expect(parseArgs([], {
-      DUSK_NAMES_INDEXER_HEALTH_URL: 'https://legacy.example/health',
-    })).toMatchObject({
-      healthUrl: 'https://legacy.example/health',
     })
   })
 

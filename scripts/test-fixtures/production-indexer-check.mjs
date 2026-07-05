@@ -9,7 +9,7 @@ export async function cleanupProductionIndexerFixtures() {
 }
 
 export async function writeDurableFixture(options = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-production-indexer-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-production-indexer-test-'))
   tempDirs.push(dir)
   const eventLog = join(dir, 'events.jsonl')
   const cursor = join(dir, 'cursor.json')
@@ -95,12 +95,11 @@ export async function writeDurableFixture(options = {}) {
     currentBlockHeight,
     ...(options.scannedBlockHeight === undefined ? {} : { scannedBlockHeight: options.scannedBlockHeight }),
   }, null, 2), 'utf8')
-  const envPrefix = options.legacyActiveEnv ? 'VITE_DUSK_NAMES' : 'VITE_DUSK_DOMAINS'
   await writeFile(envFile, `
-${envPrefix}_CORE_CONTRACT_ID=${coreContractId}
-${envPrefix}_TREASURY_CONTRACT_ID=0x${'55'.repeat(32)}
-${envPrefix}_CORE_DRIVER_URL=/contracts/dusk-names-core.data-driver.wasm
-${envPrefix}_TREASURY_DRIVER_URL=/contracts/dusk-name-treasury.data-driver.wasm
+VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${coreContractId}
+VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'55'.repeat(32)}
+VITE_DUSK_DOMAINS_CORE_DRIVER_URL=/contracts/dusk-domains-core.data-driver.wasm
+VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL=/contracts/dusk-domains-treasury.data-driver.wasm
 `, 'utf8')
   await writeFile(proofReport, JSON.stringify({
     ok: true,

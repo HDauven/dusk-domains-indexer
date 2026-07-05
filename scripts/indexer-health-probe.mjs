@@ -196,7 +196,6 @@ function normalizeOptions(options = {}) {
 
 function healthUrlFromEnv(env = process.env) {
   return env.DUSK_DOMAINS_INDEXER_HEALTH_URL
-    ?? env.DUSK_NAMES_INDEXER_HEALTH_URL
     ?? 'http://127.0.0.1:8787/health'
 }
 

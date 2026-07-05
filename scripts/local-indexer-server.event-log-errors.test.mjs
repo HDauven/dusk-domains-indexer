@@ -55,7 +55,7 @@ describe('local indexer malformed event-log handling', () => {
   })
 
   it('keeps health alive for malformed event-log array sources', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'dusk-names-local-indexer-bad-array-test-'))
+    const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-local-indexer-bad-array-test-'))
     tempDirs.push(dir)
     const eventLogFile = join(dir, 'events.json')
     await writeFile(eventLogFile, '[{"event":', 'utf8')

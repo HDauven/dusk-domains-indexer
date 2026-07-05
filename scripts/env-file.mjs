@@ -1,5 +1,4 @@
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
-const legacyEnvPrefix = 'VITE_DUSK_NAMES'
 
 export function parseEnvFile(source) {
   const env = {}
@@ -13,15 +12,11 @@ export function parseEnvFile(source) {
 }
 
 export function envValue(env, key) {
-  return env[preferredEnvKey(key)] ?? env[legacyEnvKey(key)]
+  return env[preferredEnvKey(key)]
 }
 
 export function preferredEnvKey(key) {
   return `${preferredEnvPrefix}_${key}`
-}
-
-export function legacyEnvKey(key) {
-  return `${legacyEnvPrefix}_${key}`
 }
 
 export function truthy(value) {

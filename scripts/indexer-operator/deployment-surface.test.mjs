@@ -47,14 +47,6 @@ describe('indexer deployment surface proof', () => {
     })
   })
 
-  it('accepts legacy Dusk Names env prefixes for active core/treasury aliases', async () => {
-    const fixture = await writeSurfaceFixture({ legacyActiveEnv: true })
-    const result = await loadDeploymentSurface(fixture.envFile, fixture.proofReport)
-    expect(result.ok).toBe(true)
-    expect(result.contracts.core).toBe(`0x${'11'.repeat(32)}`)
-    expect(result.contracts.treasury).toBe(`0x${'22'.repeat(32)}`)
-  })
-
   it('rejects mismatches, legacy split-contract env keys, and stale proof report keys', async () => {
     const fixture = await writeSurfaceFixture({
       envTreasury: `0x${'33'.repeat(32)}`,
@@ -79,7 +71,6 @@ async function writeSurfaceFixture({
   proofCore = `0x${'11'.repeat(32)}`,
   proofTreasury = `0x${'22'.repeat(32)}`,
   proofOk = true,
-  legacyActiveEnv = false,
   legacySplitEnv = false,
   legacyProofKey = false,
   extraProofKey = false,
@@ -88,10 +79,9 @@ async function writeSurfaceFixture({
   tempDirs.push(dir)
   const envFile = join(dir, '.env')
   const proofReport = join(dir, 'proof.json')
-  const prefix = legacyActiveEnv ? 'VITE_DUSK_NAMES' : 'VITE_DUSK_DOMAINS'
   await writeFile(envFile, [
-    `${prefix}_CORE_CONTRACT_ID=${envCore}`,
-    `${prefix}_TREASURY_CONTRACT_ID=${envTreasury}`,
+    `VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${envCore}`,
+    `VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=${envTreasury}`,
     legacySplitEnv ? `VITE_DUSK_DOMAINS_REGISTRY_CONTRACT_ID=0x${'44'.repeat(32)}` : '',
   ].filter(Boolean).join('\n'), 'utf8')
   await writeFile(proofReport, JSON.stringify({

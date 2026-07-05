@@ -171,7 +171,7 @@ export function createSnapshot({ owner, controller, activity: extraActivity = []
 }
 
 async function mkdtempTracked() {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-names-indexer-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-indexer-test-'))
   tempDirs.push(dir)
   return dir
 }

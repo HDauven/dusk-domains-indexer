@@ -59,7 +59,7 @@ describe('local indexer backfill boundary check', () => {
     const result = await checkIndexerBackfillBoundary({
       snapshot: 'target/snapshot.json',
       w3sperContractFile: 'node_modules/@dusk/w3sper/src/contract.js',
-      exists: (file) => !String(file).endsWith('dusk-names-local-indexer.events.jsonl'),
+      exists: (file) => !String(file).endsWith('dusk-domains-local-indexer.events.jsonl'),
       readText: async () => liveOnlyW3sperContractSource(),
       loadStore: async () => ({
         namesByCanonical: new Map([['aurora.dusk', {}]]),

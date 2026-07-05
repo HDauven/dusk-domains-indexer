@@ -6,9 +6,9 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadLocalIndexerStore } from '../server/local-indexer.mjs'
 
-const defaultEventLog = 'target/dusk-names-local-indexer.events.jsonl'
-const defaultSnapshot = 'target/dusk-names-local-indexer.json'
-const defaultCursor = 'target/dusk-names-local-indexer.cursor.json'
+const defaultEventLog = 'target/dusk-domains-local-indexer.events.jsonl'
+const defaultSnapshot = 'target/dusk-domains-local-indexer.json'
+const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
 const defaultW3sperContractFile = 'node_modules/@dusk/w3sper/src/contract.js'
 
 if (isCliEntry()) {

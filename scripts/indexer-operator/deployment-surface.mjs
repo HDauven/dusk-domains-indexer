@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
-const legacyEnvPrefix = 'VITE_DUSK_NAMES'
 
 export const activeContractKeys = Object.freeze(['core', 'treasury'])
 export const legacyContractKeys = Object.freeze(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
@@ -59,7 +58,7 @@ function parseEnv(text) {
 }
 
 function envValue(env, suffix) {
-  return env[`${preferredEnvPrefix}_${suffix}`] ?? env[`${legacyEnvPrefix}_${suffix}`]
+  return env[`${preferredEnvPrefix}_${suffix}`]
 }
 
 function normalizeContractMap(value) {

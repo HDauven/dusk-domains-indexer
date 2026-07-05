@@ -4,10 +4,10 @@ import { pathToFileURL } from 'node:url'
 import { probeIndexerHealth } from './indexer-health-probe.mjs'
 
 const defaultHealthUrl = process.env.DUSK_DOMAINS_INDEXER_HEALTH_URL
-  ?? process.env.DUSK_NAMES_INDEXER_HEALTH_URL
+  ?? process.env.DUSK_DOMAINS_INDEXER_HEALTH_URL
   ?? 'http://127.0.0.1:8787/health'
 const defaultAlertWebhookUrl = process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL
-  ?? process.env.DUSK_NAMES_INDEXER_ALERT_WEBHOOK_URL
+  ?? process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL
   ?? ''
 
 if (isCliEntry()) {

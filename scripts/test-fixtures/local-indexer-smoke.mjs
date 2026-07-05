@@ -11,7 +11,7 @@ export function createLocalIndexerSmokeTestContext() {
     },
 
     async writeEnvFile(contents) {
-      const dir = await mkdtemp(join(tmpdir(), 'dusk-names-indexer-smoke-test-'))
+      const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-indexer-smoke-test-'))
       tempDirs.push(dir)
       const file = join(dir, '.env.local')
       await writeFile(file, contents, 'utf8')
@@ -19,7 +19,7 @@ export function createLocalIndexerSmokeTestContext() {
     },
 
     async writeSnapshot() {
-      const dir = await mkdtemp(join(tmpdir(), 'dusk-names-indexer-smoke-snapshot-test-'))
+      const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-indexer-smoke-snapshot-test-'))
       tempDirs.push(dir)
       const file = join(dir, 'snapshot.json')
       const node = `0x${'aa'.repeat(32)}`

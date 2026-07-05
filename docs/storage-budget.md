@@ -6,7 +6,7 @@ Dusk contracts currently have a 4 GB storage ceiling. Dusk Domains should stay f
 
 ## Canonical Contract State
 
-`DuskNamesCore` stores only data that must be canonical:
+`DuskDomainsCore` stores only data that must be canonical:
 
 | State | Growth driver | Current bound |
 | --- | --- | ---: |
@@ -20,7 +20,7 @@ Dusk contracts currently have a 4 GB storage ceiling. Dusk Domains should stay f
 | Subdomains | one `SubnameRecord` plus one name row per subdomain | one row per node |
 | Fee config | operator-controlled annual prices and referral bps | fixed-size config |
 
-`DuskNameTreasury` stores only money-movement state:
+`DuskDomainTreasury` stores only money-movement state:
 
 | State | Growth driver | Current bound |
 | --- | --- | ---: |
@@ -61,7 +61,7 @@ Using the 16 KB worst-case domain envelope, 4 GB supports roughly 260,000 maxed-
 
 ## Record Limits
 
-The current hard limits live in `contracts/crates/dusk-names-core/src/lib.rs`:
+The current hard limits live in `contracts/crates/dusk-domains-core/src/lib.rs`:
 
 | Limit | Value |
 | --- | ---: |
@@ -89,7 +89,7 @@ The core contract tests must cover:
 Run:
 
 ```bash
-cargo test -p dusk-names-core
+cargo test -p dusk-domains-core
 npm run check:storage-budget
 ```
 

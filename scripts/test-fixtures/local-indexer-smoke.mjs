@@ -341,6 +341,14 @@ export function defaultRouteManifest() {
     '/treasury',
     '/referrals',
     '/fee-config',
+    '/marketplace/config',
+    '/marketplace/fixed-sales',
+    '/marketplace/fixed-sale',
+    '/marketplace/auctions',
+    '/marketplace/auction',
+    '/marketplace/offers',
+    '/marketplace/offer',
+  '/marketplace/refund',
   ]
 }
 

@@ -17,6 +17,14 @@ export const LOCAL_INDEXER_ROUTES = new Set([
   '/treasury',
   '/referrals',
   '/fee-config',
+  '/marketplace/config',
+  '/marketplace/fixed-sales',
+  '/marketplace/fixed-sale',
+  '/marketplace/auctions',
+  '/marketplace/auction',
+  '/marketplace/offers',
+  '/marketplace/offer',
+  '/marketplace/refund',
 ])
 
 export const LOCAL_INDEXER_ROUTE_LIST = Object.freeze([...LOCAL_INDEXER_ROUTES])
@@ -31,7 +39,9 @@ export function routeParameters(pathname, url) {
     pathname === '/record' ||
     pathname === '/record-history' ||
     pathname === '/activity' ||
-    pathname === '/subname'
+    pathname === '/subname' ||
+    pathname === '/marketplace/auction' ||
+    pathname === '/marketplace/fixed-sale'
   ) {
     if (pathname === '/record') return requiredRecordParameters(url)
     if (pathname === '/record-history') return optionalRecordHistoryParameters(url)
@@ -43,7 +53,44 @@ export function routeParameters(pathname, url) {
   if (pathname === '/reverse') {
     return requiredEndpointParameters(url)
   }
+  if (pathname === '/marketplace/offer') {
+    const node = requiredNodeParameter(url, 'node')
+    if (node.error) return node
+    const authority = requiredAuthorityParameter(url, 'buyerAuthority')
+    return authority.error ? authority : { ...node, ...authority }
+  }
+  if (pathname === '/marketplace/offers') {
+    const node = optionalNodeParameter(url, 'node')
+    if (node.error) return node
+    const authority = optionalAuthorityParameter(url, 'buyerAuthority')
+    return authority.error ? authority : { ...node, ...authority }
+  }
+  if (pathname === '/marketplace/refund') {
+    return requiredAuthorityParameter(url, 'authority')
+  }
   return {}
+}
+
+function requiredAuthorityParameter(url, parameter) {
+  const value = url.searchParams.get(parameter)?.trim()
+  if (!value) return { error: { error: 'missing_authority', parameter } }
+  try {
+    return { [parameter]: normalizeAuthority(value) }
+  } catch {
+    return { error: { error: 'invalid_authority', parameter } }
+  }
+}
+
+function optionalAuthorityParameter(url, parameter) {
+  const value = url.searchParams.get(parameter)?.trim()
+  if (!value) return {}
+  return requiredAuthorityParameter(url, parameter)
+}
+
+function normalizeAuthority(value) {
+  const authority = normalizeNode(value)
+  if (!/^0x[a-f0-9]{64}$/.test(authority)) throw new Error('invalid authority')
+  return authority
 }
 
 export function sendJson(response, status, body, headers = {}, options = {}) {
@@ -108,6 +155,12 @@ function requiredNodeParameter(url, parameter) {
   }
 
   return parameter === 'parentNode' ? { parentNode: node } : { node }
+}
+
+function optionalNodeParameter(url, parameter) {
+  const raw = url.searchParams.get(parameter)
+  if (!raw?.trim()) return {}
+  return requiredNodeParameter(url, parameter)
 }
 
 function requiredEndpointParameters(url) {

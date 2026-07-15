@@ -41,9 +41,12 @@ export async function loadSqliteStore(dbFile, options = {}) {
       event: parseJson(row.event_json, {}),
       meta: parseJson(row.meta_json, {}),
     }))
-    const warnings = kvGet(db, 'parse_warnings') ?? []
+    const storedWarnings = kvGet(db, 'parse_warnings') ?? []
     const rawEventCount = kvGet(db, 'raw_event_count') ?? events.length
     const now = new Date().toISOString()
+    const replayWarnings = []
+    const state = replayEventLog(events, replayWarnings, now)
+    const warnings = uniqueWarnings([...storedWarnings, ...replayWarnings])
     const checkpoint = sqliteReplayCheckpoint(events, rawEventCount, warnings, now)
     const storedCheckpoint = kvGet(db, 'checkpoint')
     const durableCheckpoint = storedCheckpoint
@@ -62,8 +65,6 @@ export async function loadSqliteStore(dbFile, options = {}) {
       cursorFile: options.cursorFile,
       checkpointFile: dbFile,
     })
-    const state = replayEventLog(events, warnings, now)
-
     return {
       generatedAt: newestEventTimestamp(events) ?? now,
       source: 'local-indexer-sqlite',
@@ -99,6 +100,7 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
   const events = dedupeEventLogEntries(parsedLog.entries)
   const warnings = [...parsedLog.warnings]
   const now = new Date().toISOString()
+  replayEventLog(events, warnings, now)
   const checkpoint = sqliteReplayCheckpoint(events, parsedLog.entries.length, warnings, now)
   const cursor = await loadCursor(options.cursorFile)
   const db = await openIndexerDatabase(dbFile)
@@ -229,4 +231,14 @@ function parseJson(value, fallback) {
 function integerOrNull(value) {
   if (!Number.isFinite(Number(value))) return null
   return Number(value)
+}
+
+function uniqueWarnings(warnings) {
+  const seen = new Set()
+  return warnings.filter((warning) => {
+    const key = JSON.stringify(warning)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }

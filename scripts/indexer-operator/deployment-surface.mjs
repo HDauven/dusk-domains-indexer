@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
 
-export const activeContractKeys = Object.freeze(['core', 'treasury'])
+export const activeContractKeys = Object.freeze(['core', 'treasury', 'marketplace'])
 export const legacyContractKeys = Object.freeze(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
 
 export async function loadDeploymentSurface(envFile, proofReport) {
@@ -11,6 +11,7 @@ export async function loadDeploymentSurface(envFile, proofReport) {
   const envContracts = {
     core: normalizeContractId(envValue(env, 'CORE_CONTRACT_ID')),
     treasury: normalizeContractId(envValue(env, 'TREASURY_CONTRACT_ID')),
+    marketplace: normalizeContractId(envValue(env, 'MARKETPLACE_CONTRACT_ID')),
   }
   const reportContracts = normalizeContractMap(report.publicContracts ?? report.contracts ?? {})
   const legacyEnvKeys = Object.keys(env).filter((key) => legacyContractKeys.some((contract) => key.includes(`_${contract.toUpperCase()}_CONTRACT_ID`) || key.includes(`_${contract.toUpperCase()}_DRIVER_URL`)))

@@ -88,7 +88,7 @@ describe('local indexer backfill boundary check', () => {
     expect(result.ok).toBe(false)
     expect(result.checks.find((check) => check.id === 'event_log_fallback')).toMatchObject({
       ok: false,
-      message: expect.stringContaining('Generate a core/treasury indexer snapshot or event log first'),
+      message: expect.stringContaining('Generate a Dusk Domains deployment snapshot or event log first'),
     })
   })
 

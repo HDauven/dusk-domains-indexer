@@ -379,7 +379,7 @@ async function startLocalIndexerServer(source, host) {
       : source.mode === 'sqlite'
         ? 'SQLite database'
         : 'event log'
-    throw new Error(`Missing local indexer ${label}: ${source.file}. Generate a core/treasury indexer snapshot or event log first.`)
+    throw new Error(`Missing local indexer ${label}: ${source.file}. Generate a Dusk Domains deployment snapshot or event log first.`)
   }
 
   const storeProvider = await createStaticLocalIndexerStore(source)

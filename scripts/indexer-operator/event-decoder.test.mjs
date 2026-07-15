@@ -11,8 +11,42 @@ const treasuryContract = {
   key: 'treasury',
   contractId: '66'.repeat(32),
 }
+const marketplaceContract = {
+  key: 'marketplace',
+  contractId: '55'.repeat(32),
+}
 
 describe('Dusk Domains indexer event decoder', () => {
+  it('rejects u64 values that JavaScript cannot represent exactly', () => {
+    expect(() => normalizeObservedEvent({
+      contract: marketplaceContract,
+      eventName: 'domain_offer_placed',
+      observedAt,
+      event: {
+        node: bytes(0x11),
+        buyer_authority: bytes(0x22),
+        amount_lux: 9_007_199_254_740_993n,
+        fee_bps: 250,
+        expires_at: 100,
+        placed_at: 50,
+      },
+    })).toThrow('unsafe numeric value')
+
+    expect(() => normalizeObservedEvent({
+      contract: marketplaceContract,
+      eventName: 'domain_offer_placed',
+      observedAt,
+      event: {
+        node: bytes(0x11),
+        buyer_authority: bytes(0x22),
+        amount_lux: '9007199254740993',
+        fee_bps: 250,
+        expires_at: 100,
+        placed_at: 50,
+      },
+    })).toThrow('unsafe numeric value')
+  })
+
   it('normalizes block-based registration timing into ISO timestamps and block heights', () => {
     const normalized = normalizeObservedEvent({
       contract,
@@ -54,7 +88,7 @@ describe('Dusk Domains indexer event decoder', () => {
     })
   })
 
-  it('normalizes every currently collected core and treasury event into an envelope', () => {
+  it('normalizes every collected protocol event into an envelope', () => {
     for (const [eventName, event, expectedType, targetContract = contract] of collectedEventFixtures()) {
       const normalized = normalizeObservedEvent({
         contract: targetContract,
@@ -234,6 +268,118 @@ function collectedEventFixtures() {
       claimed_lux: 3,
       referral_count: 4,
     }, 'referral_reward_claimed', treasuryContract],
+    ['marketplace_initialized', {
+      core_contract: node,
+      treasury_contract: parentNode,
+      marketplace_authority: actor,
+      operator: owner,
+      fee_bps: 250,
+    }, 'marketplace_initialized', marketplaceContract],
+    ['marketplace_config_updated', {
+      operator: owner,
+      previous_operator: actor,
+      previous_fee_bps: 250,
+      fee_bps: 300,
+      updated_at: 45,
+    }, 'marketplace_config_updated', marketplaceContract],
+    ['domain_fixed_sale_opened', {
+      node,
+      name: 'aurora.dusk',
+      seller_authority: owner,
+      price_lux: 10,
+      private_buyer: null,
+      fee_bps: 300,
+      expires_at: 100,
+      opened_at: 46,
+    }, 'domain_fixed_sale_opened', marketplaceContract],
+    ['domain_fixed_sale_closed', {
+      node,
+      seller_authority: owner,
+      expired: false,
+      domain_expired: false,
+      closed_at: 47,
+    }, 'domain_fixed_sale_closed', marketplaceContract],
+    ['domain_fixed_sale_filled', {
+      node,
+      name: 'aurora.dusk',
+      seller_authority: owner,
+      buyer_authority: actor,
+      gross_amount_lux: 10,
+      protocol_fee_lux: 1,
+      seller_proceeds_lux: 9,
+      filled_at: 48,
+    }, 'domain_fixed_sale_filled', marketplaceContract],
+    ['domain_auction_created', {
+      node,
+      name: 'aurora.dusk',
+      seller_authority: owner,
+      reserve_price_lux: 10,
+      duration_blocks: 100,
+      start_deadline: 500,
+      fee_bps: 300,
+      created_at: 49,
+    }, 'domain_auction_created', marketplaceContract],
+    ['domain_bid_placed', {
+      node,
+      bidder_authority: actor,
+      amount_lux: 10,
+      previous_bidder_authority: null,
+      previous_bid_lux: 0,
+      start_block: 50,
+      end_block: 150,
+      started: true,
+      extended: false,
+      bid_count: 1,
+      placed_at: 50,
+    }, 'domain_bid_placed', marketplaceContract],
+    ['domain_auction_cancelled', {
+      node,
+      seller_authority: owner,
+      expired: true,
+      domain_expired: false,
+      cancelled_at: 51,
+    }, 'domain_auction_cancelled', marketplaceContract],
+    ['domain_auction_settled', {
+      node,
+      name: 'aurora.dusk',
+      seller_authority: owner,
+      winner_authority: actor,
+      gross_amount_lux: 10,
+      protocol_fee_lux: 1,
+      seller_proceeds_lux: 9,
+      domain_expired: false,
+      settled_at: 52,
+    }, 'domain_auction_settled', marketplaceContract],
+    ['domain_offer_placed', {
+      node,
+      buyer_authority: actor,
+      amount_lux: 10,
+      fee_bps: 300,
+      expires_at: 100,
+      placed_at: 53,
+    }, 'domain_offer_placed', marketplaceContract],
+    ['domain_offer_closed', {
+      node,
+      buyer_authority: actor,
+      amount_lux: 10,
+      expired: false,
+      closed_at: 54,
+    }, 'domain_offer_closed', marketplaceContract],
+    ['domain_offer_accepted', {
+      node,
+      seller_authority: owner,
+      buyer_authority: actor,
+      gross_amount_lux: 10,
+      protocol_fee_lux: 1,
+      seller_proceeds_lux: 9,
+      accepted_at: 55,
+    }, 'domain_offer_accepted', marketplaceContract],
+    ['marketplace_refund_claimed', {
+      authority: actor,
+      recipient: bytes(0x99, 96),
+      amount_lux: 10,
+      claimed_at: 56,
+    }, 'marketplace_refund_claimed', marketplaceContract],
   ]
 }
 

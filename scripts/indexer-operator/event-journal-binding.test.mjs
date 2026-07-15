@@ -28,7 +28,7 @@ describe('indexer event journal deployment binding', () => {
     expect(parseJournalEntries('')).toEqual([])
   })
 
-  it('binds core and treasury journal contracts to deployment evidence', async () => {
+  it('binds the complete production journal to deployment evidence', async () => {
     const fixture = await writeJournalFixture()
     const result = await auditEventJournalDeploymentBinding({
       eventLog: fixture.eventLog,
@@ -49,6 +49,8 @@ describe('indexer event journal deployment binding', () => {
       expect.objectContaining({ id: 'event_journal_core_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'event_journal_treasury_contract', ok: true }),
       expect.objectContaining({ id: 'event_journal_treasury_matches_deployment', ok: true }),
+      expect.objectContaining({ id: 'event_journal_marketplace_contract', ok: true }),
+      expect.objectContaining({ id: 'event_journal_marketplace_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'archive_snapshot_height', ok: true }),
       expect.objectContaining({ id: 'archive_snapshot_file', ok: true }),
     ]))
@@ -74,9 +76,9 @@ describe('indexer event journal deployment binding', () => {
 
     expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')).toMatchObject({
       ok: false,
-      message: expect.stringContaining('legacy row 3'),
+      message: expect.stringContaining('legacy row 4'),
     })
-    expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')?.message).toContain('4:mystery')
+    expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')?.message).toContain('5:mystery')
     expect(result.checks.find((check) => check.id === 'event_journal_treasury_matches_deployment')).toMatchObject({
       ok: false,
       message: expect.stringContaining('mismatch'),
@@ -129,6 +131,7 @@ async function writeJournalFixture({
   blockHeight = 10,
   coreContractId = `0x${'44'.repeat(32)}`,
   treasuryContractId = `0x${'55'.repeat(32)}`,
+  marketplaceContractId = `0x${'66'.repeat(32)}`,
   extraRows = [],
 } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-event-journal-binding-'))
@@ -150,6 +153,13 @@ async function writeJournalFixture({
         blockHeight,
       },
     },
+    {
+      meta: {
+        contractKey: 'marketplace',
+        contractId: marketplaceContractId,
+        blockHeight,
+      },
+    },
     ...extraRows,
   ]
   await writeFile(eventLog, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8')
@@ -162,6 +172,7 @@ async function writeJournalFixture({
       contracts: {
         core: coreContractId,
         treasury: `0x${'55'.repeat(32)}`,
+        marketplace: marketplaceContractId,
       },
     },
   }

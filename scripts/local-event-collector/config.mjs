@@ -32,6 +32,29 @@ const coreContracts = [
   },
 ]
 
+const optionalContracts = [
+  {
+    key: 'marketplace',
+    envKey: 'VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID',
+    driverFile: 'dusk-domains-marketplace.data-driver.wasm',
+    events: [
+      'marketplace_initialized',
+      'marketplace_config_updated',
+      'domain_fixed_sale_opened',
+      'domain_fixed_sale_closed',
+      'domain_fixed_sale_filled',
+      'domain_auction_created',
+      'domain_bid_placed',
+      'domain_auction_cancelled',
+      'domain_auction_settled',
+      'domain_offer_placed',
+      'domain_offer_closed',
+      'domain_offer_accepted',
+      'marketplace_refund_claimed',
+    ],
+  },
+]
+
 export async function loadCollectorConfig(options = {}) {
   const envFile = resolve(rootDir, options.envFile ?? '.env.local')
   const env = existsSync(envFile) ? parseEnvFile(await readFile(envFile, 'utf8')) : {}
@@ -44,11 +67,18 @@ export async function loadCollectorConfig(options = {}) {
   const ruskDir = resolve(rootDir, options.ruskDir ?? '../rusk-private-w3sper-contract-deploy')
   const w3sperDir = resolve(ruskDir, 'w3sper.js')
   const denoConfig = resolve(w3sperDir, 'deno.json')
-  const configuredContracts = coreContracts.map((contract) => ({
+  const requiredContracts = coreContracts.map((contract) => ({
     ...contract,
     contractId: normalizeContractId(env[contract.envKey]),
   }))
-  const missing = configuredContracts
+  const configuredOptionalContracts = optionalContracts
+    .map((contract) => ({
+      ...contract,
+      contractId: normalizeContractId(env[contract.envKey]),
+    }))
+    .filter((contract) => isContractId(contract.contractId))
+  const configuredContracts = [...requiredContracts, ...configuredOptionalContracts]
+  const missing = requiredContracts
     .filter((contract) => !isContractId(contract.contractId))
     .map((contract) => contract.envKey)
 

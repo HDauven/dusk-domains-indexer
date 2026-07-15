@@ -90,7 +90,7 @@ describe('production indexer public-beta evidence gates', () => {
     expect(result.derivedDeploymentStartHeight).toBe(10)
     expect(result.checks.find((check) => check.id === 'deployment_start_height_derived')).toMatchObject({
       ok: true,
-      message: expect.stringContaining('derived from the earliest core/treasury journal event'),
+      message: expect.stringContaining('derived from the earliest active contract event'),
     })
     expect(result.checks.find((check) => check.id === 'archive_snapshot_required_deployment_start_height')).toMatchObject({
       ok: true,
@@ -341,7 +341,7 @@ describe('production indexer public-beta evidence gates', () => {
     expect(result.sqliteHealth).toMatchObject({
       ok: true,
       mode: 'sqlite',
-      eventCount: 2,
+      eventCount: 3,
     })
     expect(result.checks.find((check) => check.id === 'sqlite_journal_mode')).toMatchObject({
       ok: true,
@@ -369,7 +369,7 @@ describe('production indexer public-beta evidence gates', () => {
     expect(result.deploymentStartHeight).toBeNull()
     expect(result.checks.find((check) => check.id === 'deployment_start_height_derived')).toMatchObject({
       ok: false,
-      message: expect.stringContaining('no active core/treasury block metadata'),
+      message: expect.stringContaining('no active contract block metadata'),
     })
     expect(result.checks.find((check) => check.id === 'archive_snapshot_required_deployment_start_height')).toMatchObject({
       ok: false,
@@ -395,7 +395,7 @@ describe('production indexer public-beta evidence gates', () => {
     expect(result.derivedDeploymentStartHeight).toBeNull()
     expect(result.checks.find((check) => check.id === 'deployment_start_height_derived')).toMatchObject({
       ok: false,
-      message: expect.stringContaining('no active core/treasury block metadata'),
+      message: expect.stringContaining('no active contract block metadata'),
     })
   })
 

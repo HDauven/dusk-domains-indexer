@@ -104,7 +104,7 @@ async function loadStoreStatus({ source, exists, loadStore }) {
       missing: true,
       names: 0,
       checkpoint: null,
-      message: `Missing ${source.mode} fallback file: ${source.file}. Generate a core/treasury indexer snapshot or event log first.`,
+      message: `Missing ${source.mode} fallback file: ${source.file}. Generate a Dusk Domains deployment snapshot or event log first.`,
     }
   }
 
@@ -172,7 +172,7 @@ function backfillBoundary(surface) {
 
   return {
     status: 'blocked',
-    reason: 'The installed W3sper Contract.events facade exposes decoded live RUES on/once subscriptions, but no decoded historical contract-event range/backfill API. Local indexer history therefore depends on observed core/treasury events or npm run indexer:collect, with the snapshot fallback preserved.',
+    reason: 'The installed W3sper Contract.events facade exposes decoded live RUES on/once subscriptions, but no decoded historical contract-event range/backfill API. Local indexer history therefore depends on observed deployment events or npm run indexer:collect, with the snapshot fallback preserved.',
   }
 }
 

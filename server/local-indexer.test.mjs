@@ -149,6 +149,320 @@ describe('local indexer event-log API', () => {
     }
   })
 
+  it('indexes marketplace auction state from event logs', async () => {
+    const node = `0x${'aa'.repeat(32)}`
+    const sellerAuthority = `0x${'11'.repeat(32)}`
+    const marketplaceContractId = `0x${'99'.repeat(32)}`
+    const eventLogFile = await writeEventLog([
+      {
+        event: {
+          type: 'name_registered',
+          node,
+          label: 'aurora',
+          actor: sellerAuthority,
+          owner: sellerAuthority,
+          expiresAt: '2027-06-17T00:00:00.000Z',
+          graceEndsAt: '2027-07-17T00:00:00.000Z',
+          feeLux: 10_000_000_000,
+        },
+        meta: { txId: 'tx-register', blockHeight: 1 },
+      },
+      {
+        event: {
+          type: 'domain_auction_created',
+          node,
+          name: 'aurora.dusk',
+          sellerAuthority,
+          reservePriceLux: 40_000_000_000,
+          durationBlocks: 8_640,
+          startDeadlineBlockHeight: 20_000,
+          feeBps: 250,
+          createdAtBlockHeight: 2,
+        },
+        meta: { txId: 'tx-auction', blockHeight: 2, contractId: marketplaceContractId },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/marketplace/auctions`)).resolves.toMatchObject([{
+        node,
+        name: 'aurora.dusk',
+        sellerAuthority,
+        marketplaceContractId,
+        escrowed: false,
+        reservePriceLux: 40_000_000_000,
+        durationBlocks: 8_640,
+        startDeadlineBlockHeight: 20_000,
+        endBlockHeight: null,
+        highestBid: null,
+        bidCount: 0,
+      }])
+      await expect(expectJson(`${baseUrl}/marketplace/auction?node=${node}`)).resolves.toMatchObject({
+        node,
+        name: 'aurora.dusk',
+        marketplaceContractId,
+        escrowed: false,
+        reservePriceLux: 40_000_000_000,
+      })
+      await expect(expectJson(`${baseUrl}/activity?node=${node}`)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: 'domain_auction_created',
+            txId: 'tx-auction',
+          }),
+        ]),
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('rejects unsafe marketplace amounts instead of indexing rounded values', async () => {
+    const node = `0x${'aa'.repeat(32)}`
+    const eventLogFile = await writeEventLog([{
+      event: {
+        type: 'domain_offer_placed',
+        node,
+        buyerAuthority: `0x${'11'.repeat(32)}`,
+        amountLux: 9_007_199_254_740_992,
+        feeBps: 250,
+        expiresAtBlockHeight: 100,
+        placedAtBlockHeight: 2,
+      },
+      meta: { txId: 'tx-unsafe', blockHeight: 2 },
+    }])
+
+    const store = await loadEventLogStore(eventLogFile)
+    expect(store.marketplaceOffersByKey.size).toBe(0)
+    expect(store.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'invalid_event_log_event',
+        message: expect.stringContaining('unsafe numeric value'),
+      }),
+    ]))
+
+    const strictStore = await loadEventLogStore(eventLogFile, null, { strictHealth: true })
+    expect(strictStore.durability.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'replay_warnings',
+        ok: false,
+      }),
+    ]))
+    expect(healthResponseForStore(strictStore).ok).toBe(false)
+  })
+
+  it('marks marketplace auctions escrowed only after domain authority moves to the marketplace', async () => {
+    const node = `0x${'aa'.repeat(32)}`
+    const sellerAuthority = `0x${'11'.repeat(32)}`
+    const marketplaceContractId = `0x${'99'.repeat(32)}`
+    const eventLogFile = await writeEventLog([
+      {
+        event: {
+          type: 'name_registered',
+          node,
+          label: 'aurora',
+          actor: sellerAuthority,
+          owner: sellerAuthority,
+          expiresAt: '2027-06-17T00:00:00.000Z',
+          graceEndsAt: '2027-07-17T00:00:00.000Z',
+          feeLux: 10_000_000_000,
+        },
+        meta: { txId: 'tx-register', blockHeight: 1 },
+      },
+      {
+        event: {
+          type: 'domain_auction_created',
+          node,
+          name: 'aurora.dusk',
+          sellerAuthority,
+          reservePriceLux: 25_000_000_000,
+          durationBlocks: 8_640,
+          startDeadlineBlockHeight: 20_000,
+          feeBps: 250,
+          createdAtBlockHeight: 2,
+        },
+        meta: { txId: 'tx-auction', blockHeight: 2, contractId: marketplaceContractId },
+      },
+      {
+        event: {
+          type: 'name_owner_changed',
+          node,
+          actor: sellerAuthority,
+          owner: marketplaceContractId,
+          manager: marketplaceContractId,
+          resolver: marketplaceContractId,
+          expiresAt: '2027-06-17T00:00:00.000Z',
+          expiresAtBlockHeight: 500_000,
+        },
+        meta: { txId: 'tx-escrowed', blockHeight: 3, contractId: node },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/marketplace/auction?node=${node}`)).resolves.toMatchObject({
+        node,
+        name: 'aurora.dusk',
+        marketplaceContractId,
+        escrowed: true,
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  it('serves fixed sales, offers, config and aggregate pull refunds', async () => {
+    const node = `0x${'ab'.repeat(32)}`
+    const sellerAuthority = `0x${'11'.repeat(32)}`
+    const buyerAuthority = `0x${'22'.repeat(32)}`
+    const marketplaceContractId = `0x${'99'.repeat(32)}`
+    const eventLogFile = await writeEventLog([
+      {
+        event: {
+          type: 'marketplace_initialized',
+          coreContract: `0x${'01'.repeat(32)}`,
+          treasuryContract: `0x${'02'.repeat(32)}`,
+          marketplaceAuthority: marketplaceContractId,
+          operator: sellerAuthority,
+          feeBps: 250,
+        },
+        meta: { txId: 'tx-init', blockHeight: 1, contractId: marketplaceContractId },
+      },
+      {
+        event: {
+          type: 'domain_fixed_sale_opened',
+          node,
+          name: 'market.dusk',
+          sellerAuthority,
+          priceLux: 25_000_000_000,
+          privateBuyer: null,
+          feeBps: 250,
+          expiresAtBlockHeight: 10_000,
+          openedAtBlockHeight: 2,
+        },
+        meta: { txId: 'tx-sale', blockHeight: 2, contractId: marketplaceContractId },
+      },
+      {
+        event: {
+          type: 'domain_offer_placed',
+          node,
+          buyerAuthority,
+          amountLux: 20_000_000_000,
+          feeBps: 250,
+          expiresAtBlockHeight: 8_000,
+          placedAtBlockHeight: 3,
+        },
+        meta: { txId: 'tx-offer', blockHeight: 3, contractId: marketplaceContractId },
+      },
+      {
+        event: {
+          type: 'domain_offer_closed',
+          node,
+          buyerAuthority,
+          amountLux: 20_000_000_000,
+          expired: false,
+          closedAtBlockHeight: 4,
+        },
+        meta: { txId: 'tx-offer-close', blockHeight: 4, contractId: marketplaceContractId },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/marketplace/config`)).resolves.toMatchObject({
+        initialized: true,
+        feeBps: 250,
+      })
+      await expect(expectJson(`${baseUrl}/marketplace/fixed-sales`)).resolves.toMatchObject([{
+        node,
+        priceLux: 25_000_000_000,
+      }])
+      await expect(expectJson(`${baseUrl}/marketplace/fixed-sale?node=${node}`)).resolves.toMatchObject({ node })
+      await expect(expectJson(`${baseUrl}/marketplace/offers?node=${node}`)).resolves.toEqual([])
+      await expect(expectJson(`${baseUrl}/marketplace/refund?authority=${buyerAuthority}`)).resolves.toMatchObject({
+        authority: buyerAuthority,
+        amountLux: 20_000_000_000,
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  it('tracks bids and removes marketplace auctions after settlement', async () => {
+    const node = `0x${'aa'.repeat(32)}`
+    const sellerAuthority = `0x${'11'.repeat(32)}`
+    const created = {
+      event: {
+        type: 'domain_auction_created',
+        node,
+        name: 'aurora.dusk',
+        sellerAuthority,
+        reservePriceLux: 25_000_000_000,
+        durationBlocks: 8_640,
+        startDeadlineBlockHeight: 20_000,
+        feeBps: 250,
+        createdAtBlockHeight: 2,
+      },
+      meta: { txId: 'tx-auction', blockHeight: 2 },
+    }
+    const eventLogFile = await writeEventLog([
+      created,
+      {
+        event: {
+          type: 'domain_bid_placed',
+          node,
+          bidderAuthority: `0x${'22'.repeat(32)}`,
+          amountLux: 25_000_000_000,
+          previousBidderAuthority: null,
+          previousBidLux: 0,
+          startBlock: 3,
+          endBlock: 1_000,
+          started: true,
+          extended: false,
+          bidCount: 1,
+          placedAtBlockHeight: 3,
+        },
+        meta: { txId: 'tx-bid', blockHeight: 3 },
+      },
+      {
+        event: {
+          type: 'domain_auction_settled',
+          node,
+          name: 'aurora.dusk',
+          sellerAuthority,
+          winnerAuthority: `0x${'22'.repeat(32)}`,
+          grossAmountLux: 25_000_000_000,
+          protocolFeeLux: 625_000_000,
+          sellerProceedsLux: 24_375_000_000,
+          domainExpired: false,
+          settledAtBlockHeight: 4,
+        },
+        meta: { txId: 'tx-settled', blockHeight: 4 },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/marketplace/auctions`)).resolves.toEqual([])
+      await expect(expectJson(`${baseUrl}/marketplace/auction?node=${node}`)).resolves.toBe(null)
+      await expect(expectJson(`${baseUrl}/activity?node=${node}`)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: 'domain_auction_settled',
+            txId: 'tx-settled',
+          }),
+        ]),
+      )
+    } finally {
+      await close()
+    }
+  })
+
   it('exposes package, schema and deployment binding metadata in health', async () => {
     const coreContract = `0x${'11'.repeat(32)}`
     const treasuryContract = `0x${'22'.repeat(32)}`

@@ -157,7 +157,7 @@ The current MVP should keep displaying transaction confirmation separately from 
 | `eventSchemaVersion` | Dusk Domains event schema version. |
 | `readModelSchemaVersion` | Read-model response version. |
 | `package` | Package name/version, source commit when configured, and SDK dependency. |
-| `deployment` | Derived chain ID, core/treasury contract IDs, event counts, first/last heights, missing contracts and conflicts. |
+| `deployment` | Derived chain ID, core, treasury and marketplace contract IDs, event counts, first/last heights, missing contracts and conflicts. |
 | `sqlite` | SQLite mode metadata including schema migration version and WAL mode. |
 | `currentBlockHeight` | Best observed node height. |
 | `finalizedBlockHeight` | Best finalized/projected block. |
@@ -198,7 +198,7 @@ target/indexer-backups/restore-stage-public-beta-devnet
 Hosted operators can keep using the explicit `check:indexer-production` arguments above with their archive
 snapshot and backup locations.
 
-The production check validates the observed journal against the two-contract deployment surface (`core` and `treasury`) and fails if legacy split-contract rows, mismatched contract IDs, pre-deployment events, stale checkpoints, stale collector source timestamps, or missing block-height/finality metadata are present. Proof-generated event logs and live collector events must include `meta.blockHeight`; otherwise the strict finality gate remains unsafe. Operators can pass `--derive-deployment-start-height` to use the earliest active core/treasury journal event as the deployment start height, while still supplying the retained archive snapshot height and artifact path.
+The production check validates the observed journal against the complete deployment surface (`core`, `treasury` and `marketplace`) and fails if any active contract is absent, legacy split-contract rows remain, contract IDs mismatch, events predate deployment, checkpoints or collector sources are stale, or block-height/finality metadata is missing. Proof-generated event logs and live collector events must include `meta.blockHeight`; otherwise the strict finality gate remains unsafe. Operators can pass `--derive-deployment-start-height` to use the earliest active contract event as the deployment start height, while still supplying the retained archive snapshot height and artifact path.
 
 ## Disk Budget And Retention
 
@@ -221,7 +221,7 @@ npm run indexer:backup -- --verify --manifest /var/backups/dusk-domains/<backup-
 
 Hosted beta requirements:
 
-- Run an archive node and retain a snapshot from at or before the core/treasury deployment height.
+- Run an archive node and retain a snapshot from at or before the deployment height.
 - Record `deploymentStartHeight`, `archiveSnapshotHeight`, snapshot artifact path, core contract ID, treasury contract ID, chain ID, source commit, and operator recipient in the launch checklist.
 - Start event ingestion from the deployment height, not from "latest".
 - Keep the append-only event journal, cursor, checkpoint, SQLite database/WAL sidecars, env handoff, devnet proof, and browser write proof in backup bundles.
@@ -242,7 +242,7 @@ indexer export --out <snapshot.json>
 
 | Area | Required coverage |
 | --- | --- |
-| Event normalization | malformed payload, missing tx ID, missing block, unknown event, every current core/treasury event name. |
+| Event normalization | malformed payload, missing tx ID, missing block, unknown event, every current production contract event name. |
 | Projector parity | same normalized fixture events produce matching SDK projector and server replay state. |
 | Idempotency | duplicate event rows do not double-count names, treasury, or referrals. |
 | Lifecycle | active, grace, expired, released, re-registered name. |

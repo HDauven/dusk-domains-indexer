@@ -21,12 +21,19 @@ import {
   normalizeNode,
   numberOrNull,
 } from './http.mjs'
+import { emptyMarketplaceConfig, marketplaceOfferKey } from './projectors/marketplace.mjs'
+import { assertSafeNumericTree } from './safe-numbers.mjs'
 
 export async function loadSnapshotStore(snapshotFile) {
   const snapshot = JSON.parse(await readFile(snapshotFile, 'utf8'))
+  assertSafeNumericTree(snapshot, 'snapshot')
   const names = Array.isArray(snapshot.names) ? snapshot.names : []
   const reverse = Array.isArray(snapshot.reverse) ? snapshot.reverse : []
   const subnames = Array.isArray(snapshot.subnames) ? snapshot.subnames : []
+  const marketplaceFixedSales = Array.isArray(snapshot.marketplaceFixedSales) ? snapshot.marketplaceFixedSales : []
+  const marketplaceAuctions = Array.isArray(snapshot.marketplaceAuctions) ? snapshot.marketplaceAuctions : []
+  const marketplaceOffers = Array.isArray(snapshot.marketplaceOffers) ? snapshot.marketplaceOffers : []
+  const marketplaceRefunds = Array.isArray(snapshot.marketplaceRefunds) ? snapshot.marketplaceRefunds : []
   const cursor = normalizeSnapshotBlockCursor(snapshot.cursor)
   const checkpoint = normalizeSnapshotBlockCursor(snapshot.checkpoint ?? (
     snapshot.currentBlockHeight === undefined ? null : { lastBlockHeight: snapshot.currentBlockHeight }
@@ -45,6 +52,14 @@ export async function loadSnapshotStore(snapshotFile) {
   const recordHistoryByNodeKey = new Map()
   const commitmentsById = new Map()
   const controllersByNode = new Map()
+  const marketplaceFixedSalesByNode = new Map()
+  const marketplaceAuctionsByNode = new Map()
+  const marketplaceOffersByKey = new Map()
+  const marketplaceRefundsByAuthority = new Map()
+  const marketplaceConfig = {
+    ...emptyMarketplaceConfig(),
+    ...(snapshot.marketplaceConfig ?? {}),
+  }
   const treasuryState = normalizeTreasuryState(snapshot.treasury ?? snapshot.treasuryState)
   const feeConfig = normalizeFeeConfig(snapshot.feeConfig ?? snapshot.fee_config)
   const rawReferralState = snapshot.referrals ?? snapshot.referralState
@@ -151,6 +166,82 @@ export async function loadSnapshotStore(snapshotFile) {
     }, row)
   }
 
+  for (const sale of marketplaceFixedSales) {
+    if (!sale?.node || !sale?.name) continue
+    const node = normalizeNode(sale.node)
+    marketplaceFixedSalesByNode.set(node, {
+      ...sale,
+      node,
+      sellerAuthority: normalizeNode(sale.sellerAuthority),
+      privateBuyer: sale.privateBuyer ? normalizeNode(sale.privateBuyer) : null,
+      marketplaceContractId: sale.marketplaceContractId ? normalizeNode(sale.marketplaceContractId) : null,
+      priceLux: Number(sale.priceLux ?? 0),
+      feeBps: Number(sale.feeBps ?? 0),
+      expiresAtBlockHeight: Number(sale.expiresAtBlockHeight ?? 0),
+      openedAtBlockHeight: Number(sale.openedAtBlockHeight ?? 0),
+      escrowed: Boolean(sale.escrowed),
+      blockHeight: numberOrNull(sale.blockHeight),
+      txId: sale.txId ?? null,
+      lastEventType: 'domain_fixed_sale_opened',
+    })
+  }
+
+  for (const auction of marketplaceAuctions) {
+    if (!auction?.node || !auction?.name) continue
+    const node = normalizeNode(auction.node)
+    marketplaceAuctionsByNode.set(node, {
+      ...auction,
+      node,
+      marketplaceContractId: typeof auction.marketplaceContractId === 'string' ? normalizeNode(auction.marketplaceContractId) : null,
+      escrowed: Boolean(auction.escrowed),
+      sellerAuthority: normalizeNode(auction.sellerAuthority),
+      reservePriceLux: Number(auction.reservePriceLux ?? 0),
+      durationBlocks: Number(auction.durationBlocks ?? 0),
+      startDeadlineBlockHeight: Number(auction.startDeadlineBlockHeight ?? 0),
+      feeBps: Number(auction.feeBps ?? 0),
+      startBlockHeight: numberOrNull(auction.startBlockHeight),
+      endBlockHeight: numberOrNull(auction.endBlockHeight),
+      highestBid: auction.highestBid ?? null,
+      bidCount: Number(auction.bidCount ?? 0),
+      createdAtBlockHeight: Number(auction.createdAtBlockHeight ?? 0),
+      blockHeight: numberOrNull(auction.blockHeight),
+      txId: auction.txId ?? null,
+      lastEventType: auction.lastEventType ?? 'domain_auction_created',
+    })
+  }
+
+  for (const offer of marketplaceOffers) {
+    if (!offer?.node || !offer?.buyerAuthority) continue
+    const node = normalizeNode(offer.node)
+    const buyerAuthority = normalizeNode(offer.buyerAuthority)
+    marketplaceOffersByKey.set(marketplaceOfferKey(node, buyerAuthority), {
+      ...offer,
+      node,
+      name: offer.name ?? namesByNode.get(node)?.canonicalName ?? node,
+      buyerAuthority,
+      amountLux: Number(offer.amountLux ?? 0),
+      feeBps: Number(offer.feeBps ?? 0),
+      expiresAtBlockHeight: Number(offer.expiresAtBlockHeight ?? 0),
+      placedAtBlockHeight: Number(offer.placedAtBlockHeight ?? 0),
+      blockHeight: numberOrNull(offer.blockHeight),
+      txId: offer.txId ?? null,
+      lastEventType: 'domain_offer_placed',
+    })
+  }
+
+  for (const refund of marketplaceRefunds) {
+    if (!refund?.authority) continue
+    const authority = normalizeNode(refund.authority)
+    marketplaceRefundsByAuthority.set(authority, {
+      ...refund,
+      authority,
+      recipient: refund.recipient ?? null,
+      amountLux: Number(refund.amountLux ?? 0),
+      blockHeight: numberOrNull(refund.blockHeight),
+      txId: refund.txId ?? null,
+    })
+  }
+
   return {
     generatedAt: snapshot.generatedAt ?? new Date().toISOString(),
     source: snapshot.source ?? 'local-indexer-snapshot',
@@ -168,6 +259,11 @@ export async function loadSnapshotStore(snapshotFile) {
     recordHistoryByNode,
     recordHistoryByNodeKey,
     controllersByNode,
+    marketplaceConfig,
+    marketplaceFixedSalesByNode,
+    marketplaceAuctionsByNode,
+    marketplaceOffersByKey,
+    marketplaceRefundsByAuthority,
     treasuryState,
     feeConfig,
     referralsByReferrer,

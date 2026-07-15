@@ -11,7 +11,8 @@ Required services:
 - Dusk archive/full node endpoint for the selected network.
 - Dusk Domains Core contract ID.
 - Dusk Domains Treasury contract ID.
-- Data-driver WASM files for both contracts.
+- Dusk Domains Marketplace contract ID when marketplace routes are enabled.
+- Matching data-driver WASM files for every deployed contract.
 - Continuous event collector writing an append-only event journal.
 - Read API serving the projected indexer state.
 - Web app configured with the same contract IDs and indexer URL.
@@ -45,11 +46,14 @@ Public runtime config must expose only:
 ```text
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID
+VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID
 VITE_DUSK_DOMAINS_CORE_DRIVER_URL
 VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL
+VITE_DUSK_DOMAINS_MARKETPLACE_DRIVER_URL
 VITE_DUSK_DOMAINS_NODE_URL
 VITE_DUSK_DOMAINS_CHAIN_ID
 VITE_DUSK_DOMAINS_INDEXER_URL
+VITE_DUSK_DOMAINS_ENABLE_MARKETPLACE
 ```
 
 Do not publish old split-contract IDs for registry, registrar, controller, resolver, or reverse registry as active public write targets.
@@ -533,6 +537,6 @@ For devnet or production write proof, also run installed-wallet claim coverage w
 
 - Indexer state is a read model; contract state remains canonical.
 - SQLite/WAL event storage exists; normalized projection tables and archive-node historical extraction are still future hardening items.
-- Unicode names, private records, marketplace transfers, organization verification, and Citadel integration are out of MVP scope.
+- Unicode names, private records, organization verification and Citadel integration are out of the core MVP scope. Marketplace auctions are an optional third-contract extension.
 - The app supports public Moonlight primary names; Phoenix endpoints are not public primary identities.
 - External audit is not part of the devnet MVP proof package.

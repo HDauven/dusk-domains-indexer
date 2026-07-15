@@ -22,6 +22,7 @@ export function normalizeObservedEvent({
   observedAt,
   targetBlockSeconds = defaultTargetBlockSeconds,
 }) {
+  assertSafeEventNumbers(event)
   const meta = {
     txId: null,
     blockHeight: null,
@@ -368,7 +369,244 @@ export function normalizeObservedEvent({
     }
   }
 
+  if (eventName === 'marketplace_initialized') {
+    return {
+      event: {
+        type: 'marketplace_initialized',
+        coreContract: bytesToHex(event.core_contract),
+        treasuryContract: bytesToHex(event.treasury_contract),
+        marketplaceAuthority: bytesToHex(event.marketplace_authority),
+        operator: bytesToHex(event.operator),
+        feeBps: Number(event.fee_bps ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'marketplace_config_updated') {
+    return {
+      event: {
+        type: 'marketplace_config_updated',
+        operator: bytesToHex(event.operator),
+        previousOperator: bytesToHex(event.previous_operator),
+        previousFeeBps: Number(event.previous_fee_bps ?? 0),
+        feeBps: Number(event.fee_bps ?? 0),
+        updatedAtBlockHeight: Number(event.updated_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_fixed_sale_opened') {
+    return {
+      event: {
+        type: 'domain_fixed_sale_opened',
+        node: bytesToHex(event.node),
+        name: event.name,
+        sellerAuthority: bytesToHex(event.seller_authority),
+        priceLux: Number(event.price_lux ?? 0),
+        privateBuyer: event.private_buyer == null ? null : bytesToHex(event.private_buyer),
+        feeBps: Number(event.fee_bps ?? 0),
+        expiresAtBlockHeight: Number(event.expires_at ?? 0),
+        openedAtBlockHeight: Number(event.opened_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_fixed_sale_closed') {
+    return {
+      event: {
+        type: 'domain_fixed_sale_closed',
+        node: bytesToHex(event.node),
+        sellerAuthority: bytesToHex(event.seller_authority),
+        expired: Boolean(event.expired),
+        domainExpired: Boolean(event.domain_expired),
+        closedAtBlockHeight: Number(event.closed_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_fixed_sale_filled') {
+    return {
+      event: {
+        type: 'domain_fixed_sale_filled',
+        node: bytesToHex(event.node),
+        name: event.name,
+        sellerAuthority: bytesToHex(event.seller_authority),
+        buyerAuthority: bytesToHex(event.buyer_authority),
+        grossAmountLux: Number(event.gross_amount_lux ?? 0),
+        protocolFeeLux: Number(event.protocol_fee_lux ?? 0),
+        sellerProceedsLux: Number(event.seller_proceeds_lux ?? 0),
+        filledAtBlockHeight: Number(event.filled_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_auction_created') {
+    return {
+      event: {
+        type: 'domain_auction_created',
+        node: bytesToHex(event.node),
+        name: event.name,
+        sellerAuthority: bytesToHex(event.seller_authority),
+        reservePriceLux: Number(event.reserve_price_lux ?? 0),
+        durationBlocks: Number(event.duration_blocks ?? 0),
+        startDeadlineBlockHeight: Number(event.start_deadline ?? 0),
+        feeBps: Number(event.fee_bps ?? 0),
+        createdAtBlockHeight: Number(event.created_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_bid_placed') {
+    return {
+      event: {
+        type: 'domain_bid_placed',
+        node: bytesToHex(event.node),
+        bidderAuthority: bytesToHex(event.bidder_authority),
+        amountLux: Number(event.amount_lux ?? 0),
+        previousBidderAuthority: event.previous_bidder_authority == null ? null : bytesToHex(event.previous_bidder_authority),
+        previousBidLux: Number(event.previous_bid_lux ?? 0),
+        startBlock: Number(event.start_block ?? 0),
+        endBlock: Number(event.end_block ?? 0),
+        started: Boolean(event.started),
+        extended: Boolean(event.extended),
+        bidCount: Number(event.bid_count ?? 0),
+        placedAtBlockHeight: Number(event.placed_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_auction_cancelled') {
+    return {
+      event: {
+        type: 'domain_auction_cancelled',
+        node: bytesToHex(event.node),
+        sellerAuthority: bytesToHex(event.seller_authority),
+        expired: Boolean(event.expired),
+        domainExpired: Boolean(event.domain_expired),
+        cancelledAtBlockHeight: Number(event.cancelled_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_auction_settled') {
+    return {
+      event: {
+        type: 'domain_auction_settled',
+        node: bytesToHex(event.node),
+        name: event.name,
+        sellerAuthority: bytesToHex(event.seller_authority),
+        winnerAuthority: event.winner_authority == null ? null : bytesToHex(event.winner_authority),
+        grossAmountLux: Number(event.gross_amount_lux ?? 0),
+        protocolFeeLux: Number(event.protocol_fee_lux ?? 0),
+        sellerProceedsLux: Number(event.seller_proceeds_lux ?? 0),
+        domainExpired: Boolean(event.domain_expired),
+        settledAtBlockHeight: Number(event.settled_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_offer_placed') {
+    return {
+      event: {
+        type: 'domain_offer_placed',
+        node: bytesToHex(event.node),
+        buyerAuthority: bytesToHex(event.buyer_authority),
+        amountLux: Number(event.amount_lux ?? 0),
+        feeBps: Number(event.fee_bps ?? 0),
+        expiresAtBlockHeight: Number(event.expires_at ?? 0),
+        placedAtBlockHeight: Number(event.placed_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_offer_closed') {
+    return {
+      event: {
+        type: 'domain_offer_closed',
+        node: bytesToHex(event.node),
+        buyerAuthority: bytesToHex(event.buyer_authority),
+        amountLux: Number(event.amount_lux ?? 0),
+        expired: Boolean(event.expired),
+        closedAtBlockHeight: Number(event.closed_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'domain_offer_accepted') {
+    return {
+      event: {
+        type: 'domain_offer_accepted',
+        node: bytesToHex(event.node),
+        sellerAuthority: bytesToHex(event.seller_authority),
+        buyerAuthority: bytesToHex(event.buyer_authority),
+        grossAmountLux: Number(event.gross_amount_lux ?? 0),
+        protocolFeeLux: Number(event.protocol_fee_lux ?? 0),
+        sellerProceedsLux: Number(event.seller_proceeds_lux ?? 0),
+        acceptedAtBlockHeight: Number(event.accepted_at ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'marketplace_refund_claimed') {
+    return {
+      event: {
+        type: 'marketplace_refund_claimed',
+        authority: bytesToHex(event.authority),
+        recipient: bytesToBase58(event.recipient),
+        amountLux: Number(event.amount_lux ?? 0),
+        claimedAtBlockHeight: Number(event.claimed_at ?? 0),
+      },
+      meta,
+    }
+  }
+
   return null
+}
+
+function assertSafeEventNumbers(value, path = 'event') {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`${path} contains an unsafe numeric value`)
+    }
+    return
+  }
+  if (typeof value === 'bigint') {
+    if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`${path} contains an unsafe numeric value`)
+    }
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertSafeEventNumbers(item, `${path}[${index}]`))
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === 'string' && isNumericEventField(key) && /^\d+$/u.test(item)) {
+      const parsed = BigInt(item)
+      if (parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error(`${path}.${key} contains an unsafe numeric value`)
+      }
+      continue
+    }
+    assertSafeEventNumbers(item, `${path}.${key}`)
+  }
+}
+
+function isNumericEventField(key) {
+  return /(?:^|_)(?:lux|bps|at|height|block|blocks|count|seconds|years)$/u.test(key)
 }
 
 function recordValueFromEvent(key, value) {

@@ -24,6 +24,7 @@ import { normalizeName, normalizeNode } from './http.mjs'
 import {
   applyControllerEvent,
   applyLifecycleEvent,
+  applyMarketplaceEvent,
   applyResolverEvent,
   applyReverseEvent,
   applySubnameEvent,
@@ -31,6 +32,7 @@ import {
   isControllerEvent,
   isFeeConfigEvent,
   isLifecycleEvent,
+  isMarketplaceEvent,
   isReferralEvent,
   isResolverEvent,
   isReverseEvent,
@@ -38,6 +40,7 @@ import {
   isTreasuryEvent,
 } from './projectors.mjs'
 import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
+import { assertSafeNumericTree } from './safe-numbers.mjs'
 
 export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) {
   const parsedLog = parseEventLog(await readFile(eventLogFile, 'utf8'))
@@ -45,6 +48,7 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
   const warnings = [...parsedLog.warnings]
   const cursor = await loadCursor(cursorFile)
   const now = new Date().toISOString()
+  const state = replayEventLog(events, warnings, now)
   const checkpoint = createReplayCheckpoint(events, parsedLog.entries.length, warnings, now)
   const durableCheckpoint = await loadDurableCheckpoint(options.checkpointFile)
   const durability = indexerDurabilityState({
@@ -58,8 +62,6 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
     cursorFile,
     checkpointFile: options.checkpointFile,
   })
-  const state = replayEventLog(events, warnings, now)
-
   return {
     generatedAt: newestEventTimestamp(events) ?? now,
     source: 'local-indexer-event-log',
@@ -93,6 +95,11 @@ export function replayEventLog(events, warnings, now) {
   const subnamesByCanonical = new Map()
   const commitmentsById = new Map()
   const controllersByNode = new Map()
+  const marketplaceFixedSalesByNode = new Map()
+  const marketplaceAuctionsByNode = new Map()
+  const marketplaceOffersByKey = new Map()
+  const marketplaceRefundsByAuthority = new Map()
+  let marketplaceConfig = null
   let treasuryState = emptyTreasuryState()
   let feeConfig = { ...DEFAULT_FEE_CONFIG }
   const referralsByReferrer = new Map()
@@ -105,6 +112,8 @@ export function replayEventLog(events, warnings, now) {
     if (!event?.type) continue
 
     try {
+      assertSafeNumericTree(event, 'event')
+      assertSafeNumericTree(meta, 'event metadata')
       if (isLifecycleEvent(event.type)) {
         applyLifecycleEvent({ namesByNode, activityByNode }, event, meta, now)
         if (event.type === 'name_released') {
@@ -145,6 +154,18 @@ export function replayEventLog(events, warnings, now) {
         applyReferralEvent({ referralsByReferrer }, event, meta)
       } else if (isFeeConfigEvent(event.type)) {
         feeConfig = reduceFeeConfigEvent(event, feeConfig, meta)
+      } else if (isMarketplaceEvent(event.type)) {
+        const marketplaceStore = {
+          namesByNode,
+          marketplaceConfig,
+          marketplaceFixedSalesByNode,
+          marketplaceAuctionsByNode,
+          marketplaceOffersByKey,
+          marketplaceRefundsByAuthority,
+          activityByNode,
+        }
+        applyMarketplaceEvent(marketplaceStore, event, meta, now)
+        marketplaceConfig = marketplaceStore.marketplaceConfig
       }
     } catch (error) {
       warnings.push({
@@ -204,6 +225,11 @@ export function replayEventLog(events, warnings, now) {
     recordHistoryByNode,
     recordHistoryByNodeKey,
     controllersByNode,
+    marketplaceConfig,
+    marketplaceFixedSalesByNode,
+    marketplaceAuctionsByNode,
+    marketplaceOffersByKey,
+    marketplaceRefundsByAuthority,
     treasuryState,
     feeConfig,
     referralsByReferrer,

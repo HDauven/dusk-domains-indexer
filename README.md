@@ -2,7 +2,7 @@
 
 Standalone indexer and read API for Dusk Domains.
 
-The indexer turns Dusk Domains contract events into queryable read models for search, My Domains, activity, reverse lookup, treasury and referral views. It is not canonical. Contracts remain the source of truth for ownership, records, primary names and funds.
+The indexer turns Dusk Domains contract events into queryable read models for search, My Domains, activity, reverse lookup, treasury, referrals and marketplace discovery. It is not canonical. Contracts remain the source of truth for ownership, records, primary names, orders and funds.
 
 ## Requirements
 
@@ -61,9 +61,21 @@ GET /subnames?parentNode=
 GET /treasury
 GET /referrals?referrer=
 GET /fee-config
+GET /marketplace/config
+GET /marketplace/fixed-sales
+GET /marketplace/fixed-sale?node=
+GET /marketplace/auctions
+GET /marketplace/auction?node=
+GET /marketplace/offers?node=&buyerAuthority=
+GET /marketplace/offer?node=&buyerAuthority=
+GET /marketplace/refund?authority=
 ```
 
 See `docs/indexer-api.md` for response shapes.
+
+Marketplace Lux values are accepted only while exactly representable as JSON
+safe integers. Unsafe `u64` values are quarantined as replay warnings rather
+than rounded into a different price or balance.
 
 ## Source Layout
 
@@ -79,12 +91,11 @@ docs/                   API, events, storage and production runbooks
 Useful commands:
 
 ```bash
-npm run indexer:local
-npm run check:indexer-sqlite
-npm run check:indexer-production
-npm run indexer:health
-npm run indexer:backup
-npm run indexer:disk
+npm start
+npm run production:check
+npm run health
+npm run backup
+npm run disk
 ```
 
 Hosted deployments should set `DUSK_DOMAINS_INDEXER_CORS_ORIGIN` or pass `--cors-origin` so browser reads are limited to the public frontend origin.

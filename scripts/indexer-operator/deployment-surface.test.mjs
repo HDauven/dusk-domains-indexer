@@ -18,8 +18,8 @@ afterEach(async () => {
 })
 
 describe('indexer deployment surface proof', () => {
-  it('exports the production core/treasury key set and legacy split-contract key set', () => {
-    expect(activeContractKeys).toEqual(['core', 'treasury'])
+  it('exports the production contract key set and legacy split-contract key set', () => {
+    expect(activeContractKeys).toEqual(['core', 'treasury', 'marketplace'])
     expect(legacyContractKeys).toEqual(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
   })
 
@@ -31,17 +31,19 @@ describe('indexer deployment surface proof', () => {
     expect(isContractId(`${'12'.repeat(32)}`)).toBe(false)
   })
 
-  it('passes when env and proof report bind only core and treasury contracts', async () => {
+  it('passes when env and proof report bind the complete production stack', async () => {
     const fixture = await writeSurfaceFixture()
     await expect(loadDeploymentSurface(fixture.envFile, fixture.proofReport)).resolves.toEqual({
       ok: true,
       contracts: {
         core: `0x${'11'.repeat(32)}`,
         treasury: `0x${'22'.repeat(32)}`,
+        marketplace: `0x${'33'.repeat(32)}`,
       },
       reportContracts: {
         core: `0x${'11'.repeat(32)}`,
         treasury: `0x${'22'.repeat(32)}`,
+        marketplace: `0x${'33'.repeat(32)}`,
       },
       message: 'deployment surface ready',
     })
@@ -68,8 +70,10 @@ describe('indexer deployment surface proof', () => {
 async function writeSurfaceFixture({
   envCore = `0x${'11'.repeat(32)}`,
   envTreasury = `0x${'22'.repeat(32)}`,
+  envMarketplace = `0x${'33'.repeat(32)}`,
   proofCore = `0x${'11'.repeat(32)}`,
   proofTreasury = `0x${'22'.repeat(32)}`,
+  proofMarketplace = `0x${'33'.repeat(32)}`,
   proofOk = true,
   legacySplitEnv = false,
   legacyProofKey = false,
@@ -82,6 +86,7 @@ async function writeSurfaceFixture({
   await writeFile(envFile, [
     `VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${envCore}`,
     `VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=${envTreasury}`,
+    `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${envMarketplace}`,
     legacySplitEnv ? `VITE_DUSK_DOMAINS_REGISTRY_CONTRACT_ID=0x${'44'.repeat(32)}` : '',
   ].filter(Boolean).join('\n'), 'utf8')
   await writeFile(proofReport, JSON.stringify({
@@ -89,6 +94,7 @@ async function writeSurfaceFixture({
     publicContracts: {
       core: proofCore,
       treasury: proofTreasury,
+      marketplace: proofMarketplace,
       ...(legacyProofKey ? { resolver: `0x${'55'.repeat(32)}` } : {}),
       ...(extraProofKey ? { extra: `0x${'66'.repeat(32)}` } : {}),
     },

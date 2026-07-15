@@ -21,6 +21,7 @@ import {
   routeParameters,
   sendJson,
 } from './http.mjs'
+import { emptyMarketplaceConfig, marketplaceOfferKey, marketplaceOrderIsEscrowed } from './projectors/marketplace.mjs'
 
 export function createLocalIndexerHandler(storeProvider, options = {}) {
   return (request, response) => {
@@ -146,6 +147,54 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
+    if (pathname === '/marketplace/config') {
+      reply(200, store.marketplaceConfig ?? emptyMarketplaceConfig())
+      return
+    }
+
+    if (pathname === '/marketplace/fixed-sales') {
+      reply(200, [...(store.marketplaceFixedSalesByNode?.values?.() ?? [])].map((sale) => (
+        marketplaceOrderForResponse(store, sale)
+      )))
+      return
+    }
+
+    if (pathname === '/marketplace/fixed-sale') {
+      reply(200, marketplaceOrderForResponse(store, store.marketplaceFixedSalesByNode?.get(routeParams.node) ?? null))
+      return
+    }
+
+    if (pathname === '/marketplace/auctions') {
+      reply(200, [...(store.marketplaceAuctionsByNode?.values?.() ?? [])].map((auction) => (
+        marketplaceOrderForResponse(store, auction)
+      )))
+      return
+    }
+
+    if (pathname === '/marketplace/auction') {
+      reply(200, marketplaceOrderForResponse(store, store.marketplaceAuctionsByNode?.get(routeParams.node) ?? null))
+      return
+    }
+
+    if (pathname === '/marketplace/offers') {
+      const offers = [...(store.marketplaceOffersByKey?.values?.() ?? [])].filter((offer) => (
+        (!routeParams.node || offer.node === routeParams.node)
+        && (!routeParams.buyerAuthority || offer.buyerAuthority === routeParams.buyerAuthority)
+      ))
+      reply(200, offers)
+      return
+    }
+
+    if (pathname === '/marketplace/offer') {
+      reply(200, store.marketplaceOffersByKey?.get(marketplaceOfferKey(routeParams.node, routeParams.buyerAuthority)) ?? null)
+      return
+    }
+
+    if (pathname === '/marketplace/refund') {
+      reply(200, store.marketplaceRefundsByAuthority?.get(routeParams.authority) ?? null)
+      return
+    }
+
     reply(404, { error: 'not_found' })
   } catch (error) {
     reply(500, {
@@ -158,4 +207,29 @@ async function handleRequest(storeProvider, request, response, options) {
 async function resolveStore(storeProvider) {
   if (typeof storeProvider === 'function') return storeProvider()
   return storeProvider
+}
+
+function marketplaceOrderForResponse(store, order) {
+  if (!order) return null
+  const node = routeOrderNode(order.node)
+  const marketplaceContractId = normalizedHex(order.marketplaceContractId)
+  return {
+    ...order,
+    node,
+    marketplaceContractId,
+    escrowed: marketplaceOrderIsEscrowed(store.namesByNode?.get(node), marketplaceContractId),
+  }
+}
+
+function routeOrderNode(value) {
+  return typeof value === 'string' ? (value.startsWith('0x') ? value.toLowerCase() : `0x${value.toLowerCase()}`) : ''
+}
+
+function normalizedHex(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  return `0x${stripHexPrefix(value)}`
+}
+
+function stripHexPrefix(value) {
+  return String(value).trim().toLowerCase().replace(/^0x/, '')
 }

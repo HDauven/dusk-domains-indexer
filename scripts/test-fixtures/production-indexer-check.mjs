@@ -27,6 +27,7 @@ export async function writeDurableFixture(options = {}) {
   const currentBlockHeight = options.currentBlockHeight ?? 12
   const coreContractId = `0x${'44'.repeat(32)}`
   const treasuryContractId = options.treasuryContractId ?? `0x${'55'.repeat(32)}`
+  const marketplaceContractId = `0x${'77'.repeat(32)}`
   const rows = [
     {
       event: {
@@ -64,6 +65,21 @@ export async function writeDurableFixture(options = {}) {
         observedAt: '2026-06-22T00:00:01.000Z',
       },
     },
+    {
+      event: {
+        type: 'marketplace_initialized',
+        coreContract: coreContractId,
+        treasuryContract: treasuryContractId,
+        operator: `0x${'66'.repeat(32)}`,
+      },
+      meta: {
+        txId: 'tx-marketplace',
+        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
+        contractKey: 'marketplace',
+        contractId: marketplaceContractId,
+        observedAt: '2026-06-22T00:00:02.000Z',
+      },
+    },
     ...(options.legacyRow ? [{
       event: {
         type: 'record_changed',
@@ -98,6 +114,7 @@ export async function writeDurableFixture(options = {}) {
   await writeFile(envFile, `
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${coreContractId}
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'55'.repeat(32)}
+VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${marketplaceContractId}
 VITE_DUSK_DOMAINS_CORE_DRIVER_URL=/contracts/dusk-domains-core.data-driver.wasm
 VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL=/contracts/dusk-domains-treasury.data-driver.wasm
 `, 'utf8')
@@ -106,6 +123,7 @@ VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL=/contracts/dusk-domains-treasury.data-driv
     publicContracts: {
       core: coreContractId,
       treasury: `0x${'55'.repeat(32)}`,
+      marketplace: marketplaceContractId,
     },
   }, null, 2), 'utf8')
   await writeFile(browserWriteProof, JSON.stringify({

@@ -27,7 +27,7 @@ Response fields:
 | `eventSchemaVersion` | Dusk Domains event schema version interpreted by the indexer. |
 | `readModelSchemaVersion` | Read-model response schema version. |
 | `package` | Indexer package name/version, source commit when configured, and pinned SDK dependency. |
-| `deployment` | Best-effort deployment binding derived from indexed event metadata: chain ID, core/treasury contract IDs, event counts, deployment start height and conflicts. |
+| `deployment` | Best-effort deployment binding derived from indexed event metadata: chain ID, core, treasury and marketplace contract IDs, event counts, deployment start height and conflicts. |
 | `sqlite` | Present in SQLite mode; includes WAL journal mode and schema migration version. |
 | `degradedReason` | Reason code and message when `ok=false`; omitted when the indexer is healthy. |
 | `warnings` | Non-fatal replay warnings, such as malformed skipped event-log rows. |
@@ -188,6 +188,41 @@ Response fields:
 | `recentActivity` | Recent referral accrual and claim rows, including amount, transaction ID, block height, and counterparty when indexed. |
 
 When referral rewards are implemented, this route is a read model over `referral_reward_accrued` and `referral_reward_claimed` events. Contract state remains canonical for claim authorization and payouts. If referral rewards are supported but the requested referrer has no rewards, return `supported: true` with zero balances and an empty activity list. When referral rewards are not implemented for a deployment, return `supported: false` with zero balances and an empty activity list. The frontend must not submit referral claim actions in that state.
+
+## Marketplace
+
+Deployments with the marketplace contract expose discovery read models through:
+
+```text
+GET /marketplace/config
+GET /marketplace/fixed-sales
+GET /marketplace/fixed-sale?node=0x...
+GET /marketplace/auctions
+GET /marketplace/auction?node=0x...
+GET /marketplace/offers?node=0x...&buyerAuthority=0x...
+GET /marketplace/offer?node=0x...&buyerAuthority=0x...
+GET /marketplace/refund?authority=0x...
+```
+
+Fixed-sale rows include the snapshotted price and fee, optional private buyer,
+expiry and escrow status. Auction rows include the reserve, duration, start
+deadline, first-bid start and end blocks, highest bid, bid count, snapshotted
+fee and escrow status. Offers are keyed by domain node and buyer authority.
+
+Outbid, canceled-offer and failed-settlement funds are aggregated by authority
+in `/marketplace/refund`. A successful `marketplace_refund_claimed` event clears
+that row. Filled, canceled, expired and settled orders leave current views while
+their events remain in the append-only journal and domain activity.
+
+These routes support browsing and filtering only. Clients must refresh the
+exact order from the marketplace contract before signing a value-bearing call.
+The marketplace contract remains canonical for order state, deposits, escrow,
+settlement and refund authorization.
+
+The current JSON read model exposes Lux amounts as exact JavaScript-safe
+integers. Event ingestion rejects values above `Number.MAX_SAFE_INTEGER`
+(about 9,007,199 DUSK) instead of rounding a contract `u64`. Supporting larger
+orders requires a versioned string-amount API and bigint-aware consumers.
 
 Direct node and endpoint routes fail fast on malformed route parameters before loading the backing snapshot or event-log store:
 

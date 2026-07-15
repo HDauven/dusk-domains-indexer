@@ -3,12 +3,16 @@ export {
   isControllerEvent,
   isFeeConfigEvent,
   isLifecycleEvent,
+  isMarketplaceEvent,
   isReferralEvent,
   isResolverEvent,
   isReverseEvent,
   isSubnameEvent,
   isTreasuryEvent,
 } from './projectors/event-types.mjs'
+export {
+  applyMarketplaceEvent,
+} from './projectors/marketplace.mjs'
 export {
   applyLifecycleEvent,
   clearNodeDerivedState,

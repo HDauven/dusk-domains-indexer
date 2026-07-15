@@ -49,8 +49,8 @@ export async function auditEventJournalDeploymentBinding({
 
   if (usesDerivedDeploymentStartHeight) {
     push('deployment_start_height_derived', resolvedDeploymentStartHeight !== null, resolvedDeploymentStartHeight !== null
-      ? `Deployment start height ${resolvedDeploymentStartHeight} was derived from the earliest core/treasury journal event.`
-      : 'Could not derive deployment start height because the event journal has no active core/treasury block metadata.')
+      ? `Deployment start height ${resolvedDeploymentStartHeight} was derived from the earliest active contract event.`
+      : 'Could not derive deployment start height because the event journal has no active contract block metadata.')
   }
 
   for (const [index, entry] of entries.entries()) {
@@ -65,7 +65,7 @@ export async function auditEventJournalDeploymentBinding({
   }
 
   push('event_journal_contract_keys', legacyRows.length === 0 && unknownRows.length === 0, legacyRows.length === 0 && unknownRows.length === 0
-    ? 'Event journal contains only active core/treasury contract keys.'
+    ? 'Event journal contains only active production contract keys.'
     : `Event journal has legacy or unknown contract keys: ${[...legacyRows.map((row) => `legacy row ${row}`), ...unknownRows].join(', ')}.`)
 
   for (const key of activeContractKeys) {

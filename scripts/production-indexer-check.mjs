@@ -44,6 +44,14 @@ const requiredRoutes = Object.freeze([
   '/treasury',
   '/referrals',
   '/fee-config',
+  '/marketplace/config',
+  '/marketplace/fixed-sales',
+  '/marketplace/fixed-sale',
+  '/marketplace/auctions',
+  '/marketplace/auction',
+  '/marketplace/offers',
+  '/marketplace/offer',
+  '/marketplace/refund',
 ])
 
 if (isCliEntry()) {
@@ -92,7 +100,7 @@ export async function checkProductionIndexer(options = {}) {
     try {
       deployment = await loadDeploymentSurface(args.envFile, args.proofReport)
       push('deployment_surface', deployment.ok, deployment.ok
-        ? 'Deployment surface is bound to core and treasury contract IDs.'
+        ? 'Deployment surface is bound to core, treasury and marketplace contract IDs.'
         : deployment.message)
     } catch (error) {
       push('deployment_surface', false, `Could not read deployment surface: ${error instanceof Error ? error.message : String(error)}`)
@@ -388,7 +396,7 @@ Options:
   --deployment-start-height <n>
                             Optional deployment start height used to reject pre-deployment events.
   --derive-deployment-start-height
-                            Derive deployment start height from the earliest active core/treasury event in the journal.
+                            Derive deployment start height from the earliest active contract event in the journal.
   --archive-snapshot-height <n>
                             Optional archive snapshot height. Must be <= deployment start height when both are set. With --require-archive-snapshot, defaults to the height recorded in ${defaultArchiveSnapshot}.
   --archive-snapshot <file> Optional retained archive node snapshot artifact to prove the replay source is preserved. With --require-archive-snapshot, defaults to ${defaultArchiveSnapshot}.

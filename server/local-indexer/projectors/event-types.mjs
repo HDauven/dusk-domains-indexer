@@ -2,6 +2,7 @@ import {
   isControllerEventType,
   isFeeConfigEventType,
   isLifecycleEventType,
+  isMarketplaceEventType,
   isReferralEventType,
   isResolverEventType,
   isReverseEventType,
@@ -39,4 +40,8 @@ export function isReferralEvent(type) {
 
 export function isFeeConfigEvent(type) {
   return isFeeConfigEventType(type)
+}
+
+export function isMarketplaceEvent(type) {
+  return isMarketplaceEventType(type)
 }

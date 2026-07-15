@@ -92,6 +92,7 @@ Useful commands:
 
 ```bash
 npm start
+npm run indexer:collect
 npm run production:check
 npm run health
 npm run backup

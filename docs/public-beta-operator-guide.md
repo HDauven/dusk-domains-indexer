@@ -87,15 +87,19 @@ npm run indexer:collect -- \
   --cursor-file /var/lib/dusk-domains/cursor.json
 ```
 
-Build checkpoint:
+Build the SQLite store and replay checkpoint, then run the production checks:
 
 ```text
-npm run indexer:checkpoint -- \
+npm run check:indexer-production -- \
   --event-log /var/lib/dusk-domains/events.jsonl \
   --cursor /var/lib/dusk-domains/cursor.json \
   --checkpoint /var/lib/dusk-domains/checkpoint.json \
+  --sqlite /var/lib/dusk-domains/indexer.sqlite \
   --env-file .env.production.local \
-  --proof-report /var/lib/dusk-domains/deployment-proof.json
+  --proof-report /var/lib/dusk-domains/deployment-proof.json \
+  --derive-deployment-start-height \
+  --require-sqlite \
+  --rebuild
 ```
 
 Serve API:

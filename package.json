@@ -22,6 +22,9 @@
   ],
   "scripts": {
     "start": "node server/local-indexer.mjs",
+    "indexer:local": "node server/local-indexer.mjs",
+    "indexer:collect": "node scripts/local-event-collector.mjs",
+    "check:indexer-production": "node scripts/production-indexer-check.mjs",
     "test": "vitest run",
     "check": "vitest run",
     "smoke": "node scripts/local-indexer-smoke.mjs",

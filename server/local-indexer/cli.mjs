@@ -1,5 +1,3 @@
-import { pathToFileURL } from 'node:url'
-
 export function parseArgs(argv, env = process.env) {
   const parsed = {
     help: false,
@@ -40,9 +38,6 @@ export function parseArgs(argv, env = process.env) {
   return parsed
 }
 
-export function isCliEntry(importMetaUrl, argv = process.argv) {
-  return argv[1] && importMetaUrl === pathToFileURL(argv[1]).href
-}
 
 function requiredValue(argv, index, label) {
   const value = argv[index]

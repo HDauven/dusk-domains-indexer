@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import {
   healthResponseForStore,
   loadSqliteStore,
@@ -19,7 +18,7 @@ const defaultFiles = Object.freeze([
   { key: 'browserWriteProof', path: 'target/browser-smoke-devnet-write/proof.json', required: false },
 ])
 
-if (isCliEntry()) {
+if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -304,8 +303,4 @@ Options:
   --require-sqlite                Verification fails unless the manifest includes the SQLite database.
   --verify-sqlite-boot            With --verify and --restore-dir, boot the restored SQLite DB and check schema.
   --help                          Show this message.`
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

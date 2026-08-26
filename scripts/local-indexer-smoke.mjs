@@ -4,7 +4,6 @@ import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { parseEnvFile } from './env-file.mjs'
 import { createSanitizedEventLogFixture } from './event-log-fixtures.mjs'
 import { fetchJson, normalizeHttpBaseUrl, urlJoin } from './http-json.mjs'
@@ -24,7 +23,7 @@ const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
 const defaultSqlite = 'target/dusk-domains-local-indexer.sqlite'
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
 
-if (isCliEntry()) {
+if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -407,8 +406,4 @@ function requiredValue(argv, index, label) {
   const value = argv[index]
   if (!value || value.startsWith('--')) throw new Error(`${label} requires a value`)
   return value
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

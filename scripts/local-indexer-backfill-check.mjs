@@ -3,7 +3,6 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadLocalIndexerStore } from '../server/local-indexer.mjs'
 
 const defaultEventLog = 'target/dusk-domains-local-indexer.events.jsonl'
@@ -11,7 +10,7 @@ const defaultSnapshot = 'target/dusk-domains-local-indexer.json'
 const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
 const defaultW3sperContractFile = 'node_modules/@dusk/w3sper/src/contract.js'
 
-if (isCliEntry()) {
+if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -235,8 +234,4 @@ function requiredValue(argv, index, label) {
   const value = argv[index]
   if (!value || value.startsWith('--')) throw new Error(`${label} requires a value`)
   return value
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

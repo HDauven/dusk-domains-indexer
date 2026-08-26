@@ -14,7 +14,7 @@ import { denoCollectorSource } from './local-event-collector/deno-source.mjs'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-if (isCliEntry()) {
+if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -97,8 +97,4 @@ function runStreaming(command, args, options) {
       resolve({ status })
     })
   })
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from 'node:url'
 import { probeIndexerHealth } from './indexer-health-probe.mjs'
 
 const defaultHealthUrl = process.env.DUSK_DOMAINS_INDEXER_HEALTH_URL
@@ -10,7 +9,7 @@ const defaultAlertWebhookUrl = process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_UR
   ?? process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL
   ?? ''
 
-if (isCliEntry()) {
+if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -229,8 +228,4 @@ Options:
   --iterations <n>            Number of monitor iterations. Default: 1.
   --json                      Print machine-readable output.
   --help                      Show this message.`
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

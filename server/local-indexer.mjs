@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { isCliEntry, parseArgs } from './local-indexer/cli.mjs'
+import { parseArgs } from './local-indexer/cli.mjs'
 import { serveLocalIndexer, usage } from './local-indexer/server.mjs'
 
 export { healthResponseForStore } from './local-indexer/health.mjs'
@@ -28,7 +28,7 @@ export {
   usage,
 } from './local-indexer/server.mjs'
 
-if (isCliEntry(import.meta.url)) {
+if (import.meta.main) {
   const args = parseArgs(process.argv.slice(2))
 
   try {

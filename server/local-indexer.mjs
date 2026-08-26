@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { isCliEntry, parseArgs } from './local-indexer/cli.mjs'
+import { parseArgs } from './local-indexer/cli.mjs'
 import { serveLocalIndexer, usage } from './local-indexer/server.mjs'
+import { isMain } from '../scripts/is-main.mjs'
 
 export { healthResponseForStore } from './local-indexer/health.mjs'
 export { dedupeEventLogEntries } from './local-indexer/event-log.mjs'
@@ -28,7 +29,7 @@ export {
   usage,
 } from './local-indexer/server.mjs'
 
-if (isCliEntry(import.meta.url)) {
+if (isMain(import.meta)) {
   const args = parseArgs(process.argv.slice(2))
 
   try {

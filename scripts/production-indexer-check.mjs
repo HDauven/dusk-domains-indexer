@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { isMain } from './is-main.mjs'
 import { verifyIndexerBackup } from './indexer-backup.mjs'
 import { loadDeploymentSurface } from './indexer-operator/deployment-surface.mjs'
 import { auditEventJournalDeploymentBinding } from './indexer-operator/event-journal-binding.mjs'
@@ -18,6 +18,7 @@ import {
   loadEventLogStore,
   writeIndexerCheckpointFile,
 } from '../server/local-indexer.mjs'
+import { LOCAL_INDEXER_ROUTE_LIST } from '../server/local-indexer/http.mjs'
 
 const defaultEventLog = 'target/dusk-domains-devnet-indexer.events.jsonl'
 const defaultCursor = 'target/dusk-domains-devnet-indexer.cursor.json'
@@ -28,33 +29,9 @@ const defaultProofReport = 'target/dusk-domains-devnet-proof.json'
 const defaultArchiveSnapshot = publicBetaEvidenceDefaults.archiveSnapshot
 const defaultBackupManifest = publicBetaEvidenceDefaults.backupManifest
 const defaultBackupRestoreDir = publicBetaEvidenceDefaults.backupRestoreDir
-const requiredRoutes = Object.freeze([
-  '/health',
-  '/search',
-  '/resolve',
-  '/name',
-  '/records',
-  '/record',
-  '/record-history',
-  '/names',
-  '/activity',
-  '/reverse',
-  '/subnames',
-  '/subname',
-  '/treasury',
-  '/referrals',
-  '/fee-config',
-  '/marketplace/config',
-  '/marketplace/fixed-sales',
-  '/marketplace/fixed-sale',
-  '/marketplace/auctions',
-  '/marketplace/auction',
-  '/marketplace/offers',
-  '/marketplace/offer',
-  '/marketplace/refund',
-])
+const requiredRoutes = LOCAL_INDEXER_ROUTE_LIST.filter((route) => route !== '/commitment')
 
-if (isCliEntry()) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -414,8 +391,4 @@ Options:
   --rebuild                Rebuild checkpoint from the event journal before checking.
   --json                   Print machine-readable output.
   --help                   Show this message.`
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

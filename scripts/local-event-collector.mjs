@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isMain } from './is-main.mjs'
 import {
   loadCollectorConfig,
   parseArgs,
@@ -14,7 +15,7 @@ import { denoCollectorSource } from './local-event-collector/deno-source.mjs'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-if (isCliEntry()) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -97,8 +98,4 @@ function runStreaming(command, args, options) {
       resolve({ status })
     })
   })
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

@@ -3,35 +3,12 @@
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { LOCAL_INDEXER_ROUTE_LIST } from '../server/local-indexer/http.mjs'
+import { isMain } from './is-main.mjs'
 
-const requiredRoutes = Object.freeze([
-  '/health',
-  '/search',
-  '/resolve',
-  '/name',
-  '/records',
-  '/record',
-  '/record-history',
-  '/names',
-  '/activity',
-  '/reverse',
-  '/subnames',
-  '/subname',
-  '/treasury',
-  '/referrals',
-  '/fee-config',
-  '/marketplace/config',
-  '/marketplace/fixed-sales',
-  '/marketplace/fixed-sale',
-  '/marketplace/auctions',
-  '/marketplace/auction',
-  '/marketplace/offers',
-  '/marketplace/offer',
-  '/marketplace/refund',
-])
+const requiredRoutes = LOCAL_INDEXER_ROUTE_LIST.filter((route) => route !== '/commitment')
 
-if (isCliEntry()) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -268,8 +245,4 @@ Options:
                           Optional retained archive-node snapshot artifact path to verify locally.
   --out <file>            Write the JSON proof artifact to a file.
   --help                  Show this message.`
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

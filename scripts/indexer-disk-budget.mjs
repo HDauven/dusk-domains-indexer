@@ -3,14 +3,14 @@
 import { existsSync, statfsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { isMain } from './is-main.mjs'
 
 const defaultLiveDir = '/var/lib/dusk-domains'
 const defaultBackupDir = '/var/backups/dusk-domains'
 const defaultWarnPercent = 70
 const defaultIncidentPercent = 85
 
-if (isCliEntry()) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {
@@ -216,8 +216,4 @@ Options:
   --out <file>               Write JSON evidence to a file.
   --json                     Print machine-readable output.
   --help                     Show this message.`
-}
-
-function isCliEntry() {
-  return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 }

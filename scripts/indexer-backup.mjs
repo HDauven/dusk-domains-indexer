@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
+import { isMain } from './is-main.mjs'
 import {
   healthResponseForStore,
   loadSqliteStore,
@@ -18,7 +19,7 @@ const defaultFiles = Object.freeze([
   { key: 'browserWriteProof', path: 'target/browser-smoke-devnet-write/proof.json', required: false },
 ])
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

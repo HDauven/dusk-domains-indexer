@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
+import { isMain } from './is-main.mjs'
 import { parseEnvFile } from './env-file.mjs'
 import { createSanitizedEventLogFixture } from './event-log-fixtures.mjs'
 import { fetchJson, normalizeHttpBaseUrl, urlJoin } from './http-json.mjs'
@@ -23,7 +24,7 @@ const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
 const defaultSqlite = 'target/dusk-domains-local-indexer.sqlite'
 const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

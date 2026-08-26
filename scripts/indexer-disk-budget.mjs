@@ -3,13 +3,14 @@
 import { existsSync, statfsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { isMain } from './is-main.mjs'
 
 const defaultLiveDir = '/var/lib/dusk-domains'
 const defaultBackupDir = '/var/backups/dusk-domains'
 const defaultWarnPercent = 70
 const defaultIncidentPercent = 85
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

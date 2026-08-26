@@ -2,6 +2,7 @@
 
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { isMain } from './is-main.mjs'
 import { verifyIndexerBackup } from './indexer-backup.mjs'
 import { loadDeploymentSurface } from './indexer-operator/deployment-surface.mjs'
 import { auditEventJournalDeploymentBinding } from './indexer-operator/event-journal-binding.mjs'
@@ -30,7 +31,7 @@ const defaultBackupManifest = publicBetaEvidenceDefaults.backupManifest
 const defaultBackupRestoreDir = publicBetaEvidenceDefaults.backupRestoreDir
 const requiredRoutes = LOCAL_INDEXER_ROUTE_LIST.filter((route) => route !== '/commitment')
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { probeIndexerHealth } from './indexer-health-probe.mjs'
+import { isMain } from './is-main.mjs'
 
 const defaultHealthUrl = process.env.DUSK_DOMAINS_INDEXER_HEALTH_URL
   ?? process.env.DUSK_DOMAINS_INDEXER_HEALTH_URL
@@ -9,7 +10,7 @@ const defaultAlertWebhookUrl = process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_UR
   ?? process.env.DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL
   ?? ''
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

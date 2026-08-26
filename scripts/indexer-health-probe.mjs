@@ -4,10 +4,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { LOCAL_INDEXER_ROUTE_LIST } from '../server/local-indexer/http.mjs'
+import { isMain } from './is-main.mjs'
 
 const requiredRoutes = LOCAL_INDEXER_ROUTE_LIST.filter((route) => route !== '/commitment')
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.help) {

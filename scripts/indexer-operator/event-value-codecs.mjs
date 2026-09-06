@@ -84,14 +84,15 @@ export function bytesToBase58(value) {
   return digits.reverse().map((digit) => alphabet[digit]).join('')
 }
 
-export function lifecycleValueToIso(value, observedAt, targetBlockSeconds) {
-  if (value === null || value === undefined) return null
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) return null
-  if (numeric > 100_000_000) return unixSecondsToIso(numeric)
-  const observedMs = Date.parse(observedAt)
-  if (!Number.isFinite(observedMs)) return null
-  return new Date(observedMs + numeric * targetBlockSeconds * 1_000).toISOString()
+export function lifecycleValueToIso(value, observedAt, targetBlockSeconds, observedBlockHeight = null) {
+  if (value == null || observedBlockHeight == null) return null
+  const height = Number(value)
+  const anchor = Number(observedBlockHeight)
+  if (!Number.isSafeInteger(height) || height <= 0 || !Number.isSafeInteger(anchor) || anchor < 0) return null
+  if (!Number.isFinite(targetBlockSeconds) || targetBlockSeconds <= 0) return null
+  // An estimate anchored to observation time, never an absolute height used as a duration.
+  const date = new Date(Date.parse(observedAt) + (height - anchor) * targetBlockSeconds * 1_000)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
 
 export function numberOrNull(value) {
@@ -108,11 +109,4 @@ export function numericBlockHeight(value) {
 export function withHexPrefix(value) {
   if (!value) return null
   return String(value).startsWith('0x') ? String(value) : `0x${String(value)}`
-}
-
-function unixSecondsToIso(value) {
-  if (value === null || value === undefined) return null
-  const seconds = Number(value)
-  if (!Number.isFinite(seconds) || seconds <= 0) return null
-  return new Date(seconds * 1000).toISOString()
 }

@@ -104,42 +104,16 @@ function reduceLifecycleEvent(event, current, canonicalName) {
     lastEventType: event.type,
   }
 
-  if (event.type === 'name_registered') {
+  if (event.type === 'name_registered' || event.type === 'name_renewed' || event.type === 'name_expired') {
+    const retained = event.type === 'name_registered' ? null : base
     return {
       ...base,
-      canonicalName,
-      owner: event.owner,
+      ...(event.type === 'name_renewed' ? {} : { canonicalName, owner: event.owner }),
       expiresAt: event.expiresAt,
       graceEndsAt: event.graceEndsAt,
-      expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight),
-      graceEndsAtBlockHeight: numberOrNull(event.graceEndsAtBlockHeight),
-      status: 'active',
-      lastEventType: event.type,
-    }
-  }
-
-  if (event.type === 'name_renewed') {
-    return {
-      ...base,
-      expiresAt: event.expiresAt,
-      graceEndsAt: event.graceEndsAt,
-      expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight ?? base.expiresAtBlockHeight),
-      graceEndsAtBlockHeight: numberOrNull(event.graceEndsAtBlockHeight ?? base.graceEndsAtBlockHeight),
-      status: 'active',
-      lastEventType: event.type,
-    }
-  }
-
-  if (event.type === 'name_expired') {
-    return {
-      ...base,
-      canonicalName,
-      owner: event.owner,
-      expiresAt: event.expiresAt,
-      graceEndsAt: event.graceEndsAt,
-      expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight ?? base.expiresAtBlockHeight),
-      graceEndsAtBlockHeight: numberOrNull(event.graceEndsAtBlockHeight ?? base.graceEndsAtBlockHeight),
-      status: 'expired',
+      expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight ?? retained?.expiresAtBlockHeight),
+      graceEndsAtBlockHeight: numberOrNull(event.graceEndsAtBlockHeight ?? retained?.graceEndsAtBlockHeight),
+      status: event.type === 'name_expired' ? 'expired' : 'active',
       lastEventType: event.type,
     }
   }

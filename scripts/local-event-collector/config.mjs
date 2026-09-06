@@ -2,6 +2,10 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseEnvFile } from '../env-file.mjs'
+
+export { parseEnvFile } from '../env-file.mjs'
+export { summarizeEventLogText } from './cursor-summary.mjs'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -113,41 +117,6 @@ export async function loadCollectorConfig(options = {}) {
   }
 }
 
-export function parseEnvFile(text) {
-  return Object.fromEntries(
-    text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'))
-      .map((line) => {
-        const [key, ...rest] = line.split('=')
-        return [key.trim(), unquote(rest.join('=').trim())]
-      }),
-  )
-}
-
-export function summarizeEventLogText(text) {
-  const entries = parseEventLogEntries(text)
-  let lastEntry = null
-
-  for (const entry of entries) {
-    if (entry?.event?.type) lastEntry = entry
-  }
-
-  const meta = lastEntry?.meta ?? {}
-  const event = lastEntry?.event ?? {}
-  return {
-    eventCount: entries.length,
-    lastEventAt: meta.observedAt ?? event.updatedAt ?? event.createdAt ?? event.observedAt ?? null,
-    lastContract: meta.contractKey ?? null,
-    lastEventName: event.type ?? null,
-    lastTxId: meta.txId ?? null,
-    lastBlockHeight: meta.blockHeight ?? null,
-    currentBlockHeight: meta.blockHeight ?? null,
-    scannedBlockHeight: meta.blockHeight ?? null,
-  }
-}
-
 export function parseArgs(argv) {
   const parsed = {
     help: false,
@@ -204,33 +173,6 @@ When appending to an existing event log, the collector resumes cursor event coun
 `
 }
 
-function parseEventLogEntries(text) {
-  const trimmed = String(text ?? '').trim()
-  if (!trimmed) return []
-  if (trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      return Array.isArray(parsed) ? parsed.filter(isEventLogEntry) : []
-    } catch {
-      return []
-    }
-  }
-  return trimmed
-    .split(/\r?\n/)
-    .map((line) => {
-      try {
-        return JSON.parse(line)
-      } catch {
-        return null
-      }
-    })
-    .filter(isEventLogEntry)
-}
-
-function isEventLogEntry(value) {
-  return Boolean(value?.event?.type)
-}
-
 function normalizeContractId(value) {
   if (!value) return ''
   return String(value).trim().toLowerCase().replace(/^0x/, '')
@@ -238,16 +180,6 @@ function normalizeContractId(value) {
 
 function isContractId(value) {
   return /^[0-9a-f]{64}$/.test(value)
-}
-
-function unquote(value) {
-  if (
-    (value.startsWith('"') && value.endsWith('"'))
-    || (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1)
-  }
-  return value
 }
 
 function requiredValue(argv, index, label) {

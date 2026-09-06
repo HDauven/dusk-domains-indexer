@@ -3,7 +3,9 @@ const blockHeightPollMs = 5_000
 
 export function denoCollectorSource(options = {}) {
   const decoderUrl = options.decoderUrl ?? './event-decoder.mjs'
+  const cursorSummaryUrl = new URL('./cursor-summary.mjs', import.meta.url).href
   return `import { normalizeObservedEvent } from ${JSON.stringify(decoderUrl)};
+import { summarizeEventLogText } from ${JSON.stringify(cursorSummaryUrl)};
 import {
   Contract,
   Network,
@@ -193,71 +195,9 @@ async function readExistingEventLogCursor(path) {
   try {
     return summarizeEventLogText(await Deno.readTextFile(path));
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return emptyCursor();
+    if (error instanceof Deno.errors.NotFound) return summarizeEventLogText("");
     throw error;
   }
-}
-
-function summarizeEventLogText(text) {
-  const entries = parseEventLogEntries(text);
-  let lastEntry = null;
-
-  for (const entry of entries) {
-    if (entry?.event?.type) lastEntry = entry;
-  }
-
-  const meta = lastEntry?.meta ?? {};
-  const event = lastEntry?.event ?? {};
-  return {
-    eventCount: entries.length,
-    lastEventAt: meta.observedAt ?? event.updatedAt ?? event.createdAt ?? event.observedAt ?? null,
-    lastContract: meta.contractKey ?? null,
-    lastEventName: event.type ?? null,
-    lastTxId: meta.txId ?? null,
-    lastBlockHeight: meta.blockHeight ?? null,
-    currentBlockHeight: meta.blockHeight ?? null,
-    scannedBlockHeight: meta.blockHeight ?? null,
-  };
-}
-
-function parseEventLogEntries(text) {
-  const trimmed = String(text ?? "").trim();
-  if (!trimmed) return [];
-  if (trimmed.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      return Array.isArray(parsed) ? parsed.filter(isEventLogEntry) : [];
-    } catch {
-      return [];
-    }
-  }
-  return trimmed
-    .split(/\\r?\\n/)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(isEventLogEntry);
-}
-
-function isEventLogEntry(value) {
-  return Boolean(value?.event?.type);
-}
-
-function emptyCursor() {
-  return {
-    eventCount: 0,
-    lastEventAt: null,
-    lastContract: null,
-    lastEventName: null,
-    lastTxId: null,
-    lastBlockHeight: null,
-    currentBlockHeight: null,
-    scannedBlockHeight: null,
-  };
 }
 
 function parseArgs(argv) {

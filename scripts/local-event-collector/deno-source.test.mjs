@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { denoCollectorSource } from './deno-source.mjs'
+import { summarizeEventLogText } from './config.mjs'
 
 describe('local event collector Deno source', () => {
+  it('imports the same cursor summarizer through an absolute URL from temporary scripts', async () => {
+    const source = denoCollectorSource()
+    const [, moduleUrl] = source.match(/import \{ summarizeEventLogText \} from ("[^"]+");/)
+    expect(JSON.parse(moduleUrl)).toMatch(/^file:/)
+    const cursor = await import(JSON.parse(moduleUrl))
+    expect(cursor.summarizeEventLogText).toBe(summarizeEventLogText)
+    expect(source).not.toContain('function summarizeEventLogText(')
+    expect(source).toContain('if (error instanceof Deno.errors.NotFound) return summarizeEventLogText("");')
+    expect(cursor.summarizeEventLogText('')).toEqual({
+      eventCount: 0,
+      lastEventAt: null,
+      lastContract: null,
+      lastEventName: null,
+      lastTxId: null,
+      lastBlockHeight: null,
+      currentBlockHeight: null,
+      scannedBlockHeight: null,
+    })
+  })
+
   it('embeds runtime constants used by lifecycle event normalization', () => {
     const source = denoCollectorSource()
 

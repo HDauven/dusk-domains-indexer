@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { loadEventLogStore } from './local-indexer.mjs'
+import { replayEventLog } from './local-indexer/event-log-store.mjs'
 import {
   createExpiredRoutingEventLogFixture,
   createLifecycleCleanupEventLogFixture,
@@ -11,6 +12,27 @@ import {
 } from './local-indexer-test-helpers.mjs'
 
 describe('local indexer event-log lifecycle cleanup', () => {
+  it('normalizes lifecycle heights while distinguishing registration from renewal and expiry', () => {
+    const event = {
+      node: 'AA'.repeat(32), label: 'aurora', actor: 'owner', owner: 'owner',
+      expiresAt: '2040-01-01T00:00:00Z', graceEndsAt: '2040-02-01T00:00:00Z',
+      observedAt: '2040-01-02T00:00:00Z',
+    }
+    for (const type of ['name_registered', 'name_renewed', 'name_expired']) {
+      const warnings = []
+      const store = replayEventLog([
+        { event: { ...event, type: 'name_registered', expiresAtBlockHeight: '100', graceEndsAtBlockHeight: '200' } },
+        { event: { ...event, type } },
+      ], warnings, '2030-01-01T00:00:00Z')
+      expect(warnings).toEqual([])
+      expect(store.namesByNode.get(`0x${event.node.toLowerCase()}`)).toMatchObject({
+        expiresAtBlockHeight: type === 'name_registered' ? null : 100,
+        graceEndsAtBlockHeight: type === 'name_registered' ? null : 200,
+        status: type === 'name_expired' ? 'expired' : 'active',
+      })
+    }
+  })
+
   it('marks released event-log names available while preserving lifecycle history', async () => {
     const node = `0x${'aa'.repeat(32)}`
     const owner = '0xowner'

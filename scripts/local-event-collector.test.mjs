@@ -59,10 +59,14 @@ describe('local event collector config', () => {
       VITE_DUSK_DOMAINS_NODE_URL="http://127.0.0.1:18180/"
       VITE_DUSK_DOMAINS_CORE_CONTRACT_ID='0x${'77'.repeat(32)}'
       VALUE_WITH_EQUALS=a=b=c
+      export INLINE_COMMENT=value # ignored
+      QUOTED_HASH="value#kept"
     `)).toEqual({
       VITE_DUSK_DOMAINS_NODE_URL: 'http://127.0.0.1:18180/',
       VITE_DUSK_DOMAINS_CORE_CONTRACT_ID: `0x${'77'.repeat(32)}`,
       VALUE_WITH_EQUALS: 'a=b=c',
+      INLINE_COMMENT: 'value',
+      QUOTED_HASH: 'value#kept',
     })
   })
 

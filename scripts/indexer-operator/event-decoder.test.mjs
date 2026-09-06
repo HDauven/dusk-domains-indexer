@@ -53,6 +53,7 @@ describe('Dusk Domains indexer event decoder', () => {
       eventName: 'name_registered',
       observedAt,
       targetBlockSeconds: 10,
+      observedBlockHeight: 2,
       event: {
         node: bytes(0x11),
         label: 'aurora',
@@ -71,8 +72,8 @@ describe('Dusk Domains indexer event decoder', () => {
         label: 'aurora',
         actor: hex(0x22),
         owner: hex(0x33),
-        expiresAt: '2026-06-27T12:00:50.000Z',
-        graceEndsAt: '2026-06-27T12:01:20.000Z',
+        expiresAt: '2026-06-27T12:00:30.000Z',
+        graceEndsAt: '2026-06-27T12:01:00.000Z',
         expiresAtBlockHeight: 5,
         graceEndsAtBlockHeight: 8,
         feeLux: 10_000_000_000,
@@ -80,6 +81,8 @@ describe('Dusk Domains indexer event decoder', () => {
       meta: {
         txId: null,
         blockHeight: null,
+        observedBlockHeight: 2,
+        timeSource: 'observation',
         source: 'w3sper-live-subscription',
         observedAt,
         contractKey: 'core',
@@ -101,6 +104,25 @@ describe('Dusk Domains indexer event decoder', () => {
       expect(normalized?.meta?.contractKey, eventName).toBe(targetContract.key)
       expect(normalized?.meta?.contractId, eventName).toMatch(/^0x[0-9a-f]{64}$/u)
     }
+  })
+
+  it('keeps polled height separate and uses event heights only when present', () => {
+    const bid = normalizeObservedEvent({
+      contract: marketplaceContract, eventName: 'domain_bid_placed', observedAt,
+      observedBlockHeight: 95, event: { node: bytes(1), placed_at: 100 },
+    })
+    expect(bid.meta).toMatchObject({ blockHeight: 100, observedBlockHeight: 95, timeSource: 'observation' })
+    const record = normalizeObservedEvent({
+      contract, eventName: 'record_changed', observedAt,
+      observedBlockHeight: 95, event: { node: bytes(1), record: { updated_at: 100 } },
+    })
+    expect(record.meta.blockHeight).toBe(100)
+    expect(record.event.record.updatedAt).toBe(observedAt)
+    const cleared = normalizeObservedEvent({
+      contract, eventName: 'record_cleared', observedAt,
+      observedBlockHeight: 95, event: { node: bytes(1), key: 'text.description' },
+    })
+    expect(cleared.meta.blockHeight).toBeNull()
   })
 
   it('fails closed for unsupported event names', () => {

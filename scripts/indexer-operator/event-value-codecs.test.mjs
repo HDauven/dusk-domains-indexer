@@ -80,8 +80,11 @@ describe('event value codecs', () => {
   })
 
   it('normalizes lifecycle and block height values', () => {
-    expect(lifecycleValueToIso(5, '2026-06-27T12:00:00.000Z', 10)).toBe('2026-06-27T12:00:50.000Z')
-    expect(lifecycleValueToIso(1_789_999_999, '2026-06-27T12:00:00.000Z', 10)).toBe('2026-09-21T14:13:19.000Z')
+    expect(lifecycleValueToIso(105, '2026-06-27T12:00:00.000Z', 10, 100)).toBe('2026-06-27T12:00:50.000Z')
+    expect(lifecycleValueToIso(1_789_999_999, '2026-06-27T12:00:00.000Z', 10, 1_789_999_999)).toBe('2026-06-27T12:00:00.000Z')
+    expect(lifecycleValueToIso(95, '2026-06-27T12:00:00.000Z', 10, 100)).toBe('2026-06-27T11:59:10.000Z')
+    expect(lifecycleValueToIso(105, '2026-06-27T12:00:00.000Z', 10)).toBeNull()
+    expect(lifecycleValueToIso(Number.MAX_SAFE_INTEGER, '2026-06-27T12:00:00.000Z', 10, 0)).toBeNull()
     expect(lifecycleValueToIso(0, '2026-06-27T12:00:00.000Z', 10)).toBeNull()
     expect(lifecycleValueToIso(5, 'not-a-date', 10)).toBeNull()
     expect(numberOrNull('7')).toBe(7)

@@ -89,7 +89,7 @@ if (args.durationMs > 0) {
 
 function enqueueEvent(contract, eventName, event) {
   const observedAt = new Date().toISOString();
-  const normalized = normalizeObservedEvent({ contract, eventName, event, observedAt, targetBlockSeconds });
+  const normalized = normalizeObservedEvent({ contract, eventName, event, observedAt, targetBlockSeconds, observedBlockHeight: currentBlockHeight });
 
   if (!normalized) {
     console.error(JSON.stringify({
@@ -100,20 +100,17 @@ function enqueueEvent(contract, eventName, event) {
     }));
     return;
   }
-  if ((normalized.meta?.blockHeight === null || normalized.meta?.blockHeight === undefined) && currentBlockHeight !== null && currentBlockHeight !== undefined) {
-    normalized.meta.blockHeight = currentBlockHeight;
-  }
-
   writeChain = writeChain
     .then(async () => {
       eventCount += 1;
+      normalized.meta.eventId = "log:" + eventCount;
       lastEventAt = normalized.meta?.observedAt ?? observedAt;
       lastContract = normalized.meta?.contractKey ?? contract.key;
       lastEventName = normalized.event?.type ?? eventName;
       lastTxId = normalized.meta?.txId ?? null;
       lastBlockHeight = normalized.meta?.blockHeight ?? null;
       if (normalized.meta?.blockHeight !== null && normalized.meta?.blockHeight !== undefined) {
-        currentBlockHeight = normalized.meta.blockHeight;
+        currentBlockHeight = Math.max(currentBlockHeight ?? 0, normalized.meta.blockHeight);
       }
       await Deno.writeTextFile(args.eventLog, JSON.stringify(normalized) + "\\n", { append: true });
       await writeCursor({

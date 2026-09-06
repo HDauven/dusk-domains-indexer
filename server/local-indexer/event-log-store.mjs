@@ -17,6 +17,8 @@ import {
 } from './economics.mjs'
 import {
   dedupeEventLogEntries,
+  confirmedEventBlockHeight,
+  eventTimestamp,
   parseEventLog,
 } from './event-log.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
@@ -108,14 +110,16 @@ export function replayEventLog(events, warnings, now) {
   for (let index = 0; index < events.length; index += 1) {
     const entry = events[index]
     const event = entry?.event ?? entry
-    const meta = entry?.meta ?? {}
+    const meta = { ...entry?.meta, eventId: entry?.meta?.eventId ?? `replay:${index}` }
+    const timestamp = eventTimestamp(event, meta)
     if (!event?.type) continue
 
     try {
       assertSafeNumericTree(event, 'event')
       assertSafeNumericTree(meta, 'event metadata')
+      meta.blockHeight = confirmedEventBlockHeight(event, meta)
       if (isLifecycleEvent(event.type)) {
-        applyLifecycleEvent({ namesByNode, activityByNode }, event, meta, now)
+        applyLifecycleEvent({ namesByNode, activityByNode }, event, meta, timestamp)
         if (event.type === 'name_released') {
           clearNodeDerivedState({
             node: normalizeNode(event.node),
@@ -137,7 +141,7 @@ export function replayEventLog(events, warnings, now) {
           recordHistoryByNodeKey,
           activityByNode,
           controllersByNode,
-        }, event, meta, now)
+        }, event, meta, timestamp)
       } else if (isControllerEvent(event.type)) {
         applyControllerEvent({ commitmentsById }, event, meta)
       } else if (isReverseEvent(event.type)) {
@@ -164,7 +168,7 @@ export function replayEventLog(events, warnings, now) {
           marketplaceRefundsByAuthority,
           activityByNode,
         }
-        applyMarketplaceEvent(marketplaceStore, event, meta, now)
+        applyMarketplaceEvent(marketplaceStore, event, meta, timestamp)
         marketplaceConfig = marketplaceStore.marketplaceConfig
       }
     } catch (error) {

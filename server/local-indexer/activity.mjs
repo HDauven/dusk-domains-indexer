@@ -6,14 +6,14 @@ export function activityEntry(input) {
       input.eventType,
       input.node,
       input.actor,
-      input.meta?.txId ?? input.timestamp,
+      input.meta?.eventId ?? input.meta?.txId ?? input.timestamp,
     ].filter(Boolean).join(':'),
     eventType: input.eventType,
     node: input.node,
     name: input.name,
     actor: input.actor,
     target: input.target ?? null,
-    timestamp: input.timestamp,
+    timestamp: input.meta?.observedAt ?? input.timestamp ?? '',
     blockHeight: input.meta?.blockHeight ?? null,
     ...(input.meta?.txId ? { txId: input.meta.txId } : {}),
   }
@@ -40,7 +40,6 @@ export function lifecycleActivityTarget(event) {
 }
 
 export function lifecycleTimestamp(event) {
-  if (event.type === 'name_renewed') return event.expiresAt
   if (event.type === 'name_expired') return event.observedAt
   if (event.type === 'name_released') return event.releasedAt
   return undefined

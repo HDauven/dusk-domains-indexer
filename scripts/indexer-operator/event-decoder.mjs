@@ -5,7 +5,7 @@ import {
   endpointKindToRecordKey,
   enumValue,
   feeConfigFromEvent,
-  lifecycleValueToIso,
+  lifecycleValueToIso as blockHeightToIso,
   numberOrNull,
   numericBlockHeight,
   principalFromEvent,
@@ -20,12 +20,22 @@ export function normalizeObservedEvent({
   eventName,
   event,
   observedAt,
+  observedBlockHeight = null,
   targetBlockSeconds = defaultTargetBlockSeconds,
 }) {
   assertSafeEventNumbers(event)
+  const eventHeight = numericBlockHeight([
+    'created_at', 'updated_at', 'opened_at', 'closed_at', 'filled_at',
+    'placed_at', 'cancelled_at', 'settled_at', 'accepted_at', 'claimed_at',
+    'observed_at', 'released_at', 'delegated_at', 'revoked_at',
+  ].map(key => event[key]).find(value => value != null) ?? event.record?.updated_at ?? event.config?.updated_at)
+  const anchor = eventHeight ?? numericBlockHeight(observedBlockHeight)
+  const lifecycleValueToIso = (value, time, seconds) => blockHeightToIso(value, time, seconds, anchor)
   const meta = {
     txId: null,
-    blockHeight: null,
+    blockHeight: eventHeight,
+    observedBlockHeight: numericBlockHeight(observedBlockHeight),
+    timeSource: 'observation',
     source: 'w3sper-live-subscription',
     observedAt,
     contractKey: contract.key,

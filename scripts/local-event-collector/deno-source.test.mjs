@@ -29,7 +29,7 @@ describe('local event collector Deno source', () => {
     expect(source).toContain('import { normalizeObservedEvent } from "./event-decoder.mjs";')
     expect(source).toContain('const targetBlockSeconds = 10;')
     expect(source).toContain('const blockHeightPollMs = 5000;')
-    expect(source).toContain('normalizeObservedEvent({ contract, eventName, event, observedAt, targetBlockSeconds })')
+    expect(source).toContain('normalizeObservedEvent({ contract, eventName, event, observedAt, targetBlockSeconds, observedBlockHeight: currentBlockHeight })')
     expect(source).toContain('scannedBlockHeight: currentBlockHeight')
     expect(source).toContain('}, blockHeightPollMs);')
   })
@@ -40,10 +40,11 @@ describe('local event collector Deno source', () => {
     })).toContain('import { normalizeObservedEvent } from "file:///repo/scripts/indexer-operator/event-decoder.mjs";')
   })
 
-  it('polls block height before subscriptions can append events and stamps fallback heights', () => {
+  it('polls before subscribing without presenting estimates as event heights', () => {
     const source = denoCollectorSource()
 
     expect(source.indexOf('await refreshBlockHeight();')).toBeLessThan(source.indexOf('for (const contract of contracts)'))
-    expect(source).toContain('normalized.meta.blockHeight = currentBlockHeight;')
+    expect(source).not.toContain('normalized.meta.blockHeight = currentBlockHeight;')
+    expect(source).toContain('normalized.meta.eventId = "log:" + eventCount;')
   })
 })

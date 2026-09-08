@@ -1,12 +1,11 @@
 import { readFile } from 'node:fs/promises'
-
-const preferredEnvPrefix = 'VITE_DUSK_DOMAINS'
+import { envValue, parseEnvFile } from '../env-file.mjs'
 
 export const activeContractKeys = Object.freeze(['core', 'treasury', 'marketplace'])
 export const legacyContractKeys = Object.freeze(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
 
 export async function loadDeploymentSurface(envFile, proofReport) {
-  const env = parseEnv(await readFile(envFile, 'utf8'))
+  const env = parseEnvFile(await readFile(envFile, 'utf8'))
   const report = JSON.parse(await readFile(proofReport, 'utf8'))
   const envContracts = {
     core: normalizeContractId(envValue(env, 'CORE_CONTRACT_ID')),
@@ -45,21 +44,6 @@ export function normalizeContractId(value) {
 
 export function isContractId(value) {
   return /^0x[0-9a-f]{64}$/u.test(String(value ?? ''))
-}
-
-function parseEnv(text) {
-  return Object.fromEntries(String(text ?? '')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'))
-    .map((line) => {
-      const [key, ...rest] = line.split('=')
-      return [key.trim(), rest.join('=').trim().replace(/^['"]|['"]$/g, '')]
-    }))
-}
-
-function envValue(env, suffix) {
-  return env[`${preferredEnvPrefix}_${suffix}`]
 }
 
 function normalizeContractMap(value) {

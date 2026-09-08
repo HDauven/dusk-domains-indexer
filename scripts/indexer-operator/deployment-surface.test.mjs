@@ -49,6 +49,15 @@ describe('indexer deployment surface proof', () => {
     })
   })
 
+  it('uses the same quoted values and inline comments as collector env files', async () => {
+    const fixture = await writeSurfaceFixture({
+      envCore: `"0x${'11'.repeat(32)}" # core`,
+      envTreasury: `'0x${'22'.repeat(32)}' # treasury`,
+      envMarketplace: `0x${'33'.repeat(32)} # marketplace`,
+    })
+    await expect(loadDeploymentSurface(fixture.envFile, fixture.proofReport)).resolves.toMatchObject({ ok: true })
+  })
+
   it('rejects mismatches, legacy split-contract env keys, and stale proof report keys', async () => {
     const fixture = await writeSurfaceFixture({
       envTreasury: `0x${'33'.repeat(32)}`,

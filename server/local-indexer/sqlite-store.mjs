@@ -21,7 +21,6 @@ import {
 
 const eventsTable = 'events'
 const kvTable = 'indexer_kv'
-let DatabaseSyncConstructor = null
 
 export async function loadSqliteStore(dbFile, options = {}) {
   if (options.eventLogFile) {
@@ -175,7 +174,7 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
 
 async function openIndexerDatabase(dbFile) {
   await mkdir(dirname(dbFile), { recursive: true })
-  const DatabaseSync = await databaseSync()
+  const { DatabaseSync } = await import('node:sqlite')
   const db = new DatabaseSync(dbFile)
   db.exec('PRAGMA busy_timeout = 5000')
   db.exec('PRAGMA foreign_keys = ON')
@@ -183,13 +182,6 @@ async function openIndexerDatabase(dbFile) {
   db.exec('PRAGMA journal_mode = WAL')
   migrateIndexerDatabase(db)
   return db
-}
-
-async function databaseSync() {
-  if (DatabaseSyncConstructor) return DatabaseSyncConstructor
-  const sqlite = await import('node:sqlite')
-  DatabaseSyncConstructor = sqlite.DatabaseSync
-  return DatabaseSyncConstructor
 }
 
 function sqliteReplayCheckpoint(events, rawEventCount, warnings, updatedAt) {

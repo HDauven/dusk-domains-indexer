@@ -39,6 +39,7 @@ Event-log mode:
 ```bash
 npm start -- \
   --event-log target/dusk-domains.events.jsonl \
+  --cursor target/dusk-domains.cursor.json \
   --watch
 ```
 

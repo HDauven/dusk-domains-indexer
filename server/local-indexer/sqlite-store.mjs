@@ -51,7 +51,7 @@ export async function loadSqliteStore(dbFile, options = {}) {
     const durableCheckpoint = storedCheckpoint
       ? { ok: true, value: storedCheckpoint }
       : { ok: false, message: 'SQLite checkpoint metadata is missing.' }
-    const cursor = kvGet(db, 'cursor') ?? await loadCursor(options.cursorFile)
+    const cursor = options.cursorFile ? await loadCursor(options.cursorFile) : kvGet(db, 'cursor')
     const schema = sqliteSchemaState(db)
     const durability = indexerDurabilityState({
       cursor,

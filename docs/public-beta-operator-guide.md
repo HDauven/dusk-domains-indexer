@@ -84,8 +84,11 @@ Start collector:
 npm run indexer:collect -- \
   --env-file .env.production.local \
   --event-log /var/lib/dusk-domains/events.jsonl \
-  --cursor-file /var/lib/dusk-domains/cursor.json
+  --cursor-file /var/lib/dusk-domains/cursor.json \
+  --from-block 1
 ```
+
+Use an archive node with complete hash-bound `contractEventBatch` support. To avoid scanning pre-deployment blocks, replace `1` with the first deployment height and retain it on restart. The finalized-only collector automatically fills offline gaps; legacy live/proof journals require new journal/cursor/SQLite paths, not append-in-place migration (see README).
 
 Build the SQLite store and replay checkpoint, then run the production checks:
 
@@ -362,7 +365,7 @@ Use this drill before the first public beta window and after every backup-toolin
 
 4. Record the manifest checksum, restored event count, restored cursor, restored checkpoint, and restored SQLite/WAL file paths in the incident or launch evidence.
 5. Move the staged event journal, cursor, checkpoint, SQLite database, and any `-wal` / `-shm` sidecars into `/var/lib/dusk-domains`.
-6. Start the API against the restored files in strict-health mode:
+6. Restart the collector against the verified journal/cursor using the same `--from-block`. Wait for its cursor to report `running`, then start the API against the restored files in strict-health mode:
 
    ```text
    npm run indexer:local -- \
@@ -371,6 +374,7 @@ Use this drill before the first public beta window and after every backup-toolin
      --cursor /var/lib/dusk-domains/cursor.json \
      --checkpoint /var/lib/dusk-domains/checkpoint.json \
      --strict-health \
+     --watch \
      --host 0.0.0.0 \
      --port 8787
    ```
@@ -395,10 +399,11 @@ Use this drill before the first public beta window and after every backup-toolin
      --archive-snapshot /var/snapshots/dusk-archive-before-launch \
      --backup-manifest /var/backups/dusk-domains/<backup-id>/manifest.json \
      --backup-restore-dir /var/tmp/dusk-domains-restore \
-     --max-source-age-minutes 10
+     --max-source-age-minutes 10 \
+     --rebuild
    ```
 
-8. Restart the collector only after the restored cursor and checkpoint are accepted by health checks.
+8. Confirm catch-up and stable event identities. A stopped/quiesced backup can pass integrity verification without being live-healthy; do not bypass collector freshness checks.
 9. Re-enable live writes only after the app, indexer, and support/status links all point at the restored deployment evidence.
 
 Public beta readiness should also verify that the current production indexer bundle can be restored:
@@ -494,7 +499,7 @@ For devnet or production write proof, also run installed-wallet claim coverage w
 1. Stop collector and API.
 2. Verify and stage the most recent backup bundle.
 3. Move staged journal, cursor, checkpoint, env, and proof files into the data directory.
-4. Replay from the archive-node snapshot or deployment height once historical event extraction is available.
+4. Restart the archive collector from the restored cursor, or replay into new journal/cursor/SQLite paths from at/before deployment if the committed journal is corrupt. Missing retained archive blocks fail closed.
 5. Rebuild checkpoint.
 6. Compare event count and last event against the pre-incident manifest.
 
@@ -540,7 +545,7 @@ For devnet or production write proof, also run installed-wallet claim coverage w
 ## Known Public Beta Limitations
 
 - Indexer state is a read model; contract state remains canonical.
-- SQLite/WAL event storage exists; normalized projection tables and archive-node historical extraction are still future hardening items.
+- SQLite/WAL event storage and finalized archive replay exist; normalized projection tables remain future work. Archive replay requires retained, complete hash-bound batches back to the configured start height.
 - Unicode names, private records, organization verification and Citadel integration are out of the core MVP scope. Marketplace auctions are an optional third-contract extension.
 - The app supports public Moonlight primary names; Phoenix endpoints are not public primary identities.
 - External audit is not part of the devnet MVP proof package.

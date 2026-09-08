@@ -59,5 +59,10 @@ function normalizeCursor(parsed) {
     currentBlockHeight: parsed.currentBlockHeight ?? parsed.lastBlockHeight ?? null,
     scannedBlockHeight: parsed.scannedBlockHeight ?? parsed.currentBlockHeight ?? parsed.lastBlockHeight ?? null,
     reason: parsed.reason ?? null,
+    ...(parsed.source === 'rusk-finalized-archive' ? {
+      fromBlock: parsed.fromBlock ?? null,
+      scannedBlockHash: parsed.scannedBlockHash ?? null,
+      eventLogBytes: parsed.eventLogBytes ?? null,
+    } : {}),
   }
 }

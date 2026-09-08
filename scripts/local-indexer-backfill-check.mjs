@@ -1,238 +1,91 @@
 #!/usr/bin/env node
 
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isMain } from './is-main.mjs'
 import { loadLocalIndexerStore } from '../server/local-indexer.mjs'
+import { queryArchive } from './local-event-collector/archive.mjs'
 
-const defaultEventLog = 'target/dusk-domains-local-indexer.events.jsonl'
-const defaultSnapshot = 'target/dusk-domains-local-indexer.json'
-const defaultCursor = 'target/dusk-domains-local-indexer.cursor.json'
-const defaultW3sperContractFile = 'node_modules/@dusk/w3sper/src/contract.js'
+const defaults = {
+  eventLog: 'target/dusk-domains-local-indexer.events.jsonl',
+  snapshot: 'target/dusk-domains-local-indexer.json',
+  cursor: 'target/dusk-domains-local-indexer.cursor.json',
+  nodeUrl: 'http://127.0.0.1:18180/',
+}
 
 if (isMain(import.meta)) {
   try {
     const args = parseArgs(process.argv.slice(2))
-    if (args.help) {
-      console.log(usage())
-    } else {
+    if (args.help) console.log(usage())
+    else {
       const result = await checkIndexerBackfillBoundary(args)
-      printResult(result, args.json)
+      console.log(args.json ? JSON.stringify(result, null, 2) : result.checks.map(c => `${c.ok ? 'ok' : 'fail'} ${c.id}: ${c.message}`).join('\n'))
       if (!result.ok) process.exitCode = 1
     }
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
-    console.error('')
-    console.error(usage())
-    process.exitCode = 1
-  }
+  } catch (error) { console.error(error.message); process.exitCode = 1 }
 }
 
 export async function checkIndexerBackfillBoundary(options = {}) {
-  const eventLog = resolve(options.eventLog ?? defaultEventLog)
-  const snapshot = resolve(options.snapshot ?? defaultSnapshot)
-  const cursor = resolve(options.cursor ?? defaultCursor)
-  const w3sperContractFile = resolve(options.w3sperContractFile ?? defaultW3sperContractFile)
+  const eventLog = resolve(options.eventLog ?? defaults.eventLog)
+  const snapshot = resolve(options.snapshot ?? defaults.snapshot)
+  const cursor = resolve(options.cursor ?? defaults.cursor)
+  const nodeUrl = options.nodeUrl ?? defaults.nodeUrl
   const exists = options.exists ?? existsSync
-  const readText = options.readText ?? ((file) => readFile(file, 'utf8'))
   const loadStore = options.loadStore ?? loadLocalIndexerStore
-  const defaultEventLogRequested = !options.eventLog || options.eventLog === defaultEventLog
-
-  const eventLogStatus = await loadStoreStatus({
-    source: { mode: 'event-log', file: eventLog, cursorFile: cursor },
-    exists,
-    loadStore,
-  })
-  const snapshotStatus = await loadStoreStatus({
-    source: { mode: 'snapshot', file: snapshot },
-    exists,
-    loadStore,
-  })
-  const surface = await inspectW3sperEventSurface({
-    file: w3sperContractFile,
-    exists,
-    readText,
-  })
-  const backfill = backfillBoundary(surface)
-  const eventLogOk = eventLogStatus.ok
-    || (defaultEventLogRequested && eventLogStatus.missing && snapshotStatus.ok)
-  const checks = [
-    {
-      id: 'event_log_fallback',
-      ok: eventLogOk,
-      message: eventLogStatus.ok
-        ? `Event-log fallback loads ${eventLogStatus.names} indexed name(s), ${eventLogStatus.checkpoint?.eventCount ?? 0} replayed event(s).`
-        : eventLogOk
-          ? `Default event-log fallback is missing, but snapshot fallback loads ${snapshotStatus.names} indexed name(s).`
-        : eventLogStatus.message,
-    },
-    {
-      id: 'snapshot_fallback',
-      ok: snapshotStatus.ok,
-      message: snapshotStatus.ok
-        ? `Snapshot fallback loads ${snapshotStatus.names} indexed name(s).`
-        : snapshotStatus.message,
-    },
-    {
-      id: 'w3sper_live_event_surface',
-      ok: surface.liveDecodedEvents,
-      message: surface.liveDecodedEvents
-        ? 'Installed W3sper Contract.events surface exposes decoded live on/once subscriptions.'
-        : surface.message,
-    },
-  ]
-
-  return {
-    ok: checks.every((check) => check.ok),
-    eventLog,
-    snapshot,
-    cursor,
-    w3sperContractFile,
-    checks,
-    backfill,
-    nextStep: backfill.status === 'blocked'
-    ? 'Keep using npm run indexer:collect and snapshot/event-log fallback until Rusk/W3sper exposes a decoded historical contract-event range API.'
-      : 'A candidate historical event surface exists; wire it into the local indexer before relying on it.',
+  const eventLogStatus = await loadStoreStatus({ source: { mode: 'event-log', file: eventLog, cursorFile: cursor }, exists, loadStore })
+  const snapshotStatus = await loadStoreStatus({ source: { mode: 'snapshot', file: snapshot }, exists, loadStore })
+  const eventLogOk = eventLogStatus.ok || ((!options.eventLog || options.eventLog === defaults.eventLog) && eventLogStatus.missing && snapshotStatus.ok)
+  let backfill
+  try {
+    const query = text => queryArchive(nodeUrl, text, options.fetcher)
+    const [height, hash] = (await query('{lastBlockPair{json}}')).lastBlockPair?.json?.last_finalized_block ?? []
+    if (!Number.isSafeInteger(height) || height < 0 || !/^[0-9a-f]{64}$/.test(hash ?? '')) throw new Error('Invalid finalized head')
+    const batch = (await query(`{contractEventBatch(hash:"${hash}"){blockHash complete json}}`)).contractEventBatch
+    if (batch?.complete !== true || batch.blockHash !== hash || !Array.isArray(batch.json)) throw new Error('Finalized archive batch is unavailable or incomplete')
+    backfill = { status: 'available', height, blockHash: hash,
+      reason: 'Hash-bound archive batches are available. The collector replays finalized blocks with the deployed WASM decoders; W3sper live history APIs are not required.' }
+  } catch (error) {
+    backfill = { status: 'blocked', reason: error.message }
   }
+  const checks = [
+    { id: 'event_log_fallback', ok: eventLogOk, message: eventLogOk ? 'Event journal or default snapshot fallback loads.' : eventLogStatus.message },
+    { id: 'snapshot_fallback', ok: snapshotStatus.ok, message: snapshotStatus.message },
+    { id: 'archive_backfill', ok: backfill.status === 'available', message: backfill.reason },
+  ]
+  return { ok: checks.every(c => c.ok), eventLog, snapshot, cursor, nodeUrl, checks, backfill,
+    nextStep: 'Run npm run indexer:collect against this archive. Legacy logs require new journal/cursor/SQLite paths. Availability at the head is not proof of retention back to deployment.' }
 }
 
 async function loadStoreStatus({ source, exists, loadStore }) {
-  if (!exists(source.file)) {
-    return {
-      ok: false,
-      missing: true,
-      names: 0,
-      checkpoint: null,
-      message: `Missing ${source.mode} fallback file: ${source.file}. Generate a Dusk Domains deployment snapshot or event log first.`,
-    }
-  }
-
+  if (!exists(source.file)) return { ok: false, missing: true, message: `Missing ${source.mode} fallback file: ${source.file}` }
   try {
     const store = await loadStore(source)
-    return {
-      ok: store?.namesByCanonical instanceof Map && store.namesByCanonical.size > 0,
-      missing: false,
-      names: store?.namesByCanonical?.size ?? 0,
-      checkpoint: store?.checkpoint ?? null,
-      message: store?.namesByCanonical?.size > 0
-        ? 'fallback loaded'
-        : `${source.mode} fallback loaded but contains no active indexed names.`,
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      missing: false,
-      names: 0,
-      checkpoint: null,
-      message: `${source.mode} fallback failed to load: ${error instanceof Error ? error.message : String(error)}`,
-    }
-  }
-}
-
-export async function inspectW3sperEventSurface({ file, exists = existsSync, readText = (path) => readFile(path, 'utf8') }) {
-  if (!exists(file)) {
-    return {
-      liveDecodedEvents: false,
-      historicalRangeEvents: false,
-      message: `Missing W3sper contract facade source: ${file}`,
-    }
-  }
-
-  const source = await readText(file)
-  const liveDecodedEvents = /get\s+events\s*\(\)/.test(source)
-    && /once\s*:\s*async/.test(source)
-    && /on\s*:\s*\(\s*handler/.test(source)
-    && /decodeEvent\s*\(/.test(source)
-  const historicalRangeEvents = /from_?height|fromBlock|toBlock|range|history|replay/i.test(eventSurfaceSource(source))
-
-  return {
-    liveDecodedEvents,
-    historicalRangeEvents,
-    message: liveDecodedEvents
-      ? 'W3sper live event surface detected.'
-      : 'W3sper Contract.events live decoding surface was not detected.',
-  }
-}
-
-function eventSurfaceSource(source) {
-  const start = source.indexOf('get events()')
-  if (start < 0) return ''
-  const end = source.indexOf('\n  }\n}', start)
-  return source.slice(start, end > start ? end : undefined)
-}
-
-function backfillBoundary(surface) {
-  if (surface.historicalRangeEvents) {
-    return {
-      status: 'candidate',
-      reason: 'The installed W3sper Contract.events surface appears to expose range/history terms; review and wire it before enabling historical backfill.',
-    }
-  }
-
-  return {
-    status: 'blocked',
-    reason: 'The installed W3sper Contract.events facade exposes decoded live RUES on/once subscriptions, but no decoded historical contract-event range/backfill API. Local indexer history therefore depends on observed deployment events or npm run indexer:collect, with the snapshot fallback preserved.',
-  }
-}
-
-function printResult(result, json) {
-  if (json) {
-    console.log(JSON.stringify(result, null, 2))
-    return
-  }
-
-  console.log(result.ok ? 'indexer-backfill: fallback ready' : 'indexer-backfill: fallback not ready')
-  for (const check of result.checks) {
-    console.log(`${check.ok ? 'ok' : 'fail'} ${check.id}: ${check.message}`)
-  }
-  console.log(`historical backfill: ${result.backfill.status}`)
-  console.log(result.backfill.reason)
-  console.log(result.nextStep)
+    const names = store?.namesByCanonical?.size ?? 0
+    return { ok: names > 0, message: `${source.mode} fallback loads ${names} indexed name(s).` }
+  } catch (error) { return { ok: false, message: `${source.mode} fallback failed: ${error.message}` } }
 }
 
 export function parseArgs(argv) {
-  const parsed = {
-    eventLog: defaultEventLog,
-    snapshot: defaultSnapshot,
-    cursor: defaultCursor,
-    w3sperContractFile: defaultW3sperContractFile,
-    json: false,
-    help: false,
-  }
-
-  for (let index = 0; index < argv.length; index += 1) {
+  const args = { ...defaults, json: false, help: false }
+  for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
-    if (arg === '--help' || arg === '-h') parsed.help = true
-    else if (arg === '--json') parsed.json = true
-    else if (arg === '--event-log') parsed.eventLog = requiredValue(argv, ++index, arg)
-    else if (arg === '--snapshot') parsed.snapshot = requiredValue(argv, ++index, arg)
-    else if (arg === '--cursor') parsed.cursor = requiredValue(argv, ++index, arg)
-    else if (arg === '--w3sper-contract-file') parsed.w3sperContractFile = requiredValue(argv, ++index, arg)
-    else throw new Error(`Unknown option: ${arg}`)
+    if (arg === '--json') args.json = true
+    else if (arg === '--help' || arg === '-h') args.help = true
+    else {
+      const key = { '--event-log': 'eventLog', '--snapshot': 'snapshot', '--cursor': 'cursor', '--node-url': 'nodeUrl',
+        '--w3sper-contract-file': 'w3sperContractFile' }[arg]
+      if (!key) throw new Error(`Unknown option: ${arg}`)
+      const value = argv[++index]
+      if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`)
+      args[key] = value
+    }
   }
-
-  return parsed
+  return args
 }
 
 function usage() {
-  return `Check the local indexer historical-backfill boundary.
-
-Usage:
-  npm run check:indexer-backfill
-  npm run check:indexer-backfill -- --json
-
-Options:
-  --event-log <file>              JSONL event log fallback. Default: ${defaultEventLog}.
-  --snapshot <file>               Snapshot fallback. Default: ${defaultSnapshot}.
-  --cursor <file>                 Collector cursor for the event log. Default: ${defaultCursor}.
-  --w3sper-contract-file <file>   W3sper Contract facade source to audit. Default: ${defaultW3sperContractFile}.
-  --json                          Print machine-readable output.
-  --help                          Show this message.`
-}
-
-function requiredValue(argv, index, label) {
-  const value = argv[index]
-  if (!value || value.startsWith('--')) throw new Error(`${label} requires a value`)
-  return value
+  return `Check archive-backed recovery and existing local fallbacks.
+Usage: npm run backfill:check -- --node-url http://127.0.0.1:18180/ --json
+Options: --node-url <archive>, --event-log <jsonl>, --snapshot <json>, --cursor <json>, --json, --help.
+--w3sper-contract-file is accepted for older launchers but no longer needed.`
 }

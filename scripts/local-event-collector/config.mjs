@@ -68,9 +68,6 @@ export async function loadCollectorConfig(options = {}) {
   const eventLog = resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl')
   const cursorFile = resolve(rootDir, options.cursorFile ?? 'target/dusk-domains-local-indexer.cursor.json')
   const publicDir = resolve(rootDir, options.publicDir ?? 'public/contracts')
-  const ruskDir = resolve(rootDir, options.ruskDir ?? '../rusk-private-w3sper-contract-deploy')
-  const w3sperDir = resolve(ruskDir, 'w3sper.js')
-  const denoConfig = resolve(w3sperDir, 'deno.json')
   const requiredContracts = coreContracts.map((contract) => ({
     ...contract,
     contractId: normalizeContractId(env[contract.envKey]),
@@ -80,9 +77,9 @@ export async function loadCollectorConfig(options = {}) {
       ...contract,
       contractId: normalizeContractId(env[contract.envKey]),
     }))
-    .filter((contract) => isContractId(contract.contractId))
+    .filter((contract) => Boolean(env[contract.envKey]))
   const configuredContracts = [...requiredContracts, ...configuredOptionalContracts]
-  const missing = requiredContracts
+  const missing = configuredContracts
     .filter((contract) => !isContractId(contract.contractId))
     .map((contract) => contract.envKey)
 
@@ -97,19 +94,13 @@ export async function loadCollectorConfig(options = {}) {
     }
   }
 
-  if (!existsSync(denoConfig)) {
-    throw new Error(`Missing W3sper Deno config: ${denoConfig}`)
-  }
-
   return {
     envFile,
     nodeUrl,
     eventLog,
     cursorFile,
     publicDir,
-    ruskDir,
-    w3sperDir,
-    denoConfig,
+    fromBlock: options.fromBlock ?? 1,
     durationMs: options.durationMs,
     truncate: Boolean(options.truncate),
     contractStack: 'core',
@@ -127,6 +118,7 @@ export function parseArgs(argv) {
     ruskDir: '../rusk-private-w3sper-contract-deploy',
     nodeUrl: '',
     durationMs: 0,
+    fromBlock: 1,
     truncate: false,
   }
 
@@ -140,6 +132,10 @@ export function parseArgs(argv) {
     else if (arg === '--rusk-dir') parsed.ruskDir = requiredValue(argv, ++index, arg)
     else if (arg === '--node-url') parsed.nodeUrl = requiredValue(argv, ++index, arg)
     else if (arg === '--duration-ms') parsed.durationMs = parseNonNegativeInteger(requiredValue(argv, ++index, arg), arg)
+    else if (arg === '--from-block') {
+      parsed.fromBlock = parseNonNegativeInteger(requiredValue(argv, ++index, arg), arg)
+      if (parsed.fromBlock < 1) throw new Error('--from-block must be positive')
+    }
     else if (arg === '--truncate') parsed.truncate = true
     else throw new Error(`Unknown option: ${arg}`)
   }
@@ -151,7 +147,7 @@ export function parseArgs(argv) {
 }
 
 export function usage() {
-  return `Collect decoded local Dusk Domains contract events into the local JSONL indexer log.
+  return `Collect finalized Dusk Domains events from a Rusk archive into a resumable JSONL journal.
 
 Usage:
   npm run indexer:collect
@@ -163,13 +159,15 @@ Options:
   --event-log <file>     JSONL event log to append. Default: target/dusk-domains-local-indexer.events.jsonl.
   --cursor-file <file>   Collector status/cursor file. Default: target/dusk-domains-local-indexer.cursor.json.
   --public-dir <dir>     Directory containing data-driver WASM files. Default: public/contracts.
-  --rusk-dir <dir>       Local rusk-private checkout. Default: ../rusk-private-w3sper-contract-deploy.
-  --node-url <url>       Override VITE_DUSK_DOMAINS_NODE_URL from env.
+  --rusk-dir <dir>       Accepted for older launchers; no longer needed (Node.js decodes events).
+  --node-url <url>       Archive node; requires lastBlockPair, blocks, contractEventBatch.
+  --from-block <n>       First block to replay (at/before deployment). Default: 1; retain on restart.
   --duration-ms <n>      Stop automatically after n milliseconds. Default: run until SIGINT/SIGTERM.
-  --truncate             Empty the event log before collecting.
+  --truncate             Discard the journal/cursor and replay again from --from-block.
   --help                 Show this message.
 
-When appending to an existing event log, the collector resumes cursor event counts and last-event metadata from that log. Use --truncate for a fresh cursor.
+The collector resumes cursor event counts and finalized block hashes, including blocks missed offline.
+Run ONE collector per journal. Legacy live/proof logs need NEW journal/cursor/SQLite paths: they cannot safely be deduplicated against archive events.
 `
 }
 
@@ -190,5 +188,7 @@ function requiredValue(argv, index, label) {
 
 function parseNonNegativeInteger(value, label) {
   if (!/^[0-9]+$/.test(value)) throw new Error(`${label} must be a non-negative integer`)
-  return Number(value)
+  const number = Number(value)
+  if (!Number.isSafeInteger(number)) throw new Error(`${label} must be a safe integer`)
+  return number
 }

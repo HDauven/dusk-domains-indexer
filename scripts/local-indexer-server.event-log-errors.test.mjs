@@ -36,13 +36,13 @@ describe('local indexer malformed event-log handling', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
       mode: 'event-log',
       names: 1,
       warnings: [{
         code: 'invalid_event_log_row',
         line: 2,
-      }],
+      }, { code: 'history_unverified' }],
     })
     await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
       canonicalName: 'aurora.dusk',
@@ -63,12 +63,12 @@ describe('local indexer malformed event-log handling', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
       mode: 'event-log',
       names: 0,
       warnings: [{
         code: 'invalid_event_log_array',
-      }],
+      }, { code: 'history_unverified' }],
     })
     await expect(expectJson(`${baseUrl}/search?query=aurora`)).resolves.toMatchObject({
       canonical: 'aurora.dusk',
@@ -82,13 +82,13 @@ describe('local indexer malformed event-log handling', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
       mode: 'event-log',
       names: 1,
       warnings: [{
         code: 'invalid_event_log_event',
         type: 'record_changed',
-      }],
+      }, { code: 'history_unverified' }],
     })
     await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
       canonicalName: 'aurora.dusk',

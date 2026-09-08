@@ -120,6 +120,12 @@ function healthyStore() {
     namesByCanonical: new Map(),
     warnings: [],
     cursor: {
+      source: 'rusk-finalized-archive',
+      status: 'running',
+      updatedAt: new Date().toISOString(),
+      fromBlock: 1,
+      scannedBlockHeight: 12,
+      scannedBlockHash: '11'.repeat(32),
       currentBlockHeight: 12,
       eventCount: 2,
       lastBlockHeight: 12,

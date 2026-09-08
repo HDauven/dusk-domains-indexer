@@ -66,7 +66,8 @@ describe('local indexer event-log API', () => {
 
     try {
       await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-        ok: true,
+        ok: false,
+        degradedReason: { code: 'history_unverified' },
         source: 'local-indexer-event-log',
         mode: 'event-log',
         names: 1,
@@ -507,7 +508,8 @@ describe('local indexer event-log API', () => {
 
     try {
       await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-        ok: true,
+        ok: false,
+        degradedReason: { code: 'history_unverified' },
         apiVersion: 'v1',
         schemaVersion: 1,
         eventSchemaVersion: '1',
@@ -744,7 +746,8 @@ describe('local indexer event-log API', () => {
 
     try {
       await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-        ok: true,
+        ok: false,
+        degradedReason: { code: 'history_unverified' },
         mode: 'event-log',
         names: 1,
         checkpoint: {
@@ -783,7 +786,8 @@ describe('local indexer event-log API', () => {
 
     try {
       await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-        ok: true,
+        ok: false,
+        degradedReason: { code: 'history_unverified' },
         mode: 'event-log',
         names: 1,
         cursor: {

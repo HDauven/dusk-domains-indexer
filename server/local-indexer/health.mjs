@@ -9,11 +9,8 @@ import { LOCAL_INDEXER_PACKAGE_INFO } from './package-info.mjs'
 
 export function healthResponseForStore(store) {
   const currentBlockHeight = storeCurrentBlockHeight(store)
-  const finalizedBlockHeight = maxNumberOrNull(
-    store?.cursor?.scannedBlockHeight,
-    store?.checkpoint?.lastBlockHeight,
-    store?.cursor?.lastBlockHeight,
-  )
+  const finalizedBlockHeight = store?.cursor?.source === 'rusk-finalized-archive'
+    ? numberOrNull(store.cursor.scannedBlockHeight) : null
   const lagBlocks = currentBlockHeight !== null && finalizedBlockHeight !== null
     ? Math.max(0, currentBlockHeight - finalizedBlockHeight)
     : null
@@ -78,6 +75,22 @@ function lastIndexedEvent(store) {
 }
 
 function healthDegradedReason(store) {
+  const cursor = store?.cursor
+  if (cursor?.source === 'w3sper-live-subscription'
+    || (['event-log', 'sqlite'].includes(store?.mode) && cursor?.source !== 'rusk-finalized-archive')) {
+    return { code: 'history_unverified', message: 'Archive coverage is unverified; start the archive collector (legacy logs need new journal/cursor/SQLite paths).' }
+  }
+  if (cursor?.source === 'rusk-finalized-archive') {
+    const age = Date.now() - Date.parse(cursor.updatedAt)
+    const coverageKnown = Number.isSafeInteger(cursor.fromBlock) && cursor.fromBlock > 0
+      && Number.isSafeInteger(cursor.scannedBlockHeight) && cursor.scannedBlockHeight >= cursor.fromBlock - 1
+      && Number.isSafeInteger(cursor.currentBlockHeight) && cursor.currentBlockHeight >= cursor.scannedBlockHeight
+      && /^[0-9a-f]{64}$/.test(cursor.scannedBlockHash ?? '')
+    if (!coverageKnown || cursor.status !== 'running' || !Number.isFinite(age) || age < 0 || age > 30_000
+      || store?.checkpoint?.eventCount !== cursor.eventCount || store?.warnings?.length) {
+      return { code: 'archive_not_caught_up', message: cursor.reason ?? 'Archive collector is stopped, stale, or catching up.' }
+    }
+  }
   if (store?.health?.ok !== false) return null
   return {
     code: store.health.code ?? 'indexer_health_degraded',

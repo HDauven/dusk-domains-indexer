@@ -1,129 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import {
-  checkIndexerBackfillBoundary,
-  inspectW3sperEventSurface,
-  parseArgs,
-} from './local-indexer-backfill-check.mjs'
+import { checkIndexerBackfillBoundary, parseArgs } from './local-indexer-backfill-check.mjs'
 
-describe('local indexer backfill boundary check', () => {
-  it('parses CLI options used by the runbook', () => {
-    expect(parseArgs([
-      '--event-log',
-      'events.jsonl',
-      '--snapshot',
-      'snapshot.json',
-      '--cursor',
-      'cursor.json',
-      '--w3sper-contract-file',
-      'contract.js',
-      '--json',
-    ])).toEqual({
-      eventLog: 'events.jsonl',
-      snapshot: 'snapshot.json',
-      cursor: 'cursor.json',
-      w3sperContractFile: 'contract.js',
-      json: true,
-      help: false,
+const hash = '11'.repeat(32)
+const fixture = {
+  exists: () => true,
+  loadStore: async () => ({ namesByCanonical: new Map([['aurora.dusk', {}]]) }),
+  fetcher: async (_url, { body }) => ({ ok: true, json: async () => body.includes('lastBlockPair')
+    ? { lastBlockPair: { json: { last_finalized_block: [100, hash] } } }
+    : { contractEventBatch: { complete: true, blockHash: hash, json: [] } } }),
+}
+
+describe('archive backfill check', () => {
+  it('parses existing paths and the archive URL without requiring W3sper source', () => {
+    expect(parseArgs(['--node-url', 'http://node/', '--event-log', 'events', '--json'])).toMatchObject({
+      nodeUrl: 'http://node/', eventLog: 'events', json: true,
+    })
+    expect(() => parseArgs(['--node-url'])).toThrow()
+  })
+
+  it('accepts a complete zero-event archive batch, not a regex over the live facade', async () => {
+    expect(await checkIndexerBackfillBoundary(fixture)).toMatchObject({
+      ok: true, backfill: { status: 'available', height: 100, blockHash: hash },
     })
   })
 
-  it('reports loadable fallbacks and the current historical backfill blocker', async () => {
-    const result = await checkIndexerBackfillBoundary({
-      eventLog: 'target/events.jsonl',
-      snapshot: 'target/snapshot.json',
-      cursor: 'target/cursor.json',
-      w3sperContractFile: 'node_modules/@dusk/w3sper/src/contract.js',
-      exists: () => true,
-      readText: async () => liveOnlyW3sperContractSource(),
-      loadStore: async (source) => ({
-        mode: source.mode,
-        namesByCanonical: new Map([['aurora.dusk', {}]]),
-        checkpoint: source.mode === 'event-log' ? { eventCount: 7 } : null,
-      }),
-    })
-
-    expect(result.ok).toBe(true)
-    expect(result.checks.map((check) => [check.id, check.ok])).toEqual([
-      ['event_log_fallback', true],
-      ['snapshot_fallback', true],
-      ['w3sper_live_event_surface', true],
-    ])
-    expect(result.backfill).toMatchObject({
-      status: 'blocked',
-      reason: expect.stringContaining('no decoded historical contract-event range/backfill API'),
-    })
-    expect(result.nextStep).toContain('snapshot/event-log fallback')
+  it('fails closed when an archive is missing, incomplete or returns the wrong block', async () => {
+    for (const batch of [null, { complete: false, blockHash: hash, json: [] }, { complete: true, blockHash: '22'.repeat(32), json: [] }]) {
+      const fetcher = async (url, options) => options.body.includes('lastBlockPair')
+        ? fixture.fetcher(url, options) : { ok: true, json: async () => ({ contractEventBatch: batch }) }
+      expect(await checkIndexerBackfillBoundary({ ...fixture, fetcher })).toMatchObject({ ok: false, backfill: { status: 'blocked' } })
+    }
+    expect(await checkIndexerBackfillBoundary({ ...fixture, fetcher: async () => { throw new Error('Archive offline') } }))
+      .toMatchObject({ ok: false, backfill: { status: 'blocked', reason: 'Archive offline' } })
   })
 
-  it('keeps the default snapshot fallback ready when the event log is missing', async () => {
-    const result = await checkIndexerBackfillBoundary({
-      snapshot: 'target/snapshot.json',
-      w3sperContractFile: 'node_modules/@dusk/w3sper/src/contract.js',
-      exists: (file) => !String(file).endsWith('dusk-domains-local-indexer.events.jsonl'),
-      readText: async () => liveOnlyW3sperContractSource(),
-      loadStore: async () => ({
-        namesByCanonical: new Map([['aurora.dusk', {}]]),
-      }),
-    })
-
-    expect(result.ok).toBe(true)
-    expect(result.checks.find((check) => check.id === 'event_log_fallback')).toMatchObject({
-      ok: true,
-      message: expect.stringContaining('snapshot fallback loads 1 indexed name'),
-    })
-  })
-
-  it('fails when an explicit custom event-log fallback is missing', async () => {
-    const result = await checkIndexerBackfillBoundary({
-      eventLog: 'target/missing-events.jsonl',
-      snapshot: 'target/snapshot.json',
-      w3sperContractFile: 'node_modules/@dusk/w3sper/src/contract.js',
-      exists: (file) => !String(file).includes('missing-events'),
-      readText: async () => liveOnlyW3sperContractSource(),
-      loadStore: async () => ({
-        namesByCanonical: new Map([['aurora.dusk', {}]]),
-      }),
-    })
-
-    expect(result.ok).toBe(false)
-    expect(result.checks.find((check) => check.id === 'event_log_fallback')).toMatchObject({
-      ok: false,
-      message: expect.stringContaining('Generate a Dusk Domains deployment snapshot or event log first'),
-    })
-  })
-
-  it('detects a candidate historical event surface if W3sper adds range terms under Contract.events', async () => {
-    const surface = await inspectW3sperEventSurface({
-      file: 'contract.js',
-      exists: () => true,
-      readText: async () => liveOnlyW3sperContractSource('history: (fromHeight, toHeight) => [],'),
-    })
-
-    expect(surface).toMatchObject({
-      liveDecodedEvents: true,
-      historicalRangeEvents: true,
-    })
+  it('preserves default snapshot fallback but rejects a missing explicit journal', async () => {
+    expect((await checkIndexerBackfillBoundary({ ...fixture,
+      exists: path => !path.endsWith('dusk-domains-local-indexer.events.jsonl'),
+    })).ok).toBe(true)
+    expect((await checkIndexerBackfillBoundary({ ...fixture, eventLog: 'missing-events',
+      exists: path => !path.endsWith('missing-events'),
+    })).ok).toBe(false)
   })
 })
-
-function liveOnlyW3sperContractSource(extraSurface = '') {
-  return `
-    export class Contract {
-      get events() {
-        const apiFor = (name) => ({
-          once: async () => {
-            const driver = await this.#driverPromise;
-            return driver.decodeEvent(name, new Uint8Array());
-          },
-          on: (handler) => {
-            handler({});
-          },
-          ${extraSurface}
-        });
-        return new Proxy({}, {
-          get: (_t, prop) => apiFor(String(prop)),
-        });
-      }
-    }
-  `
-}

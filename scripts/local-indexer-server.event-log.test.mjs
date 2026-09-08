@@ -39,7 +39,8 @@ describe('local indexer event-log HTTP API', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
+      degradedReason: { code: 'history_unverified' },
       apiVersion: 'v1',
       eventSchemaVersion: '1',
       readModelSchemaVersion: 1,
@@ -128,7 +129,8 @@ describe('local indexer event-log HTTP API', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
+      degradedReason: { code: 'history_unverified' },
       source: 'local-indexer-sqlite',
       mode: 'sqlite',
       sqlite: {
@@ -313,7 +315,8 @@ describe('local indexer event-log HTTP API', () => {
     const { baseUrl } = await startIndexer(store)
 
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
-      ok: true,
+      ok: false,
+      degradedReason: { code: 'history_unverified' },
       mode: 'event-log',
       names: 0,
     })

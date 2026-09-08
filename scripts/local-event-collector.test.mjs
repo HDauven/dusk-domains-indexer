@@ -43,6 +43,7 @@ describe('local event collector config', () => {
       ruskDir: '../rusk-private',
       nodeUrl: 'http://127.0.0.1:18180/',
       durationMs: 2500,
+      fromBlock: 1,
       truncate: true,
     })
   })
@@ -103,7 +104,7 @@ describe('local event collector config', () => {
     })
   })
 
-  it('loads configured contract IDs, driver paths, and W3sper config', async () => {
+  it('loads configured contract IDs and drivers without requiring a Rusk checkout', async () => {
     const fixture = await createCollectorFixture()
     const config = await loadCollectorConfig({
       envFile: fixture.envFile,
@@ -119,13 +120,20 @@ describe('local event collector config', () => {
     expect(config.eventLog).toBe(fixture.eventLog)
     expect(config.cursorFile).toBe(fixture.cursorFile)
     expect(config.publicDir).toBe(fixture.publicDir)
-    expect(config.denoConfig).toBe(join(fixture.ruskDir, 'w3sper.js', 'deno.json'))
+    expect(config.fromBlock).toBe(1)
     expect(config.durationMs).toBe(100)
     expect(config.truncate).toBe(true)
     expect(config.contracts.map((contract) => [contract.key, contract.contractId])).toEqual([
       ['core', '77'.repeat(32)],
       ['treasury', '66'.repeat(32)],
     ])
+  })
+
+  it('validates replay heights and unsafe numeric CLI inputs', () => {
+    expect(parseArgs(['--from-block', '42']).fromBlock).toBe(42)
+    for (const n of ['0', '-1', '9007199254740992']) {
+      expect(() => parseArgs(['--from-block', n])).toThrow()
+    }
   })
 
   it('fails clearly when contract IDs are missing or malformed', async () => {
@@ -161,14 +169,11 @@ async function createCollectorFixture(options = {}) {
 
   const publicDir = join(dir, 'public', 'contracts')
   const ruskDir = join(dir, 'rusk-private')
-  const w3sperDir = join(ruskDir, 'w3sper.js')
   const envFile = join(dir, '.env.local')
   const eventLog = join(dir, 'target', 'events.jsonl')
   const cursorFile = join(dir, 'target', 'cursor.json')
 
   await mkdir(publicDir, { recursive: true })
-  await mkdir(w3sperDir, { recursive: true })
-  await writeFile(join(w3sperDir, 'deno.json'), '{}\n', 'utf8')
 
   for (const driverFile of [
     'dusk-domains-core.data-driver.wasm',

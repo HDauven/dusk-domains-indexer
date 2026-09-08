@@ -8,7 +8,7 @@ The indexer turns Dusk Domains contract events into queryable read models for se
 
 - Node.js 24+
 - npm
-- Access to Dusk node/event data
+- An archive-enabled Rusk exposing `lastBlockPair`, `blocks` and complete, ordered, hash-bound `contractEventBatch` responses
 - Optional SQLite database for durable hosted indexing
 
 ## Setup
@@ -19,6 +19,20 @@ npm test
 ```
 
 ## Run Locally
+
+Start one collector per journal (Node.js uses the installed WASM data drivers; no Deno checkout is needed):
+
+```bash
+npm run indexer:collect -- --env-file .env.local --public-dir public/contracts \
+  --node-url http://127.0.0.1:18180/ --from-block 1 \
+  --event-log target/dusk-domains.events.jsonl --cursor-file target/dusk-domains.cursor.json
+```
+
+For a new deployment, `--from-block` may be its first deployment height; keep that value on restart. Collection processes finalized blocks in order, in batches of at most 100, polling every five seconds. Expect finality plus polling delay, rather than unfinalized live updates. The journal is synced before its hash/byte cursor; an uncommitted crash tail is truncated and refetched. Missing archive blocks or decoding errors block progress instead of silently skipping events.
+
+**Legacy migration:** stop the old collector/API and preserve their files. Replay from at/before deployment into **new journal, cursor and SQLite paths**, then point the API at those files. Old live/proof projections lack identities needed for safe archive deduplication; they are never mixed automatically. Check `/health.ok` after catch-up. Event-log/SQLite health is degraded for missing/legacy cursors, stopped/stale collectors or incomplete replay; `finalizedBlockHeight` is null without archive coverage. Snapshot mode remains an explicit offline fallback.
+
+`npm run backfill:check -- --node-url <archive> --json` probes the actual archive API. Availability at the head does not prove retention back to deployment. Nodes without the required archive surface must be upgraded; the collector does not silently fall back to live-only capture.
 
 Event-log mode:
 

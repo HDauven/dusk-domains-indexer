@@ -304,7 +304,7 @@ describe('production indexer durability check', () => {
       proofReport: fixture.proofReport,
       rebuild: true,
       maxSourceAgeMinutes: 10,
-      now: '2026-06-22T00:05:00.000Z',
+      now: new Date(Date.now() + 4 * 60_000).toISOString(),
     })
 
     expect(result.ok).toBe(true)
@@ -334,7 +334,7 @@ describe('production indexer durability check', () => {
       envFile: fixture.envFile,
       proofReport: fixture.proofReport,
       maxSourceAgeMinutes: 10,
-      now: '2026-06-22T00:30:00.000Z',
+      now: new Date(Date.now() + 29 * 60_000).toISOString(),
     })
 
     expect(result.ok).toBe(false)

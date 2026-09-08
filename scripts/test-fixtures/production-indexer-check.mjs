@@ -96,20 +96,22 @@ export async function writeDurableFixture(options = {}) {
   ]
   await writeFile(eventLog, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8')
   await writeFile(cursor, JSON.stringify({
-    version: 1,
-    source: 'w3sper-live-subscription',
+    version: 2,
+    source: 'rusk-finalized-archive',
+    fromBlock: 1,
+    scannedBlockHash: '11'.repeat(32),
     status: 'running',
     eventCount: rows.length,
     replayedEventCount: 0,
     startedAt: '2026-06-22T00:00:00.000Z',
-    updatedAt: '2026-06-22T00:01:00.000Z',
+    updatedAt: new Date().toISOString(),
     lastEventAt: '2026-06-22T00:00:00.000Z',
     lastContract: 'core',
     lastEventName: 'name_registered',
     lastTxId: 'tx-register',
     lastBlockHeight: blockHeight,
     currentBlockHeight,
-    ...(options.scannedBlockHeight === undefined ? {} : { scannedBlockHeight: options.scannedBlockHeight }),
+    scannedBlockHeight: options.scannedBlockHeight ?? currentBlockHeight,
   }, null, 2), 'utf8')
   await writeFile(envFile, `
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${coreContractId}

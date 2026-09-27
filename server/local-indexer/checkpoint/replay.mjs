@@ -63,14 +63,19 @@ export function createReplayCheckpoint(events, rawEventCount, warnings, updatedA
     if (event?.type) last = { event, meta: entry?.meta ?? {} }
   }
 
+  return replayCheckpointSummary({ eventCount: events.length, rawEventCount, warningCount: warnings.length, last, updatedAt })
+}
+
+// The same checkpoint from running totals, for an indexer that applies events as they arrive.
+export function replayCheckpointSummary({ eventCount, rawEventCount, warningCount, last, updatedAt }) {
   return {
     version: 1,
     source: 'local-indexer-event-log',
     status: 'replayed',
-    eventCount: events.length,
+    eventCount,
     rawEventCount,
-    duplicateCount: Math.max(0, rawEventCount - events.length),
-    warningCount: warnings.length,
+    duplicateCount: Math.max(0, rawEventCount - eventCount),
+    warningCount,
     updatedAt,
     lastEventAt: last ? eventTimestamp(last.event, last.meta) : null,
     lastContract: last?.meta?.contractKey ?? null,

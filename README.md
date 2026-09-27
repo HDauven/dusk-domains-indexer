@@ -55,7 +55,7 @@ npm start -- \
   --watch
 ```
 
-SQLite mode uses WAL and a single writer. It stores raw events, replay state, cursor metadata and checkpoints so the service can restart without a full rebuild.
+SQLite mode uses WAL and a single writer. It stores raw events, replay state, cursor metadata and checkpoints so the service can restart without a full rebuild. With `--watch`, the API applies only journal lines past the last applied offset; a cursor heartbeat with no new events only refreshes health. A journal that shrinks or is replaced is rebuilt. `npm run bench:incremental` measures the cost per new block against a full rebuild.
 
 ## API
 

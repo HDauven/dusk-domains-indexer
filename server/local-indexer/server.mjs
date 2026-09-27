@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
+import { createIncrementalSqliteStore } from './incremental-sqlite-store.mjs'
 import { createLocalIndexerHandler } from './routes.mjs'
 import {
   createReloadingLocalIndexerStore,
@@ -8,9 +9,11 @@ import {
 
 export async function serveLocalIndexer(args) {
   const source = sourceFromArgs(args)
-  const storeProvider = args.watch
-    ? await createReloadingLocalIndexerStore(source)
-    : await createStaticLocalIndexerStore(source)
+  const storeProvider = !args.watch
+    ? await createStaticLocalIndexerStore(source)
+    : source.mode === 'sqlite' && source.eventLogFile
+      ? await createIncrementalSqliteStore(source)
+      : await createReloadingLocalIndexerStore(source)
   const server = createServer(createLocalIndexerHandler(storeProvider, {
     corsOrigin: args.corsOrigin,
   }))
@@ -71,7 +74,8 @@ Usage:
 Options:
   --snapshot <file>  Snapshot JSON written by npm run e2e:local. Default: target/dusk-domains-local-indexer.json.
   --event-log <file> Replay JSON/JSONL indexer events instead of a snapshot.
-  --sqlite <file>    Serve from a SQLite/WAL event store. With --event-log, rebuild/import the DB before serving.
+  --sqlite <file>    Serve from a SQLite/WAL event store. With --event-log, import the journal before serving;
+                     with --watch as well, apply new journal lines as they are appended.
   --cursor <file>    Optional collector cursor JSON exposed on /health. Default with --event-log: target/dusk-domains-local-indexer.cursor.json.
   --checkpoint <file> Optional persisted replay checkpoint JSON exposed on /health. Default with --event-log: target/dusk-domains-local-indexer.checkpoint.json.
   --strict-health    Fail /health when cursor/checkpoint/finality state is missing, stale, or unsafe.

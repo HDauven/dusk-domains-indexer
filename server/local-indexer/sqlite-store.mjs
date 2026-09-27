@@ -20,7 +20,7 @@ import {
   sqliteSchemaState,
 } from './sqlite-migrations.mjs'
 
-const eventsTable = 'events'
+export const eventsTable = 'events'
 const kvTable = 'indexer_kv'
 
 export async function loadSqliteStore(dbFile, options = {}) {
@@ -111,39 +111,9 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
       db.exec(`DELETE FROM ${eventsTable}`)
       db.exec(`DELETE FROM sqlite_sequence WHERE name = '${eventsTable}'`)
 
-      const insertEvent = db.prepare(`
-        INSERT INTO ${eventsTable} (
-          event_key,
-          event_type,
-          chain_id,
-          block_height,
-          tx_id,
-          event_index,
-          contract_key,
-          contract_id,
-          observed_at,
-          event_json,
-          meta_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-
+      const insertEvent = prepareEventInsert(db)
       for (let index = 0; index < events.length; index += 1) {
-        const entry = events[index]
-        const event = entry?.event ?? entry
-        const meta = entry?.meta ?? {}
-        insertEvent.run(
-          eventLogEntryKey(entry),
-          event?.type ?? 'unknown',
-          meta.chainId ?? null,
-          integerOrNull(meta.blockHeight),
-          meta.txId ?? null,
-          integerOrNull(meta.eventIndex ?? index),
-          meta.contractKey ?? null,
-          meta.contractId ?? null,
-          meta.observedAt ?? event?.updatedAt ?? event?.createdAt ?? null,
-          JSON.stringify(event ?? {}),
-          JSON.stringify(meta ?? {}),
-        )
+        insertEvent.run(...eventRow(events[index], index))
       }
 
       kvSet(db, 'checkpoint', checkpoint, now)
@@ -173,7 +143,45 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
   }
 }
 
-async function openIndexerDatabase(dbFile) {
+// Rows are keyed by the event's identity, so a replayed or re-appended event is ignored
+// instead of stored twice.
+export function prepareEventInsert(db, { ignoreDuplicates = false } = {}) {
+  return db.prepare(`
+    INSERT ${ignoreDuplicates ? 'OR IGNORE ' : ''}INTO ${eventsTable} (
+      event_key,
+      event_type,
+      chain_id,
+      block_height,
+      tx_id,
+      event_index,
+      contract_key,
+      contract_id,
+      observed_at,
+      event_json,
+      meta_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+}
+
+export function eventRow(entry, index) {
+  const event = entry?.event ?? entry
+  const meta = entry?.meta ?? {}
+  return [
+    eventLogEntryKey(entry),
+    event?.type ?? 'unknown',
+    meta.chainId ?? null,
+    integerOrNull(meta.blockHeight),
+    meta.txId ?? null,
+    integerOrNull(meta.eventIndex ?? index),
+    meta.contractKey ?? null,
+    meta.contractId ?? null,
+    meta.observedAt ?? event?.updatedAt ?? event?.createdAt ?? null,
+    JSON.stringify(event ?? {}),
+    JSON.stringify(meta ?? {}),
+  ]
+}
+
+export async function openIndexerDatabase(dbFile) {
   await mkdir(dirname(dbFile), { recursive: true })
   const { DatabaseSync } = await import('node:sqlite')
   const db = new DatabaseSync(dbFile)
@@ -192,7 +200,7 @@ function sqliteReplayCheckpoint(events, rawEventCount, warnings, updatedAt) {
   }
 }
 
-function kvSet(db, key, value, updatedAt) {
+export function kvSet(db, key, value, updatedAt) {
   db.prepare(`
     INSERT INTO ${kvTable}(key, value_json, updated_at)
     VALUES (?, ?, ?)
@@ -202,18 +210,18 @@ function kvSet(db, key, value, updatedAt) {
   `).run(key, JSON.stringify(value), updatedAt)
 }
 
-function kvGet(db, key) {
+export function kvGet(db, key) {
   const row = db.prepare(`SELECT value_json FROM ${kvTable} WHERE key = ?`).get(key)
   if (!row) return null
   return parseJson(row.value_json, null)
 }
 
-function currentJournalMode(db) {
+export function currentJournalMode(db) {
   const row = db.prepare('PRAGMA journal_mode').get()
   return row?.journal_mode ?? row?.['journal_mode'] ?? null
 }
 
-function parseJson(value, fallback) {
+export function parseJson(value, fallback) {
   try {
     return JSON.parse(value)
   } catch {
@@ -221,7 +229,7 @@ function parseJson(value, fallback) {
   }
 }
 
-function integerOrNull(value) {
+export function integerOrNull(value) {
   if (!Number.isFinite(Number(value))) return null
   return Number(value)
 }

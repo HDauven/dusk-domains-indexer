@@ -21,6 +21,7 @@ import {
   eventTimestamp,
   parseEventLog,
 } from './event-log.mjs'
+import { knownChainHeight, maxNumberOrNull } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { normalizeName, normalizeNode } from './http.mjs'
 import {
@@ -50,7 +51,7 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
   const warnings = [...parsedLog.warnings]
   const cursor = await loadCursor(cursorFile)
   const now = new Date().toISOString()
-  const state = replayEventLog(events, warnings, now)
+  const state = replayEventLog(events, warnings, now, knownChainHeight({ cursor }))
   const checkpoint = createReplayCheckpoint(events, parsedLog.entries.length, warnings, now)
   const durableCheckpoint = await loadDurableCheckpoint(options.checkpointFile)
   const durability = indexerDurabilityState({
@@ -84,7 +85,9 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
   }
 }
 
-export function replayEventLog(events, warnings, now) {
+// Replays events in order. Which names are still held is decided at the chain height: the
+// caller's view of the tip, or at least the height of the newest event.
+export function replayEventLog(events, warnings, now, chainHeight = null) {
   const namesByNode = new Map()
   const recordsByNode = new Map()
   const recordsByNodeKey = new Map()
@@ -106,6 +109,7 @@ export function replayEventLog(events, warnings, now) {
   let feeConfig = { ...DEFAULT_FEE_CONFIG }
   const referralsByReferrer = new Map()
   let referralRewardsSupported = false
+  let newestEventHeight = null
 
   for (let index = 0; index < events.length; index += 1) {
     const entry = events[index]
@@ -118,6 +122,7 @@ export function replayEventLog(events, warnings, now) {
       assertSafeNumericTree(event, 'event')
       assertSafeNumericTree(meta, 'event metadata')
       meta.blockHeight = confirmedEventBlockHeight(event, meta)
+      if (Number.isFinite(meta.blockHeight)) newestEventHeight = Math.max(newestEventHeight ?? 0, meta.blockHeight)
       if (isLifecycleEvent(event.type)) {
         applyLifecycleEvent({ namesByNode, activityByNode }, event, meta, timestamp)
         if (event.type === 'name_released') {
@@ -181,8 +186,9 @@ export function replayEventLog(events, warnings, now) {
     }
   }
 
+  const clock = { blockHeight: maxNumberOrNull(chainHeight, newestEventHeight), date: new Date(now) }
   for (const [node, lifecycle] of namesByNode) {
-    if (!indexedLifecycleBlocksRegistration(lifecycle, new Date(now))) {
+    if (!indexedLifecycleBlocksRegistration(lifecycle, clock)) {
       clearNodeDerivedState({
         node,
         recordsByNode,
@@ -197,9 +203,8 @@ export function replayEventLog(events, warnings, now) {
   }
 
   const namesByCanonical = new Map()
-  const indexedAt = new Date(now)
   for (const [node, lifecycle] of namesByNode) {
-    if (!lifecycle.canonicalName || !indexedLifecycleBlocksRegistration(lifecycle, indexedAt)) continue
+    if (!lifecycle.canonicalName || !indexedLifecycleBlocksRegistration(lifecycle, clock)) continue
     const records = recordsByNode.get(node) ?? []
     const activity = activityByNode.get(node) ?? []
     namesByCanonical.set(lifecycle.canonicalName, {

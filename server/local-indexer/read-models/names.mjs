@@ -6,6 +6,7 @@ import {
 import {
   indexedNamespaceNodeBlocksRegistration,
   indexedSubnameBlocksRegistration,
+  lifecycleClock,
 } from './lifecycle.mjs'
 
 export function listNames(store, owner) {
@@ -30,7 +31,7 @@ export function listNames(store, owner) {
 }
 
 export function activeSubnamesForParent(store, parentNode) {
-  const now = new Date()
+  const now = lifecycleClock(store)
   if (!indexedNamespaceNodeBlocksRegistration(store, parentNode, now)) return []
   return (store.subnamesByParent.get(parentNode) ?? [])
     .filter((subname) => indexedSubnameBlocksRegistration(store, subname, now))

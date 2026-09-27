@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
 import { PUBLIC_PRIMARY_ENDPOINT_TYPES } from './constants.mjs'
 import {
@@ -38,7 +39,7 @@ export async function loadSnapshotStore(snapshotFile) {
   const checkpoint = normalizeSnapshotBlockCursor(snapshot.checkpoint ?? (
     snapshot.currentBlockHeight === undefined ? null : { lastBlockHeight: snapshot.currentBlockHeight }
   ))
-  const now = new Date()
+  const now = { blockHeight: knownChainHeight({ cursor, checkpoint }), date: new Date() }
   const namesByCanonical = new Map()
   const namesByNode = new Map()
   const activityByNode = new Map()

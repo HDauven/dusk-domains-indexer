@@ -6,12 +6,15 @@ import {
 import { createRecentChangeWarnings, validateResolverRecords } from '../records.mjs'
 import {
   indexedSubnameBlocksRegistration,
+  lifecycleClock,
+  lifecycleMomentPassed,
   subnameLifecycle,
 } from './lifecycle.mjs'
 
 export function resolveForward(store, rawName) {
   const canonicalName = normalizeName(rawName)
   const now = new Date()
+  const clock = lifecycleClock(store, now)
 
   if (!canonicalName || !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.dusk$/.test(canonicalName)) {
     return emptyForwardResponse(canonicalName, now, {
@@ -21,7 +24,7 @@ export function resolveForward(store, rawName) {
   }
 
   const indexed = store.namesByCanonical.get(canonicalName)
-    ?? indexedSubnameAsName(store, canonicalName, now)
+    ?? indexedSubnameAsName(store, canonicalName, clock)
 
   if (!indexed) {
     return createForwardResponse({
@@ -31,6 +34,7 @@ export function resolveForward(store, rawName) {
       resolverId: null,
       resolverHealth: 'missing',
       expiresAt: null,
+      expired: false,
       activity: [],
       now,
     })
@@ -43,14 +47,15 @@ export function resolveForward(store, rawName) {
     resolverId: indexed.resolverId,
     resolverHealth: indexed.resolverHealth ?? 'ok',
     expiresAt: indexed.expiresAt,
+    expired: lifecycleMomentPassed(indexed.expiresAtBlockHeight, indexed.expiresAt, clock),
     activity: indexed.activity,
     now,
   })
 }
 
-function indexedSubnameAsName(store, canonicalName, now) {
+function indexedSubnameAsName(store, canonicalName, clock) {
   const subname = store.subnamesByCanonical?.get(canonicalName)
-  if (!indexedSubnameBlocksRegistration(store, subname, now)) return null
+  if (!indexedSubnameBlocksRegistration(store, subname, clock)) return null
   const node = normalizeNode(subname.node)
   const lifecycle = subnameLifecycle(subname)
 
@@ -77,7 +82,7 @@ function createForwardResponse(input) {
   if (input.resolverId && input.resolverHealth === 'invalid') {
     errors.push({ code: 'invalid_resolver', message: `${input.canonicalName} resolver is invalid.` })
   }
-  if (input.expiresAt && new Date(input.expiresAt).getTime() <= input.now.getTime()) {
+  if (input.expired) {
     errors.push({ code: 'expired_name', message: `${input.canonicalName} has expired.` })
   }
   const resolverHealth = !input.resolverId
@@ -95,7 +100,7 @@ function createForwardResponse(input) {
       health: resolverHealth,
     },
     expiry: {
-      status: input.expiresAt && new Date(input.expiresAt).getTime() <= input.now.getTime() ? 'expired' : 'active',
+      status: input.expired ? 'expired' : 'active',
       expiresAt: input.expiresAt ?? null,
     },
     cache: {

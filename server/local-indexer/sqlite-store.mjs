@@ -12,6 +12,7 @@ import {
   eventLogEntryKey,
   parseEventLog,
 } from './event-log.mjs'
+import { knownChainHeight } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { replayEventLog } from './event-log-store.mjs'
 import {
@@ -44,14 +45,14 @@ export async function loadSqliteStore(dbFile, options = {}) {
     const rawEventCount = kvGet(db, 'raw_event_count') ?? events.length
     const now = new Date().toISOString()
     const replayWarnings = []
-    const state = replayEventLog(events, replayWarnings, now)
+    const cursor = options.cursorFile ? await loadCursor(options.cursorFile) : kvGet(db, 'cursor')
+    const state = replayEventLog(events, replayWarnings, now, knownChainHeight({ cursor }))
     const warnings = uniqueWarnings([...storedWarnings, ...replayWarnings])
     const checkpoint = sqliteReplayCheckpoint(events, rawEventCount, warnings, now)
     const storedCheckpoint = kvGet(db, 'checkpoint')
     const durableCheckpoint = storedCheckpoint
       ? { ok: true, value: storedCheckpoint }
       : { ok: false, message: 'SQLite checkpoint metadata is missing.' }
-    const cursor = options.cursorFile ? await loadCursor(options.cursorFile) : kvGet(db, 'cursor')
     const schema = sqliteSchemaState(db)
     const durability = indexerDurabilityState({
       cursor,

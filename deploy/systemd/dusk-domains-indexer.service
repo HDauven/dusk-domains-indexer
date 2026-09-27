@@ -1,7 +1,7 @@
 [Unit]
 Description=Dusk Domains indexer API
-After=network-online.target
-Wants=network-online.target
+After=network-online.target dusk-domains-collector.service
+Wants=network-online.target dusk-domains-collector.service
 
 [Service]
 Type=simple

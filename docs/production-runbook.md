@@ -53,13 +53,15 @@ sudo cp .env.example /etc/dusk-domains/indexer.env
 sudo editor /etc/dusk-domains/indexer.env
 ```
 
-Install the systemd unit:
+Install the systemd units. The collector writes the journal and cursor; the API reads them:
 
 ```bash
-sudo cp deploy/systemd/dusk-domains-indexer.service /etc/systemd/system/
+sudo cp deploy/systemd/dusk-domains-collector.service deploy/systemd/dusk-domains-indexer.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now dusk-domains-indexer
+sudo systemctl enable --now dusk-domains-collector dusk-domains-indexer
 ```
+
+The collector needs `DUSK_DOMAINS_DEPLOYMENT_ENV_FILE` (node URL and contract IDs), `DUSK_DOMAINS_COLLECTOR_DRIVER_DIR` (the contracts' data-driver WASM) and `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT` set in `indexer.env`. It refuses to start with an empty start height rather than replaying from block 1.
 
 ## Run Locally
 

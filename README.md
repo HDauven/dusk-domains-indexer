@@ -97,7 +97,7 @@ than rounded into a different price or balance.
 ```text
 server/local-indexer/   API server, read models, projectors, persistence and health checks
 scripts/                smoke tests, backup checks, monitoring and operator utilities
-deploy/systemd/         hosted service unit template
+deploy/systemd/         collector and API service units
 docs/                   API, events, storage and production runbooks
 ```
 

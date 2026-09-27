@@ -8,7 +8,11 @@ The indexer turns Dusk Domains contract events into queryable read models for se
 
 - Node.js 24+
 - npm
-- An archive-enabled Rusk exposing `lastBlockPair`, `blocks` and complete, ordered, hash-bound `contractEventBatch` responses
+- An archive-enabled Rusk exposing `lastBlockPair` and `blocks`, plus a way to prove a block's events are complete:
+  - `contractEventBatch` (rusk-private #290, not yet in a Rusk release), or
+  - on Rusk 1.7 releases, `checkBlock(onlyFinalized: true)` and `contractEvents`. Events are read only for blocks the archive has finalized, and put back in the block's transaction order.
+
+  The collector picks one when it starts and records it as `archiveApi` (`event-batch` or `finalized-block`) in its cursor.
 - Optional SQLite database for durable hosted indexing
 
 ## Setup

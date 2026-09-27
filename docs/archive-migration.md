@@ -8,7 +8,7 @@ Nothing here edits the legacy journal, cursor or database.
 
 - The host runs a release with block-height lifecycle checks and the collector unit (`deploy/systemd/dusk-domains-collector.service`).
 - You know the **deployment start height**: the block of the first contract deployment, or any height before it. The deploy output or the launch checklist records it. The legacy journal cannot provide it, because its events carry no heights (`/health` shows `deploymentStartHeight: 0`). If it is unknown, start well before the earliest height you can bound it by. An earlier start only costs replay time.
-- The runtime env file (`DUSK_DOMAINS_DEPLOYMENT_ENV_FILE`) has the contract IDs and a `VITE_DUSK_DOMAINS_NODE_URL` for an **archive** node that serves `lastBlockPair`, `blocks` and `contractEventBatch`.
+- The runtime env file (`DUSK_DOMAINS_DEPLOYMENT_ENV_FILE`) has the contract IDs and a `VITE_DUSK_DOMAINS_NODE_URL` for an **archive** node that serves `lastBlockPair` and `blocks`, plus either `contractEventBatch` or `checkBlock` and `contractEvents` (see the README). Testnet ran Rusk 1.7.1 in September 2026, which has only the second pair, so the cursor will show `archiveApi: "finalized-block"`.
 - The data-driver WASM for the deployed contracts is in one directory: `dusk-domains-core.data-driver.wasm`, `dusk-domains-treasury.data-driver.wasm` and, if the marketplace is configured, `dusk-domains-marketplace.data-driver.wasm`. The frontend ships them under `public/contracts/deployments/<id>/`. Use the deployment whose contract IDs match the env file.
 
 Record what is live now:

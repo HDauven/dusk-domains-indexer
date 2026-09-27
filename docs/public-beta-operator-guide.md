@@ -88,7 +88,7 @@ npm run indexer:collect -- \
   --from-block 1
 ```
 
-Use an archive node with complete hash-bound `contractEventBatch` support. To avoid scanning pre-deployment blocks, replace `1` with the first deployment height and retain it on restart. The finalized-only collector automatically fills offline gaps; legacy live/proof journals require new journal/cursor/SQLite paths, not append-in-place migration (see README).
+Use an archive node that serves `contractEventBatch`, or `checkBlock` and `contractEvents` on Rusk 1.7 releases (see README). To avoid scanning pre-deployment blocks, replace `1` with the first deployment height and retain it on restart. The finalized-only collector automatically fills offline gaps; legacy live/proof journals require new journal/cursor/SQLite paths, not append-in-place migration (see README).
 
 Build the SQLite store and replay checkpoint, then run the production checks:
 

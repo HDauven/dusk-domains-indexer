@@ -17,6 +17,9 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
+# Build with --build-arg DUSK_DOMAINS_INDEXER_SOURCE_COMMIT=$(git rev-parse HEAD) so /health says what runs.
+ARG DUSK_DOMAINS_INDEXER_SOURCE_COMMIT=
+ENV DUSK_DOMAINS_INDEXER_SOURCE_COMMIT=$DUSK_DOMAINS_INDEXER_SOURCE_COMMIT
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json .npmrc ./

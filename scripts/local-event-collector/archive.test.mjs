@@ -41,7 +41,9 @@ it('replays missed blocks exactly once, preserves event order and rolls back an 
     const controller = new AbortController()
     const fetcher = async (_url, { body }) => {
       let result
-      if (body.includes('lastBlockPair')) {
+      if (body.includes('__type')) {
+        result = { __type: { fields: [{ name: 'contractEvents' }, { name: 'contractEventBatch' }] } }
+      } else if (body.includes('lastBlockPair')) {
         result = { lastBlockPair: { json: { last_block: [head + 1, hash(head + 1)], last_finalized_block: [head, hash(head)] } } }
         const cursor = JSON.parse(await readFile(config.cursorFile))
         if (cursor.scannedBlockHeight === head) controller.abort()
@@ -89,6 +91,7 @@ it('replays missed blocks exactly once, preserves event order and rolls back an 
     assert.equal(new Set(rows.map(row => row.meta.eventId)).size, 3)
     assert.deepEqual(rows.map(row => [row.meta.blockHeight, row.meta.eventIndex]), [[1, 0], [1, 1], [3, 1]])
     assert(rows.every(row => row.meta.source === archiveSource && row.meta.timeSource === 'block' && row.meta.txId === raw.origin))
+    assert.equal(cursor.archiveApi, 'event-batch')
     assert.equal(rows[2].meta.observedAt, new Date(header(3).timestamp * 1000).toISOString())
     head = 106
     for (fault of ['missing', 'wrong-hash', 'decode', 'rollback', 'unknown', 'range']) {
@@ -115,6 +118,74 @@ it('replays missed blocks exactly once, preserves event order and rolls back an 
     await rm(config.cursorFile)
     await assert.rejects(run, /Unbound\/legacy journal/)
     assert.equal(await readFile(config.eventLog, 'utf8'), recovered)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+it('reads a released Rusk archive only for blocks it finalized, in transaction order', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'archive-collector-'))
+  const hash = n => n.toString(16).padStart(64, '0')
+  const header = height => ({ height, hash: hash(height), prevBlockHash: hash(height - 1), timestamp: 1_780_000_000 + height })
+  const source = hash(900)
+  const cleared = (origin, key) => ({ source, origin, reverted: false, topic: 'record_cleared',
+    data: Buffer.from(JSON.stringify({ node: Array(32).fill(1), controller: Array(32).fill(2), key })).toString('hex') })
+  // Block 2 runs tx b2 before tx a2. Rusk 1.7 returns its finalized events grouped by origin hash.
+  const transactions = new Map([[2, [hash(0xb2), hash(0xa2)]], [4, [hash(0xc4)]]])
+  const events = new Map([
+    [2, [{ ...cleared(hash(2), 'reward'), source: hash(901) }, cleared(hash(0xa2), 'third'), cleared(hash(0xb2), 'first'), cleared(hash(0xb2), 'second')]],
+    [4, [cleared(hash(0xd4), 'stray')]],
+  ])
+  const config = { fromBlock: 1, nodeUrl: 'http://node/', publicDir: dir,
+    eventLog: join(dir, 'events.jsonl'), cursorFile: join(dir, 'cursor.json'),
+    contracts: [{ key: 'core', contractId: source, driverFile: 'driver.wasm', events: ['record_cleared'] }] }
+  await writeFile(join(dir, 'driver.wasm'), '')
+  let finalized = 3
+  let archived = 2
+  const run = async () => {
+    const controller = new AbortController()
+    const fetcher = async (_url, { body }) => {
+      const aliases = pattern => [...body.matchAll(pattern)]
+      let result
+      if (body.includes('__type')) {
+        result = { __type: { fields: [{ name: 'contractEvents' }, { name: 'checkBlock' }] } }
+      } else if (body.includes('lastBlockPair')) {
+        controller.abort() // One poll per run.
+        result = { lastBlockPair: { json: { last_block: [finalized + 1, hash(finalized + 1)], last_finalized_block: [finalized, hash(finalized)] } } }
+      } else if (body.includes('block(height:')) {
+        result = { block: { header: header(Number(body.match(/height:(\d+)/)[1])) } }
+      } else if (body.includes('blocks(range:')) {
+        assert(body.includes('transactions{id}'))
+        const [, start, end] = body.match(/\[(\d+),(\d+)\]/).map(Number)
+        result = { blocks: Array.from({ length: end - start + 1 }, (_, i) => ({ header: header(start + i),
+          transactions: (transactions.get(start + i) ?? []).map(id => ({ id })) })) }
+      } else if (body.includes('checkBlock')) {
+        result = Object.fromEntries(aliases(/(b\d+):checkBlock\(height:(\d+),hash:"([0-9a-f]+)",onlyFinalized:true\)/g)
+          .map(([, alias, height, blockHash]) => [alias, Number(height) <= archived && blockHash === hash(Number(height))]))
+      } else {
+        result = Object.fromEntries(aliases(/(b\d+):contractEvents\(hash:"([0-9a-f]+)"\)/g).map(([, alias, blockHash]) => {
+          const height = parseInt(blockHash, 16)
+          assert(height <= archived, 'Read events of a block the archive has not finalized')
+          return [alias, { json: events.get(height) ?? [] }]
+        }))
+      }
+      return { ok: true, json: async () => result }
+    }
+    await collectArchive(config, { signal: controller.signal, fetcher })
+    return JSON.parse(await readFile(config.cursorFile))
+  }
+  try {
+    let cursor = await run()
+    assert.equal(cursor.archiveApi, 'finalized-block')
+    // Each run ends 'stopped'; the reason is what that poll saw.
+    assert.deepEqual([cursor.scannedBlockHeight, cursor.reason], [2, 'Archive has not finalized block 3 yet'])
+    const rows = (await readFile(config.eventLog, 'utf8')).trim().split('\n').map(JSON.parse)
+    assert.deepEqual(rows.map(row => [row.event.key, row.meta.txId, row.meta.eventIndex]),
+      [['first', hash(0xb2), 0], ['second', hash(0xb2), 1], ['third', hash(0xa2), 2]])
+    archived = 3
+    cursor = await run()
+    assert.deepEqual([cursor.scannedBlockHeight, cursor.reason, cursor.eventCount], [3, null, 3])
+    finalized = archived = 4
+    cursor = await run()
+    assert.deepEqual([cursor.scannedBlockHeight, cursor.reason, cursor.eventCount], [3, 'Archive event from unknown origin at 4', 3])
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 

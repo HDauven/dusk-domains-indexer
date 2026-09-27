@@ -74,7 +74,8 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
     await journal.sync()
     await syncDirectory(dirname(config.eventLog))
     const replayedEventCount = cursor.eventCount
-    await persist({ ...cursor, replayedEventCount, status: 'catching-up', reason: null })
+    const archiveApi = await detectArchiveApi(query)
+    await persist({ ...cursor, archiveApi, replayedEventCount, status: 'catching-up', reason: null })
     while (!signal?.aborted) {
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
@@ -86,10 +87,12 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
         assert(finalizedHeight <= currentBlockHeight && finalizedHeight >= cursor.scannedBlockHeight, 'Finalized head is behind the committed cursor')
         const to = Math.min(finalizedHeight, cursor.scannedBlockHeight + batchSize)
         const entries = []
+        let scannedBlockHeight = cursor.scannedBlockHeight
         let scannedBlockHash = cursor.scannedBlockHash
-        if (to > cursor.scannedBlockHeight) {
-          const from = cursor.scannedBlockHeight + 1
-          const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash timestamp}}}`)).blocks
+        if (to > scannedBlockHeight) {
+          const from = scannedBlockHeight + 1
+          const fields = archiveApi === 'event-batch' ? '' : ' transactions{id}'
+          const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash timestamp}${fields}}}`)).blocks
           assert(Array.isArray(blocks) && blocks.length === to - from + 1, 'Incomplete block range')
           for (const [i, block] of blocks.entries()) {
             assert.equal(block.header?.height, from + i, 'Out-of-order block range')
@@ -97,13 +100,11 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
             integer(block.header.timestamp)
             assert.equal(block.header.prevBlockHash, i ? blocks[i - 1].header.hash : scannedBlockHash, 'Broken block hash chain')
           }
-          scannedBlockHash = blocks.at(-1).header.hash
-          if (to === finalizedHeight) assert.equal(scannedBlockHash, finalizedHash, 'Finalized head hash mismatch')
-          const batches = await query('{' + blocks.map(({ header }, i) => `b${i}:contractEventBatch(hash:"${header.hash}"){blockHash complete json}`).join(' ') + '}')
-          for (const [i, { header }] of blocks.entries()) {
-            const batch = batches[`b${i}`]
-            assert(batch?.complete === true && batch.blockHash === header.hash && Array.isArray(batch.json), `Archive batch unavailable/incomplete at ${header.height}`)
-            for (const [eventIndex, raw] of batch.json.entries()) {
+          if (to === finalizedHeight) assert.equal(blocks.at(-1).header.hash, finalizedHash, 'Finalized head hash mismatch')
+          const batches = archiveApi === 'event-batch' ? await eventBatches(query, blocks) : await finalizedBlockEvents(query, blocks)
+          for (const [i, events] of batches.entries()) {
+            const { header } = blocks[i]
+            for (const [eventIndex, raw] of events.entries()) {
               hexHash(raw.source)
               const contract = contracts.get(raw.source)
               if (!contract) continue
@@ -121,6 +122,7 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
               entries.push(entry)
             }
           }
+          if (batches.length) ({ height: scannedBlockHeight, hash: scannedBlockHash } = blocks[batches.length - 1].header)
         } else {
           assert.equal(scannedBlockHash, finalizedHash, 'Finalized head hash mismatch')
         }
@@ -130,12 +132,13 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
           await journal.sync()
         }
         const last = entries.at(-1)
-        await persist({ ...cursor, currentBlockHeight, scannedBlockHeight: to, scannedBlockHash,
+        await persist({ ...cursor, currentBlockHeight, scannedBlockHeight, scannedBlockHash,
           eventCount: cursor.eventCount + entries.length, eventLogBytes: cursor.eventLogBytes + Buffer.byteLength(text),
           ...(last ? { lastEventAt: last.meta.observedAt, lastContract: last.meta.contractKey,
             lastEventName: last.event.type, lastTxId: last.meta.txId, lastBlockHeight: last.meta.blockHeight } : {}),
-          status: to === finalizedHeight ? 'running' : 'catching-up', reason: null })
-        if (to < finalizedHeight) continue
+          status: scannedBlockHeight === finalizedHeight ? 'running' : 'catching-up',
+          reason: scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null })
+        if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
       } catch (error) {
         // Never advance past a missing archive, invalid payload, or failed durable write.
         await journal.truncate(cursor.eventLogBytes)
@@ -160,6 +163,42 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
     cursor = next
     await syncDirectory(dirname(config.cursorFile))
   }
+}
+
+// rusk-private #290 adds contractEventBatch; Rusk 1.7 releases predate it.
+async function detectArchiveApi(query) {
+  const fields = (await query('{__type(name:"Query"){fields{name}}}')).__type?.fields ?? []
+  return fields.some(field => field.name === 'contractEventBatch') ? 'event-batch' : 'finalized-block'
+}
+
+async function eventBatches(query, blocks) {
+  const batches = await query('{' + blocks.map(({ header }, i) => `b${i}:contractEventBatch(hash:"${header.hash}"){blockHash complete json}`).join(' ') + '}')
+  return blocks.map(({ header }, i) => {
+    const batch = batches[`b${i}`]
+    assert(batch?.complete === true && batch.blockHash === header.hash && Array.isArray(batch.json), `Archive batch unavailable/incomplete at ${header.height}`)
+    return batch.json
+  })
+}
+
+// Without contractEventBatch, an empty contractEvents list can also mean the archive lacks the block.
+// Rusk 1.7 writes a block's finalized marker and its events in one transaction, so read events only
+// for the leading blocks checkBlock confirms. Finalizing regroups events by transaction hash; put them
+// back in the block's transaction order, with block-level events (rewards, slashes) last. Slashes
+// run first in Rusk 1.7, so their block's eventIndex values differ from contractEventBatch's.
+async function finalizedBlockEvents(query, blocks) {
+  const aliased = (list, field) => '{' + list.map(({ header }, i) => `b${i}:${field(header)}`).join(' ') + '}'
+  const checks = await query(aliased(blocks, ({ height, hash }) => `checkBlock(height:${height},hash:"${hash}",onlyFinalized:true)`))
+  const missing = blocks.findIndex((_, i) => checks[`b${i}`] !== true)
+  const archived = missing === -1 ? blocks : blocks.slice(0, missing)
+  if (!archived.length) return []
+  const events = await query(aliased(archived, ({ hash }) => `contractEvents(hash:"${hash}"){json}`))
+  return archived.map(({ header, transactions }, i) => {
+    const json = events[`b${i}`]?.json
+    assert(Array.isArray(json) && Array.isArray(transactions), `Archive events unavailable at ${header.height}`)
+    const position = new Map(transactions.map(({ id }, index) => [id, index]))
+    for (const { origin } of json) assert(position.has(origin) || origin === header.hash, `Archive event from unknown origin at ${header.height}`)
+    return json.toSorted((a, b) => (position.get(a.origin) ?? position.size) - (position.get(b.origin) ?? position.size))
+  })
 }
 
 async function syncDirectory(path) {

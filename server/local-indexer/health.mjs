@@ -4,6 +4,7 @@ import {
   LOCAL_INDEXER_READ_MODEL_SCHEMA_VERSION,
   LOCAL_INDEXER_SCHEMA_VERSION,
 } from './constants.mjs'
+import { knownChainHeight } from './chain-height.mjs'
 import { LOCAL_INDEXER_ROUTE_LIST, numberOrNull } from './http.mjs'
 import { LOCAL_INDEXER_PACKAGE_INFO } from './package-info.mjs'
 
@@ -50,12 +51,7 @@ export function healthResponseForStore(store) {
 }
 
 function storeCurrentBlockHeight(store) {
-  return maxNumberOrNull(
-    store?.cursor?.currentBlockHeight,
-    store?.cursor?.scannedBlockHeight,
-    store?.cursor?.lastBlockHeight,
-    store?.checkpoint?.lastBlockHeight,
-  )
+  return knownChainHeight(store ?? {})
 }
 
 function lastIndexedEvent(store) {
@@ -96,11 +92,4 @@ function healthDegradedReason(store) {
     code: store.health.code ?? 'indexer_health_degraded',
     message: store.health.message ?? 'Indexer health is degraded.',
   }
-}
-
-function maxNumberOrNull(...values) {
-  const numbers = values
-    .map((value) => numberOrNull(value))
-    .filter((value) => value !== null)
-  return numbers.length ? Math.max(...numbers) : null
 }

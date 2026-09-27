@@ -12,13 +12,14 @@ import { normalizeName } from '../http.mjs'
 import {
   indexedLifecycleBlocksRegistration,
   indexedSubnameBlocksRegistration,
+  lifecycleClock,
 } from './lifecycle.mjs'
 
 export function searchName(store, query) {
   const canonical = normalizeName(query)
   const label = apexLabel(canonical)
   const issues = []
-  const now = new Date()
+  const now = lifecycleClock(store)
   let status = canonical ? 'available' : 'invalid'
   let reserved
 

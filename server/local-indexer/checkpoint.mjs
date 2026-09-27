@@ -9,5 +9,6 @@ export {
   createEventLogReplayCheckpoint,
   createReplayCheckpoint,
   loadDurableCheckpoint,
+  replayCheckpointSummary,
   writeIndexerCheckpointFile,
 } from './checkpoint/replay.mjs'

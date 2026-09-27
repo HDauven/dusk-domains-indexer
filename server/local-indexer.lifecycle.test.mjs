@@ -8,10 +8,60 @@ import {
   createReleaseReregistrationEventLogFixture,
   expectJson,
   startServer,
+  writeCursor,
   writeEventLog,
 } from './local-indexer-test-helpers.mjs'
 
 describe('local indexer event-log lifecycle cleanup', () => {
+  // Legacy logs carry ISO dates that were anchored wrongly; heights decide instead.
+  it('decides whether a name is held from block heights, not its estimated dates', async () => {
+    const registration = (label, byte, expiresAtBlockHeight, graceEndsAtBlockHeight, dates) => ({
+      event: {
+        type: 'name_registered',
+        node: `0x${byte.repeat(32)}`,
+        label,
+        actor: '0xowner',
+        owner: '0xowner',
+        expiresAtBlockHeight,
+        graceEndsAtBlockHeight,
+        ...dates,
+      },
+      meta: { txId: `tx-${label}`, blockHeight: 900 },
+    })
+    const eventLogFile = await writeEventLog([
+      // Expired by height although its dates claim 2099.
+      registration('lapsed', 'a1', 950, 990, { expiresAt: '2099-01-01T00:00:00.000Z', graceEndsAt: '2099-02-01T00:00:00.000Z' }),
+      // Held by height although its dates are already past.
+      registration('current', 'b2', 5000, 6000, { expiresAt: '2001-01-01T00:00:00.000Z', graceEndsAt: '2001-02-01T00:00:00.000Z' }),
+      // In grace by height: expired, but nobody else can claim it yet.
+      registration('grace', 'c3', 990, 1100, { expiresAt: '2001-01-01T00:00:00.000Z', graceEndsAt: '2001-02-01T00:00:00.000Z' }),
+    ])
+    const cursorFile = await writeCursor({ currentBlockHeight: 1000, scannedBlockHeight: 1000 })
+    const store = await loadEventLogStore(eventLogFile, cursorFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/search?query=lapsed`)).resolves.toMatchObject({ status: 'available' })
+      expect(store.namesByNode.get(`0x${'a1'.repeat(32)}`)).toMatchObject({ canonicalName: 'lapsed.dusk' })
+      await expect(expectJson(`${baseUrl}/search?query=current`)).resolves.toMatchObject({ status: 'registered' })
+      await expect(expectJson(`${baseUrl}/search?query=grace`)).resolves.toMatchObject({ status: 'registered' })
+      await expect(expectJson(`${baseUrl}/resolve?name=current.dusk`)).resolves.toMatchObject({ expiry: { status: 'active' } })
+      await expect(expectJson(`${baseUrl}/resolve?name=grace.dusk`)).resolves.toMatchObject({ expiry: { status: 'expired' } })
+    } finally {
+      await close()
+    }
+  })
+
+  it('falls back to the newest event height when no collector cursor is available', () => {
+    const store = replayEventLog([
+      { event: { type: 'name_registered', node: `0x${'cc'.repeat(32)}`, label: 'fallback', actor: 'o', owner: 'o',
+        expiresAtBlockHeight: 10, graceEndsAtBlockHeight: 20, expiresAt: '2099-01-01T00:00:00Z', graceEndsAt: '2099-02-01T00:00:00Z' },
+        meta: { blockHeight: 5 } },
+      { event: { type: 'later_event_marker' }, meta: { blockHeight: 25 } },
+    ], [], '2000-01-01T00:00:00Z')
+    expect(store.namesByCanonical.has('fallback.dusk')).toBe(false)
+  })
+
   it('normalizes lifecycle heights while distinguishing registration from renewal and expiry', () => {
     const event = {
       node: 'AA'.repeat(32), label: 'aurora', actor: 'owner', owner: 'owner',

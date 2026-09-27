@@ -21,6 +21,7 @@ import {
   eventTimestamp,
   parseEventLog,
 } from './event-log.mjs'
+import { knownChainHeight, maxNumberOrNull } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { normalizeName, normalizeNode } from './http.mjs'
 import {
@@ -50,7 +51,7 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
   const warnings = [...parsedLog.warnings]
   const cursor = await loadCursor(cursorFile)
   const now = new Date().toISOString()
-  const state = replayEventLog(events, warnings, now)
+  const state = replayEventLog(events, warnings, now, knownChainHeight({ cursor }))
   const checkpoint = createReplayCheckpoint(events, parsedLog.entries.length, warnings, now)
   const durableCheckpoint = await loadDurableCheckpoint(options.checkpointFile)
   const durability = indexerDurabilityState({
@@ -84,159 +85,166 @@ export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) 
   }
 }
 
-export function replayEventLog(events, warnings, now) {
-  const namesByNode = new Map()
-  const recordsByNode = new Map()
-  const recordsByNodeKey = new Map()
-  const recordHistoryByNode = new Map()
-  const recordHistoryByNodeKey = new Map()
-  const activityByNode = new Map()
-  const reverseByEndpoint = new Map()
-  const subnamesByNode = new Map()
-  const subnamesByParent = new Map()
-  const subnamesByCanonical = new Map()
-  const commitmentsById = new Map()
-  const controllersByNode = new Map()
-  const marketplaceFixedSalesByNode = new Map()
-  const marketplaceAuctionsByNode = new Map()
-  const marketplaceOffersByKey = new Map()
-  const marketplaceRefundsByAuthority = new Map()
-  let marketplaceConfig = null
-  let treasuryState = emptyTreasuryState()
-  let feeConfig = { ...DEFAULT_FEE_CONFIG }
-  const referralsByReferrer = new Map()
-  let referralRewardsSupported = false
+// Replays events in order. Which names are still held is decided at the chain height: the
+// caller's view of the tip, or at least the height of the newest event.
+export function replayEventLog(events, warnings, now, chainHeight = null) {
+  const state = createReplayState()
+  for (const entry of events) applyReplayEvent(state, entry, warnings)
+  return finalizeReplayState(state, now, chainHeight)
+}
 
-  for (let index = 0; index < events.length; index += 1) {
-    const entry = events[index]
-    const event = entry?.event ?? entry
-    const meta = { ...entry?.meta, eventId: entry?.meta?.eventId ?? `replay:${index}` }
-    const timestamp = eventTimestamp(event, meta)
-    if (!event?.type) continue
-
-    try {
-      assertSafeNumericTree(event, 'event')
-      assertSafeNumericTree(meta, 'event metadata')
-      meta.blockHeight = confirmedEventBlockHeight(event, meta)
-      if (isLifecycleEvent(event.type)) {
-        applyLifecycleEvent({ namesByNode, activityByNode }, event, meta, timestamp)
-        if (event.type === 'name_released') {
-          clearNodeDerivedState({
-            node: normalizeNode(event.node),
-            recordsByNode,
-            recordsByNodeKey,
-            reverseByEndpoint,
-            controllersByNode,
-            subnamesByNode,
-            subnamesByParent,
-            subnamesByCanonical,
-          })
-        }
-      } else if (isResolverEvent(event.type)) {
-        applyResolverEvent({
-          namesByNode,
-          recordsByNode,
-          recordsByNodeKey,
-          recordHistoryByNode,
-          recordHistoryByNodeKey,
-          activityByNode,
-          controllersByNode,
-        }, event, meta, timestamp)
-      } else if (isControllerEvent(event.type)) {
-        applyControllerEvent({ commitmentsById }, event, meta)
-      } else if (isReverseEvent(event.type)) {
-        applyReverseEvent({ reverseByEndpoint, activityByNode, namesByNode, controllersByNode }, event, meta)
-      } else if (isSubnameEvent(event.type)) {
-        applySubnameEvent({ subnamesByNode, subnamesByParent, activityByNode }, event, meta)
-      } else if (isTreasuryEvent(event.type)) {
-        treasuryState = reduceTreasuryEvent(event, treasuryState, meta)
-        if (event.type === 'treasury_initialized') referralRewardsSupported = true
-      } else if (isReferralEvent(event.type)) {
-        referralRewardsSupported = true
-        treasuryState = reduceTreasuryReferralReserve(event, treasuryState)
-        treasuryState = reduceTreasuryReferralClaim(event, treasuryState)
-        applyReferralEvent({ referralsByReferrer }, event, meta)
-      } else if (isFeeConfigEvent(event.type)) {
-        feeConfig = reduceFeeConfigEvent(event, feeConfig, meta)
-      } else if (isMarketplaceEvent(event.type)) {
-        const marketplaceStore = {
-          namesByNode,
-          marketplaceConfig,
-          marketplaceFixedSalesByNode,
-          marketplaceAuctionsByNode,
-          marketplaceOffersByKey,
-          marketplaceRefundsByAuthority,
-          activityByNode,
-        }
-        applyMarketplaceEvent(marketplaceStore, event, meta, timestamp)
-        marketplaceConfig = marketplaceStore.marketplaceConfig
-      }
-    } catch (error) {
-      warnings.push({
-        code: 'invalid_event_log_event',
-        index: index + 1,
-        type: event.type,
-        message: error instanceof Error ? error.message : String(error),
-      })
-    }
+// The projections every event folds into. Kept apart from the served view so new events can be
+// applied to it without replaying the journal.
+export function createReplayState() {
+  return {
+    namesByNode: new Map(),
+    recordsByNode: new Map(),
+    recordsByNodeKey: new Map(),
+    recordHistoryByNode: new Map(),
+    recordHistoryByNodeKey: new Map(),
+    activityByNode: new Map(),
+    reverseByEndpoint: new Map(),
+    subnamesByNode: new Map(),
+    subnamesByParent: new Map(),
+    subnamesByCanonical: new Map(),
+    commitmentsById: new Map(),
+    controllersByNode: new Map(),
+    marketplaceFixedSalesByNode: new Map(),
+    marketplaceAuctionsByNode: new Map(),
+    marketplaceOffersByKey: new Map(),
+    marketplaceRefundsByAuthority: new Map(),
+    marketplaceConfig: null,
+    treasuryState: emptyTreasuryState(),
+    feeConfig: { ...DEFAULT_FEE_CONFIG },
+    referralsByReferrer: new Map(),
+    referralRewardsSupported: false,
+    newestEventHeight: null,
+    appliedCount: 0,
   }
+}
 
-  for (const [node, lifecycle] of namesByNode) {
-    if (!indexedLifecycleBlocksRegistration(lifecycle, new Date(now))) {
-      clearNodeDerivedState({
-        node,
-        recordsByNode,
-        recordsByNodeKey,
-        reverseByEndpoint,
-        controllersByNode,
-        subnamesByNode,
-        subnamesByParent,
-        subnamesByCanonical,
-      })
+export function applyReplayEvent(state, entry, warnings) {
+  const index = state.appliedCount
+  state.appliedCount += 1
+  const event = entry?.event ?? entry
+  const meta = { ...entry?.meta, eventId: entry?.meta?.eventId ?? `replay:${index}` }
+  const timestamp = eventTimestamp(event, meta)
+  if (!event?.type) return
+
+  try {
+    assertSafeNumericTree(event, 'event')
+    assertSafeNumericTree(meta, 'event metadata')
+    meta.blockHeight = confirmedEventBlockHeight(event, meta)
+    if (Number.isFinite(meta.blockHeight)) state.newestEventHeight = Math.max(state.newestEventHeight ?? 0, meta.blockHeight)
+    if (isLifecycleEvent(event.type)) {
+      applyLifecycleEvent(state, event, meta, timestamp)
+      if (event.type === 'name_released') clearNodeDerivedState({ ...state, node: normalizeNode(event.node) })
+    } else if (isResolverEvent(event.type)) {
+      applyResolverEvent(state, event, meta, timestamp)
+    } else if (isControllerEvent(event.type)) {
+      applyControllerEvent(state, event, meta)
+    } else if (isReverseEvent(event.type)) {
+      applyReverseEvent(state, event, meta)
+    } else if (isSubnameEvent(event.type)) {
+      applySubnameEvent(state, event, meta)
+    } else if (isTreasuryEvent(event.type)) {
+      state.treasuryState = reduceTreasuryEvent(event, state.treasuryState, meta)
+      if (event.type === 'treasury_initialized') state.referralRewardsSupported = true
+    } else if (isReferralEvent(event.type)) {
+      state.referralRewardsSupported = true
+      state.treasuryState = reduceTreasuryReferralReserve(event, state.treasuryState)
+      state.treasuryState = reduceTreasuryReferralClaim(event, state.treasuryState)
+      applyReferralEvent(state, event, meta)
+    } else if (isFeeConfigEvent(event.type)) {
+      state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
+    } else if (isMarketplaceEvent(event.type)) {
+      applyMarketplaceEvent(state, event, meta, timestamp)
     }
+  } catch (error) {
+    warnings.push({
+      code: 'invalid_event_log_event',
+      index: index + 1,
+      type: event.type,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+// The served view: names past their grace period lose their records, reverse entries and
+// subnames. Maps that change are copied, so the replay state stays intact for later events.
+export function finalizeReplayState(state, now, chainHeight = null) {
+  const view = {
+    ...state,
+    recordsByNode: new Map(state.recordsByNode),
+    recordsByNodeKey: new Map(state.recordsByNodeKey),
+    reverseByEndpoint: new Map(state.reverseByEndpoint),
+    controllersByNode: new Map(state.controllersByNode),
+    subnamesByNode: new Map(state.subnamesByNode),
+    subnamesByParent: new Map(state.subnamesByParent),
+    subnamesByCanonical: new Map(state.subnamesByCanonical),
+  }
+  const clock = { blockHeight: maxNumberOrNull(chainHeight, state.newestEventHeight), date: new Date(now) }
+
+  for (const [node, lifecycle] of view.namesByNode) {
+    if (!indexedLifecycleBlocksRegistration(lifecycle, clock)) clearNodeDerivedState({ ...view, node })
   }
 
   const namesByCanonical = new Map()
-  const indexedAt = new Date(now)
-  for (const [node, lifecycle] of namesByNode) {
-    if (!lifecycle.canonicalName || !indexedLifecycleBlocksRegistration(lifecycle, indexedAt)) continue
-    const records = recordsByNode.get(node) ?? []
-    const activity = activityByNode.get(node) ?? []
+  for (const [node, lifecycle] of view.namesByNode) {
+    if (!lifecycle.canonicalName || !indexedLifecycleBlocksRegistration(lifecycle, clock)) continue
     namesByCanonical.set(lifecycle.canonicalName, {
       ...lifecycle,
       resolverHealth: lifecycle.resolverId ? 'ok' : 'missing',
-      records,
-      activity,
+      records: view.recordsByNode.get(node) ?? [],
+      activity: view.activityByNode.get(node) ?? [],
       lifecycle,
     })
   }
 
-  for (const subname of subnamesByNode.values()) {
-    if (subname?.name) subnamesByCanonical.set(normalizeName(subname.name), subname)
+  for (const subname of view.subnamesByNode.values()) {
+    if (subname?.name) view.subnamesByCanonical.set(normalizeName(subname.name), subname)
   }
 
   return {
     namesByCanonical,
-    namesByNode,
-    activityByNode,
-    reverseByEndpoint,
-    subnamesByNode,
-    subnamesByParent,
-    subnamesByCanonical,
-    commitmentsById,
-    recordsByNode,
-    recordsByNodeKey,
-    recordHistoryByNode,
-    recordHistoryByNodeKey,
-    controllersByNode,
-    marketplaceConfig,
-    marketplaceFixedSalesByNode,
-    marketplaceAuctionsByNode,
-    marketplaceOffersByKey,
-    marketplaceRefundsByAuthority,
-    treasuryState,
-    feeConfig,
-    referralsByReferrer,
-    referralRewardsSupported,
+    namesByNode: view.namesByNode,
+    activityByNode: view.activityByNode,
+    reverseByEndpoint: view.reverseByEndpoint,
+    subnamesByNode: view.subnamesByNode,
+    subnamesByParent: view.subnamesByParent,
+    subnamesByCanonical: view.subnamesByCanonical,
+    commitmentsById: view.commitmentsById,
+    recordsByNode: view.recordsByNode,
+    recordsByNodeKey: view.recordsByNodeKey,
+    recordHistoryByNode: view.recordHistoryByNode,
+    recordHistoryByNodeKey: view.recordHistoryByNodeKey,
+    controllersByNode: view.controllersByNode,
+    marketplaceConfig: view.marketplaceConfig,
+    marketplaceFixedSalesByNode: view.marketplaceFixedSalesByNode,
+    marketplaceAuctionsByNode: view.marketplaceAuctionsByNode,
+    marketplaceOffersByKey: view.marketplaceOffersByKey,
+    marketplaceRefundsByAuthority: view.marketplaceRefundsByAuthority,
+    treasuryState: view.treasuryState,
+    feeConfig: view.feeConfig,
+    referralsByReferrer: view.referralsByReferrer,
+    referralRewardsSupported: view.referralRewardsSupported,
+    nextLifecycleBoundary: nextLifecycleBoundary(view.namesByNode, view.subnamesByNode, clock.blockHeight),
   }
+}
+
+// The lowest expiry or grace height still ahead. Until the chain reaches it, a new tip cannot
+// change which names are held, so the view can be reused.
+function nextLifecycleBoundary(namesByNode, subnamesByNode, height) {
+  let next = null
+  const consider = (value) => {
+    const boundary = Number(value)
+    if (value == null || !Number.isFinite(boundary) || (height !== null && boundary <= height)) return
+    next = next === null ? boundary : Math.min(next, boundary)
+  }
+  for (const lifecycle of namesByNode.values()) {
+    consider(lifecycle.expiresAtBlockHeight)
+    consider(lifecycle.graceEndsAtBlockHeight)
+  }
+  for (const subname of subnamesByNode.values()) consider(subname.expiresAtBlockHeight)
+  return next
 }

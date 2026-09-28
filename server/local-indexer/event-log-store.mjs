@@ -32,15 +32,18 @@ import {
   applyReverseEvent,
   applySubnameEvent,
   clearNodeDerivedState,
+  emptyPoolState,
   isControllerEvent,
   isFeeConfigEvent,
   isLifecycleEvent,
   isMarketplaceEvent,
+  isPoolEvent,
   isReferralEvent,
   isResolverEvent,
   isReverseEvent,
   isSubnameEvent,
   isTreasuryEvent,
+  reducePoolEvent,
 } from './projectors.mjs'
 import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
 import { assertSafeNumericTree } from './safe-numbers.mjs'
@@ -116,6 +119,7 @@ export function createReplayState() {
     marketplaceConfig: null,
     treasuryState: emptyTreasuryState(),
     feeConfig: { ...DEFAULT_FEE_CONFIG },
+    poolState: emptyPoolState(),
     referralsByReferrer: new Map(),
     referralRewardsSupported: false,
     newestEventHeight: null,
@@ -159,6 +163,10 @@ export function applyReplayEvent(state, entry, warnings) {
       state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
     } else if (isMarketplaceEvent(event.type)) {
       applyMarketplaceEvent(state, event, meta, timestamp)
+    } else if (isPoolEvent(event.type)) {
+      state.poolState = reducePoolEvent(event, state.poolState, meta)
+      // The router starts with a fee config; later changes arrive as fee_config_updated.
+      if (event.type === 'router_initialized') state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
     }
   } catch (error) {
     warnings.push({
@@ -226,6 +234,7 @@ export function finalizeReplayState(state, now, chainHeight = null) {
     marketplaceRefundsByAuthority: view.marketplaceRefundsByAuthority,
     treasuryState: view.treasuryState,
     feeConfig: view.feeConfig,
+    poolState: view.poolState,
     referralsByReferrer: view.referralsByReferrer,
     referralRewardsSupported: view.referralRewardsSupported,
     nextLifecycleBoundary: nextLifecycleBoundary(view.namesByNode, view.subnamesByNode, clock.blockHeight),

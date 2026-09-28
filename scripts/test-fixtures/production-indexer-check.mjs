@@ -28,7 +28,25 @@ export async function writeDurableFixture(options = {}) {
   const coreContractId = `0x${'44'.repeat(32)}`
   const treasuryContractId = options.treasuryContractId ?? `0x${'55'.repeat(32)}`
   const marketplaceContractId = `0x${'77'.repeat(32)}`
+  const routerContractId = `0x${'88'.repeat(32)}`
+  const resolverContractId = `0x${'99'.repeat(32)}`
   const rows = [
+    {
+      event: {
+        type: 'router_initialized',
+        operator: `0x${'66'.repeat(32)}`,
+        treasury: treasuryContractId,
+        marketplace: marketplaceContractId,
+        feeConfig: {},
+      },
+      meta: {
+        txId: 'tx-router',
+        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
+        contractKey: 'router',
+        contractId: routerContractId,
+        observedAt: '2026-06-22T00:00:00.000Z',
+      },
+    },
     {
       event: {
         type: 'name_registered',
@@ -55,7 +73,8 @@ export async function writeDurableFixture(options = {}) {
         type: 'treasury_initialized',
         operator: `0x${'66'.repeat(32)}`,
         operatorRecipient: 'recipient',
-        allowedFeeSources: [coreContractId],
+        allowedFeeSources: [marketplaceContractId],
+        router: routerContractId,
       },
       meta: {
         txId: 'tx-treasury',
@@ -68,7 +87,7 @@ export async function writeDurableFixture(options = {}) {
     {
       event: {
         type: 'marketplace_initialized',
-        coreContract: coreContractId,
+        router: routerContractId,
         treasuryContract: treasuryContractId,
         operator: `0x${'66'.repeat(32)}`,
       },
@@ -88,7 +107,7 @@ export async function writeDurableFixture(options = {}) {
       meta: {
         txId: 'tx-legacy',
         ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'resolver',
+        contractKey: 'registrar',
         contractId: `0x${'77'.repeat(32)}`,
         observedAt: '2026-06-22T00:00:02.000Z',
       },
@@ -114,7 +133,9 @@ export async function writeDurableFixture(options = {}) {
     scannedBlockHeight: options.scannedBlockHeight ?? currentBlockHeight,
   }, null, 2), 'utf8')
   await writeFile(envFile, `
+VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=${routerContractId}
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${coreContractId}
+VITE_DUSK_DOMAINS_RESOLVER_CONTRACT_ID=${resolverContractId}
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'55'.repeat(32)}
 VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${marketplaceContractId}
 VITE_DUSK_DOMAINS_CORE_DRIVER_URL=/contracts/dusk-domains-core.data-driver.wasm
@@ -123,7 +144,9 @@ VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL=/contracts/dusk-domains-treasury.data-driv
   await writeFile(proofReport, JSON.stringify({
     ok: true,
     publicContracts: {
+      router: routerContractId,
       core: coreContractId,
+      resolver: resolverContractId,
       treasury: `0x${'55'.repeat(32)}`,
       marketplace: marketplaceContractId,
     },

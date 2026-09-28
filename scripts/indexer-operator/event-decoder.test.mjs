@@ -15,6 +15,10 @@ const marketplaceContract = {
   key: 'marketplace',
   contractId: '55'.repeat(32),
 }
+const routerContract = {
+  key: 'router',
+  contractId: '44'.repeat(32),
+}
 
 describe('Dusk Domains indexer event decoder', () => {
   it('rejects u64 values that JavaScript cannot represent exactly', () => {
@@ -123,6 +127,45 @@ describe('Dusk Domains indexer event decoder', () => {
       observedBlockHeight: 95, event: { node: bytes(1), key: 'text.description' },
     })
     expect(cleared.meta.blockHeight).toBeNull()
+  })
+
+  it('decodes the contract pool events', () => {
+    const operator = principal(0x77)
+    const decode = (contract, eventName, event) => normalizeObservedEvent({ contract, eventName, event, observedAt }).event
+    expect(decode(routerContract, 'router_initialized', {
+      operator,
+      treasury: bytes(0x21),
+      marketplace: bytes(0),
+      fee_config: feeConfig(1),
+    })).toMatchObject({
+      type: 'router_initialized',
+      treasury: `0x${'21'.repeat(32)}`,
+      marketplace: `0x${'00'.repeat(32)}`,
+      feeConfig: { threeCharYearLux: 1 },
+    })
+    expect(decode(routerContract, 'pool_member_added', { kind: 'Resolver', member: bytes(0x31), index: 2, operator })).toMatchObject({
+      type: 'pool_member_added',
+      kind: 'resolver',
+      member: `0x${'31'.repeat(32)}`,
+      index: 2,
+    })
+    expect(decode(contract, 'records_moved', {
+      node: bytes(0x11),
+      controller: bytes(0x22),
+      from_resolver: bytes(0x31),
+      to_resolver: bytes(0x32),
+      record_count: 3,
+    })).toEqual({
+      type: 'records_moved',
+      node: `0x${'11'.repeat(32)}`,
+      controller: `0x${'22'.repeat(32)}`,
+      fromResolver: `0x${'31'.repeat(32)}`,
+      toResolver: `0x${'32'.repeat(32)}`,
+      recordCount: 3,
+    })
+    expect(decode(marketplaceContract, 'marketplace_initialized', { router: bytes(0x41) }).router).toBe(`0x${'41'.repeat(32)}`)
+    expect(decode(treasuryContract, 'treasury_initialized', { operator, operator_recipient: [1], router: bytes(0x41) }).router)
+      .toBe(`0x${'41'.repeat(32)}`)
   })
 
   it('fails closed for unsupported event names', () => {
@@ -245,11 +288,27 @@ function collectedEventFixtures() {
       operator,
       previous_config: feeConfig(1),
       config: feeConfig(2),
-    }, 'fee_config_updated'],
+    }, 'fee_config_updated', routerContract],
+    ['router_initialized', {
+      operator,
+      treasury: node,
+      marketplace: parentNode,
+      fee_config: feeConfig(1),
+    }, 'router_initialized', routerContract],
+    ['pool_member_added', { kind: 'Registry', member: node, index: 0, operator }, 'pool_member_added', routerContract],
+    ['router_operator_changed', { previous_operator: principal(0x76), operator }, 'router_operator_changed', routerContract],
+    ['records_moved', {
+      node,
+      controller: actor,
+      from_resolver: node,
+      to_resolver: parentNode,
+      record_count: 2,
+    }, 'records_moved'],
     ['treasury_initialized', {
       operator,
       operator_recipient: [1, 2, 3],
       allowed_fee_sources: [node],
+      router: parentNode,
     }, 'treasury_initialized', treasuryContract],
     ['treasury_operator_changed', {
       previous_operator: principal(0x76),
@@ -291,7 +350,7 @@ function collectedEventFixtures() {
       referral_count: 4,
     }, 'referral_reward_claimed', treasuryContract],
     ['marketplace_initialized', {
-      core_contract: node,
+      router: node,
       treasury_contract: parentNode,
       marketplace_authority: actor,
       operator: owner,

@@ -341,7 +341,7 @@ describe('production indexer public-beta evidence gates', () => {
     expect(result.sqliteHealth).toMatchObject({
       ok: true,
       mode: 'sqlite',
-      eventCount: 3,
+      eventCount: 4,
     })
     expect(result.checks.find((check) => check.id === 'sqlite_journal_mode')).toMatchObject({
       ok: true,

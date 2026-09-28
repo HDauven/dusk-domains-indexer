@@ -1,4 +1,4 @@
-const contractKeys = ['core', 'treasury']
+const contractKeys = ['router', 'core', 'treasury']
 
 export function deploymentBindingFromEvents(events = []) {
   const binding = createDeploymentBinding()

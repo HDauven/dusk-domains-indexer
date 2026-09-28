@@ -1,14 +1,20 @@
 import { readFile } from 'node:fs/promises'
 import { envValue, parseEnvFile } from '../env-file.mjs'
 
-export const activeContractKeys = Object.freeze(['core', 'treasury', 'marketplace'])
-export const legacyContractKeys = Object.freeze(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
+// Contracts a deployment names in its env and proof: the contract pool (ADR 0002 in
+// dusk-domains-protocol) plus the treasury and marketplace.
+export const activeContractKeys = Object.freeze(['router', 'core', 'resolver', 'treasury', 'marketplace'])
+// Contracts whose events the collector journals. Resolvers emit none.
+export const eventContractKeys = Object.freeze(['router', 'core', 'treasury', 'marketplace'])
+export const legacyContractKeys = Object.freeze(['registry', 'registrar', 'controller', 'reverse'])
 
 export async function loadDeploymentSurface(envFile, proofReport) {
   const env = parseEnvFile(await readFile(envFile, 'utf8'))
   const report = JSON.parse(await readFile(proofReport, 'utf8'))
   const envContracts = {
+    router: normalizeContractId(envValue(env, 'ROUTER_CONTRACT_ID')),
     core: normalizeContractId(envValue(env, 'CORE_CONTRACT_ID')),
+    resolver: normalizeContractId(envValue(env, 'RESOLVER_CONTRACT_ID')),
     treasury: normalizeContractId(envValue(env, 'TREASURY_CONTRACT_ID')),
     marketplace: normalizeContractId(envValue(env, 'MARKETPLACE_CONTRACT_ID')),
   }

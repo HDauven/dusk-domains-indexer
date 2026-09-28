@@ -293,6 +293,57 @@ export function normalizeObservedEvent({
     }
   }
 
+  if (eventName === 'records_moved') {
+    return {
+      event: {
+        type: 'records_moved',
+        node: bytesToHex(event.node),
+        controller: bytesToHex(event.controller),
+        fromResolver: bytesToHex(event.from_resolver),
+        toResolver: bytesToHex(event.to_resolver),
+        recordCount: Number(event.record_count ?? 0),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'router_initialized') {
+    return {
+      event: {
+        type: 'router_initialized',
+        operator: principalFromEvent(event.operator),
+        treasury: bytesToHex(event.treasury),
+        marketplace: bytesToHex(event.marketplace),
+        feeConfig: feeConfigFromEvent(event.fee_config),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'pool_member_added') {
+    return {
+      event: {
+        type: 'pool_member_added',
+        kind: String(event.kind).toLowerCase(),
+        member: bytesToHex(event.member),
+        index: Number(event.index ?? 0),
+        operator: principalFromEvent(event.operator),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'router_operator_changed') {
+    return {
+      event: {
+        type: 'router_operator_changed',
+        previousOperator: principalFromEvent(event.previous_operator),
+        operator: principalFromEvent(event.operator),
+      },
+      meta,
+    }
+  }
+
   if (eventName === 'treasury_initialized') {
     return {
       event: {
@@ -300,6 +351,7 @@ export function normalizeObservedEvent({
         operator: principalFromEvent(event.operator, event.operator_authority),
         operatorRecipient: bytesToBase58(event.operator_recipient),
         allowedFeeSources: (event.allowed_fee_sources ?? []).map(bytesToHex),
+        router: bytesToHex(event.router),
       },
       meta,
     }
@@ -383,7 +435,7 @@ export function normalizeObservedEvent({
     return {
       event: {
         type: 'marketplace_initialized',
-        coreContract: bytesToHex(event.core_contract),
+        router: bytesToHex(event.router),
         treasuryContract: bytesToHex(event.treasury_contract),
         marketplaceAuthority: bytesToHex(event.marketplace_authority),
         operator: bytesToHex(event.operator),

@@ -11,6 +11,13 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 const coreContracts = [
   {
+    // Contract pools (ADR 0002): the router owns the fee config and lists pool members.
+    key: 'router',
+    envKey: 'VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID',
+    driverFile: 'dusk-domains-router.data-driver.wasm',
+    events: ['router_initialized', 'pool_member_added', 'router_operator_changed', 'fee_config_updated'],
+  },
+  {
     key: 'core',
     envKey: 'VITE_DUSK_DOMAINS_CORE_CONTRACT_ID',
     driverFile: 'dusk-domains-core.data-driver.wasm',
@@ -24,8 +31,7 @@ const coreContracts = [
       'record_cleared',
       'primary_name_changed',
       'subname_created',
-      'core_referral_config_changed',
-      'fee_config_updated',
+      'records_moved',
     ],
   },
   {

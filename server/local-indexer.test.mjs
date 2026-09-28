@@ -467,7 +467,24 @@ describe('local indexer event-log API', () => {
   it('exposes package, schema and deployment binding metadata in health', async () => {
     const coreContract = `0x${'11'.repeat(32)}`
     const treasuryContract = `0x${'22'.repeat(32)}`
+    const routerContract = `0x${'33'.repeat(32)}`
     const eventLogFile = await writeEventLog([
+      {
+        event: {
+          type: 'router_initialized',
+          operator: '0xoperator',
+          treasury: treasuryContract,
+          marketplace: `0x${'00'.repeat(32)}`,
+          feeConfig: {},
+        },
+        meta: {
+          chainId: 'dusk:2',
+          contractKey: 'router',
+          contractId: routerContract,
+          txId: 'tx-router',
+          blockHeight: 100,
+        },
+      },
       {
         event: {
           type: 'name_registered',
@@ -526,6 +543,10 @@ describe('local indexer event-log API', () => {
           lastEventBlockHeight: 101,
           complete: true,
           contracts: {
+            router: {
+              contractId: routerContract,
+              eventCount: 1,
+            },
             core: {
               contractId: coreContract,
               eventCount: 1,

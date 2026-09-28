@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 import {
-  activeContractKeys,
+  eventContractKeys,
   legacyContractKeys,
   normalizeContractId,
 } from './deployment-surface.mjs'
@@ -32,13 +32,13 @@ export async function auditEventJournalDeploymentBinding({
     const id = normalizeContractId(meta.contractId)
     if (!key) continue
     if (legacyContractKeys.includes(key)) legacyRows.push(index + 1)
-    else if (!activeContractKeys.includes(key)) unknownRows.push(`${index + 1}:${key}`)
-    if (activeContractKeys.includes(key) && id) {
+    else if (!eventContractKeys.includes(key)) unknownRows.push(`${index + 1}:${key}`)
+    if (eventContractKeys.includes(key) && id) {
       if (!bindings.has(key)) bindings.set(key, new Set())
       bindings.get(key).add(id)
     }
     const height = numberOrNull(meta.blockHeight)
-    if (activeContractKeys.includes(key) && height !== null) activeBlockHeights.push(height)
+    if (eventContractKeys.includes(key) && height !== null) activeBlockHeights.push(height)
   }
 
   const derivedDeploymentStartHeight = activeBlockHeights.length
@@ -68,7 +68,7 @@ export async function auditEventJournalDeploymentBinding({
     ? 'Event journal contains only active production contract keys.'
     : `Event journal has legacy or unknown contract keys: ${[...legacyRows.map((row) => `legacy row ${row}`), ...unknownRows].join(', ')}.`)
 
-  for (const key of activeContractKeys) {
+  for (const key of eventContractKeys) {
     const observed = [...(bindings.get(key) ?? [])]
     push(`event_journal_${key}_contract`, observed.length === 1, observed.length === 1
       ? `Event journal binds ${key} to ${observed[0]}.`

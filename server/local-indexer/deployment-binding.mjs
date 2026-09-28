@@ -12,6 +12,8 @@ export function createDeploymentBinding() {
   return {
     chainIds: new Set(),
     contracts: {},
+    // A contract pool's registries all emit as core; the router's pool_member_added names them.
+    poolRegistries: new Set(),
     deploymentStartHeight: null,
     lastEventBlockHeight: null,
     eventCount: 0,
@@ -28,6 +30,9 @@ export function addDeploymentBindingEvent(binding, entry) {
   if (blockHeight !== null) {
     binding.deploymentStartHeight = binding.deploymentStartHeight === null ? blockHeight : Math.min(binding.deploymentStartHeight, blockHeight)
     binding.lastEventBlockHeight = binding.lastEventBlockHeight === null ? blockHeight : Math.max(binding.lastEventBlockHeight, blockHeight)
+  }
+  if (contractKey === 'router' && entry?.event?.type === 'pool_member_added' && entry.event.kind === 'registry') {
+    binding.poolRegistries.add(String(entry.event.member).toLowerCase())
   }
   if (!contractKey && !contractId) return
 
@@ -54,10 +59,12 @@ export function addDeploymentBindingEvent(binding, entry) {
 }
 
 export function summarizeDeploymentBinding(binding) {
-  const { chainIds, contracts } = binding
+  const { chainIds, contracts, poolRegistries } = binding
   const missingContracts = contractKeys.filter((key) => !contracts[key]?.contractId)
   const conflictedContracts = Object.values(contracts)
-    .filter((contract) => contract.contractIdConflict)
+    .filter((contract) => contract.contractKey === 'core' && poolRegistries.size
+      ? contract.contractIds.some((id) => !poolRegistries.has(id.toLowerCase()))
+      : contract.contractIdConflict)
     .map((contract) => contract.contractKey)
 
   return {

@@ -188,3 +188,35 @@ async function writeJournalFixture({
     },
   }
 }
+
+describe('indexer event journal binding for a grown contract pool', () => {
+  it('accepts several core IDs only when the router added each registry', async () => {
+    const router = `0x${'33'.repeat(32)}`
+    const nextRegistry = `0x${'45'.repeat(32)}`
+    const addedRows = (members) => members.map((member) => ({
+      event: { type: 'pool_member_added', kind: 'registry', member },
+      meta: { contractKey: 'router', contractId: router, blockHeight: 10 },
+    }))
+    const audit = async (extraRows) => {
+      const fixture = await writeJournalFixture({ routerContractId: router, extraRows })
+      const result = await auditEventJournalDeploymentBinding({
+        eventLog: fixture.eventLog,
+        deployment: fixture.deployment,
+        deploymentStartHeight: 10,
+        deriveDeploymentStartHeight: false,
+        archiveSnapshotHeight: 9,
+        archiveSnapshot: '',
+        requireArchiveSnapshot: false,
+      })
+      return (id) => result.checks.find((check) => check.id === id)?.ok
+    }
+    const nextRegistryRow = { meta: { contractKey: 'core', contractId: nextRegistry, blockHeight: 11 } }
+
+    const pooled = await audit([...addedRows([`0x${'44'.repeat(32)}`, nextRegistry]), nextRegistryRow])
+    expect(pooled('event_journal_core_contract')).toBe(true)
+    expect(pooled('event_journal_core_matches_deployment')).toBe(true)
+
+    const unlisted = await audit([...addedRows([`0x${'44'.repeat(32)}`]), nextRegistryRow])
+    expect(unlisted('event_journal_core_contract')).toBe(false)
+  })
+})

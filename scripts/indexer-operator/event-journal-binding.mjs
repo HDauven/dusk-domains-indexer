@@ -25,6 +25,10 @@ export async function auditEventJournalDeploymentBinding({
   const unknownRows = []
   const belowStart = []
   const activeBlockHeights = []
+  // Contract pools (ADR 0002): registries the router adds all emit as core.
+  const poolRegistries = new Set(entries
+    .filter((entry) => entry?.meta?.contractKey === 'router' && entry.event?.type === 'pool_member_added' && entry.event.kind === 'registry')
+    .map((entry) => normalizeContractId(entry.event.member)))
 
   for (const [index, entry] of entries.entries()) {
     const meta = entry?.meta ?? {}
@@ -70,12 +74,16 @@ export async function auditEventJournalDeploymentBinding({
 
   for (const key of eventContractKeys) {
     const observed = [...(bindings.get(key) ?? [])]
-    push(`event_journal_${key}_contract`, observed.length === 1, observed.length === 1
-      ? `Event journal binds ${key} to ${observed[0]}.`
-      : `Event journal should bind ${key} to exactly one contract ID; observed ${observed.length ? observed.join(', ') : 'none'}.`)
+    const pooled = key === 'core' && observed.length > 1 && observed.every((value) => poolRegistries.has(value))
+    push(`event_journal_${key}_contract`, observed.length === 1 || pooled, observed.length === 1 || pooled
+      ? `Event journal binds ${key} to ${observed.join(', ')}.`
+      : `Event journal should bind ${key} to exactly one contract ID, or to registries the router added; observed ${observed.length ? observed.join(', ') : 'none'}.`)
     if (deployment?.ok && observed.length > 0) {
       const expected = deployment.contracts[key]
-      const mismatched = observed.filter((value) => value !== expected)
+      // The deployment names the first registry; later ones joined through the router.
+      const mismatched = pooled
+        ? (observed.includes(expected) ? [] : observed)
+        : observed.filter((value) => value !== expected)
       push(`event_journal_${key}_matches_deployment`, mismatched.length === 0, mismatched.length === 0
         ? `Event journal ${key} contract matches deployment evidence.`
         : `Event journal ${key} contract mismatch; expected ${expected}, observed ${observed.join(', ')}.`)

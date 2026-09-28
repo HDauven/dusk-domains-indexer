@@ -207,3 +207,60 @@ it('rejects failed HTTP/GraphQL archive responses instead of interpreting them a
   await assert.rejects(queryArchive('http://node/', '{}', async () => ({ ok: false, status: 503 })), /503/)
   await assert.rejects(queryArchive('http://node/', '{}', async () => ({ ok: true, json: async () => ({ errors: ['unavailable'] }) })), /unavailable/)
 })
+
+it('follows registries the router adds, from the same block on and across restarts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'archive-collector-pool-'))
+  const hash = n => n.toString(16).padStart(64, '0')
+  const header = height => ({ height, hash: hash(height), prevBlockHash: hash(height - 1), timestamp: 1_780_000_000 + height })
+  const [router, firstRegistry, nextRegistry, stranger] = [700, 701, 702, 703].map(hash)
+  const encode = value => Buffer.from(JSON.stringify(value)).toString('hex')
+  const cleared = source => ({ source, origin: hash(901), reverted: false, topic: 'record_cleared',
+    data: encode({ node: Array(32).fill(1), controller: Array(32).fill(2), key: 'website' }) })
+  const added = { source: router, origin: hash(902), reverted: false, topic: 'pool_member_added',
+    data: encode({ kind: 'Registry', member: [...Buffer.from(nextRegistry, 'hex')], index: 1, operator: { kind: 'Phoenix', bytes: Array(32).fill(3) } }) }
+  const events = new Map([[1, [cleared(nextRegistry), added, cleared(nextRegistry), cleared(stranger)]], [2, [cleared(nextRegistry)]]])
+  const config = { fromBlock: 1, nodeUrl: 'http://node/', publicDir: dir,
+    eventLog: join(dir, 'events.jsonl'), cursorFile: join(dir, 'cursor.json'),
+    contracts: [
+      { key: 'router', contractId: router, driverFile: 'driver.wasm', events: ['pool_member_added'] },
+      { key: 'core', contractId: firstRegistry, driverFile: 'driver.wasm', events: ['record_cleared'] },
+    ] }
+  await writeFile(join(dir, 'driver.wasm'), '')
+  const run = async head => {
+    const controller = new AbortController()
+    const fetcher = async (_url, { body }) => {
+      let result
+      if (body.includes('__type')) result = { __type: { fields: [{ name: 'contractEventBatch' }] } }
+      else if (body.includes('lastBlockPair')) {
+        result = { lastBlockPair: { json: { last_block: [head, hash(head)], last_finalized_block: [head, hash(head)] } } }
+        if (JSON.parse(await readFile(config.cursorFile)).scannedBlockHeight === head) controller.abort()
+      } else if (body.includes('block(height:')) result = { block: { header: header(Number(body.match(/height:(\d+)/)[1])) } }
+      else if (body.includes('blocks(range:')) {
+        const [, start, end] = body.match(/\[(\d+),(\d+)\]/).map(Number)
+        result = { blocks: Array.from({ length: end - start + 1 }, (_, i) => ({ header: header(start + i) })) }
+      } else {
+        result = Object.fromEntries([...body.matchAll(/(b\d+):contractEventBatch\(hash:"([0-9a-f]+)"\)/g)].map(([, alias, blockHash]) => {
+          if (parseInt(blockHash, 16) === head) controller.abort()
+          return [alias, { blockHash, complete: true, json: events.get(parseInt(blockHash, 16)) ?? [] }]
+        }))
+      }
+      return { ok: true, json: async () => result }
+    }
+    await collectArchive(config, { signal: controller.signal, fetcher })
+    return (await readFile(config.eventLog, 'utf8')).trim().split('\n').map(JSON.parse)
+  }
+  try {
+    // Before its membership event the registry is not in the pool, so its events are not ours.
+    let rows = await run(1)
+    assert.deepEqual(rows.map(row => [row.event.type, row.meta.contractKey, row.meta.contractId]), [
+      ['pool_member_added', 'router', `0x${router}`],
+      ['record_cleared', 'core', `0x${nextRegistry}`],
+    ])
+    // A restarted collector rebuilds the pool from its journal.
+    rows = await run(2)
+    assert.equal(rows.length, 3)
+    assert.deepEqual(rows.at(-1).meta.contractId, `0x${nextRegistry}`)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

@@ -11,7 +11,8 @@ export function applySubnameEvent(store, event, meta) {
   const parentNode = normalizeNode(event.parentNode)
   const node = normalizeNode(event.node)
   const current = store.subnamesByNode.get(node)
-  const subname = reduceSubnameEvent(event, current, meta)
+  const parent = store.subnamesByNode.get(parentNode) ?? store.namesByNode.get(parentNode)
+  const subname = reduceSubnameEvent(event, current, meta, parent)
   const entry = activityEntry({
     eventType: event.type,
     node,
@@ -39,7 +40,34 @@ export function applySubnameEvent(store, event, meta) {
   store.activityByNode.set(parentNode, [entry, ...(store.activityByNode.get(parentNode) ?? [])])
 }
 
-function reduceSubnameEvent(event, current, meta) {
+// Renewing a root renews each subname that inherits its expiry. A fixed subname keeps its own,
+// and so do the subnames below it.
+export function renewInheritingSubnames(store, rootNode) {
+  const root = store.namesByNode.get(rootNode)
+  const parents = new Set([rootNode])
+  for (const parentNode of parents) {
+    const children = store.subnamesByParent.get(parentNode)
+    if (!children) continue
+    store.subnamesByParent.set(parentNode, children.map((subname) => {
+      if (subname.expiryPolicy !== 'inherits_parent') return subname
+      const lifecycle = {
+        expiresAt: root.expiresAt,
+        graceEndsAt: root.graceEndsAt,
+        expiresAtBlockHeight: root.expiresAtBlockHeight,
+        graceEndsAtBlockHeight: root.graceEndsAtBlockHeight,
+      }
+      const renewed = { ...subname, ...lifecycle }
+      store.subnamesByNode.set(subname.node, renewed)
+      // An authority change gives a subname a name row too, which renews with it.
+      const row = store.namesByNode.get(subname.node)
+      if (row) store.namesByNode.set(subname.node, { ...row, ...lifecycle })
+      parents.add(subname.node)
+      return renewed
+    }))
+  }
+}
+
+function reduceSubnameEvent(event, current, meta, parent) {
   if (event.type === 'subname_created') {
     return {
       parentNode: normalizeNode(event.parentNode),
@@ -52,8 +80,10 @@ function reduceSubnameEvent(event, current, meta) {
       manager: event.manager,
       resolver: event.resolver,
       expiresAt: event.expiresAt,
+      graceEndsAt: parent?.graceEndsAt ?? null,
       parentExpiresAt: event.parentExpiresAt,
       expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight),
+      graceEndsAtBlockHeight: parent?.graceEndsAtBlockHeight ?? null,
       parentExpiresAtBlockHeight: numberOrNull(event.parentExpiresAtBlockHeight),
       expiryPolicy: event.expiryPolicy,
       revocationPolicy: event.revocationPolicy,
@@ -77,8 +107,10 @@ function reduceSubnameEvent(event, current, meta) {
     manager: '',
     resolver: '',
     expiresAt: '',
+    graceEndsAt: null,
     parentExpiresAt: '',
     expiresAtBlockHeight: null,
+    graceEndsAtBlockHeight: null,
     parentExpiresAtBlockHeight: null,
     expiryPolicy: 'inherits_parent',
     revocationPolicy: 'parent_revocable',

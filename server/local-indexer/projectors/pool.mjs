@@ -17,7 +17,8 @@ export function emptyPoolState() {
 }
 
 export function reducePoolEvent(event, current, meta = {}) {
-  // Records keep their content when they move, so the pool itself does not change.
+  // Records keep their content when they move, so the pool itself does not change. The name's
+  // resolver does: see applyRecordsMoved.
   if (event.type === 'records_moved') return current
 
   const stamped = {

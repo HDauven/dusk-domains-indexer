@@ -16,7 +16,9 @@ export {
 } from './projectors/marketplace.mjs'
 export {
   applyLifecycleEvent,
+  applyRecordsMoved,
   clearNodeDerivedState,
+  clearReleasedName,
 } from './projectors/lifecycle.mjs'
 export {
   appendRecordHistory,
@@ -26,5 +28,5 @@ export {
   rebuildCurrentRecordIndexes,
   recordIndexKey,
 } from './projectors/records.mjs'
-export { applySubnameEvent } from './projectors/subnames.mjs'
+export { applySubnameEvent, renewInheritingSubnames } from './projectors/subnames.mjs'
 export { emptyPoolState, reducePoolEvent } from './projectors/pool.mjs'

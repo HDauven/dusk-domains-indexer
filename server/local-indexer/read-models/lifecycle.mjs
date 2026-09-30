@@ -81,7 +81,8 @@ export function subnameLifecycle(subname) {
     resolverId: subname.resolver ?? null,
     expiresAt: subname.expiresAt ?? null,
     expiresAtBlockHeight: numberOrNull(subname.expiresAtBlockHeight),
-    graceEndsAt: null,
+    graceEndsAt: subname.graceEndsAt ?? null,
+    graceEndsAtBlockHeight: numberOrNull(subname.graceEndsAtBlockHeight),
     status: subname.status ?? 'active',
     lastEventType: subname.lastEventType ?? 'subname_created',
   }

@@ -55,6 +55,7 @@ describe('local indexer projector parity', () => {
     expect(serverStore.namesByCanonical.get('aurora.dusk')).toMatchObject({
       canonicalName: 'aurora.dusk',
       owner: fixtureOwner,
+      resolverId: fixtureNextRecordResolver,
     })
     expect(serverStore.namesByNode.get(fixtureParentNode)).toMatchObject({
       canonicalName: 'archive.dusk',

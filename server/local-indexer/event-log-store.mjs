@@ -27,11 +27,13 @@ import { normalizeName, normalizeNode } from './http.mjs'
 import {
   applyControllerEvent,
   applyLifecycleEvent,
+  applyRecordsMoved,
   applyMarketplaceEvent,
   applyResolverEvent,
   applyReverseEvent,
   applySubnameEvent,
   clearNodeDerivedState,
+  clearReleasedName,
   emptyPoolState,
   isControllerEvent,
   isFeeConfigEvent,
@@ -44,6 +46,7 @@ import {
   isSubnameEvent,
   isTreasuryEvent,
   reducePoolEvent,
+  renewInheritingSubnames,
 } from './projectors.mjs'
 import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
 import { assertSafeNumericTree } from './safe-numbers.mjs'
@@ -142,8 +145,12 @@ export function applyReplayEvent(state, entry, warnings) {
     meta.blockHeight = confirmedEventBlockHeight(event, meta)
     if (Number.isFinite(meta.blockHeight)) state.newestEventHeight = Math.max(state.newestEventHeight ?? 0, meta.blockHeight)
     if (isLifecycleEvent(event.type)) {
+      const node = normalizeNode(event.node)
+      // The contract clears a lapsed name it registers again without emitting name_released.
+      if (event.type === 'name_registered' && state.namesByNode.has(node)) clearReleasedName(state, node)
       applyLifecycleEvent(state, event, meta, timestamp)
-      if (event.type === 'name_released') clearNodeDerivedState({ ...state, node: normalizeNode(event.node) })
+      if (event.type === 'name_renewed') renewInheritingSubnames(state, node)
+      if (event.type === 'name_released') clearReleasedName(state, node)
     } else if (isResolverEvent(event.type)) {
       applyResolverEvent(state, event, meta, timestamp)
     } else if (isControllerEvent(event.type)) {
@@ -166,6 +173,7 @@ export function applyReplayEvent(state, entry, warnings) {
       applyMarketplaceEvent(state, event, meta, timestamp)
     } else if (isPoolEvent(event.type)) {
       state.poolState = reducePoolEvent(event, state.poolState, meta)
+      if (event.type === 'records_moved') applyRecordsMoved(state, event, meta, timestamp)
       // The router starts with a fee config; later changes arrive as fee_config_updated.
       if (event.type === 'router_initialized') state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
     }

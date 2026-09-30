@@ -606,6 +606,90 @@ describe('local indexer event-log API', () => {
     }
   })
 
+  it('resolves a name and a subname through the resolver their records moved to', async () => {
+    const [name, subname, nextResolver] = ['aa', 'bb', 'dd'].map((byte) => `0x${byte.repeat(32)}`)
+    const eventLogFile = await writeEventLog([
+      ...createEventLog(),
+      ...[name, subname].map((node, index) => ({
+        event: {
+          type: 'records_moved',
+          node,
+          controller: '0xowner',
+          fromResolver: `0x${'cc'.repeat(32)}`,
+          toResolver: nextResolver,
+          recordCount: 1,
+        },
+        meta: { txId: `tx-move-${index}`, blockHeight: 20 + index },
+      })),
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/resolve?name=aurora.dusk`)).resolves.toMatchObject({
+        verificationStatus: 'forward_resolved',
+        resolver: { resolverId: nextResolver, health: 'ok' },
+        records: [{ key: 'moonlight_address', value: 'dusk1localresolverproof01' }],
+      })
+      await expect(expectJson(`${baseUrl}/resolve?name=settlement.aurora.dusk`)).resolves.toMatchObject({
+        resolver: { resolverId: nextResolver, health: 'ok' },
+      })
+      await expect(expectJson(`${baseUrl}/subnames?parentNode=${name}`)).resolves.toMatchObject([{
+        name: 'settlement.aurora.dusk',
+        resolver: nextResolver,
+      }])
+    } finally {
+      await close()
+    }
+  })
+
+  it('moves both views of a subname whose authorities changed', async () => {
+    const [name, subname, nextResolver] = ['aa', 'bb', 'dd'].map((byte) => `0x${byte.repeat(32)}`)
+    const eventLogFile = await writeEventLog([
+      ...createEventLog(),
+      // The contract reports a subname's authority change as a name_owner_changed on its node.
+      {
+        event: {
+          type: 'name_owner_changed',
+          node: subname,
+          actor: '0xowner',
+          previousOwner: '0xowner',
+          owner: '0xowner',
+          manager: '0xmanager',
+          resolver: `0x${'00'.repeat(32)}`,
+          expiresAt: '2027-06-17T00:00:00.000Z',
+        },
+        meta: { txId: 'tx-authorities', blockHeight: 20 },
+      },
+      {
+        event: {
+          type: 'records_moved',
+          node: subname,
+          controller: '0xmanager',
+          fromResolver: `0x${'cc'.repeat(32)}`,
+          toResolver: nextResolver,
+          recordCount: 1,
+        },
+        meta: { txId: 'tx-move', blockHeight: 21 },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/name?node=${subname}`)).resolves.toMatchObject({ resolverId: nextResolver })
+      await expect(expectJson(`${baseUrl}/resolve?name=settlement.aurora.dusk`)).resolves.toMatchObject({
+        resolver: { resolverId: nextResolver, health: 'ok' },
+      })
+      await expect(expectJson(`${baseUrl}/subnames?parentNode=${name}`)).resolves.toMatchObject([{
+        name: 'settlement.aurora.dusk',
+        resolver: nextResolver,
+      }])
+    } finally {
+      await close()
+    }
+  })
+
   it('keeps a separate commitment record per controller for the same hash', async () => {
     const commitment = `0x${'aa'.repeat(32)}`
     const node = `0x${'bb'.repeat(32)}`

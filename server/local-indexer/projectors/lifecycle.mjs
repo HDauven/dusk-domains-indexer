@@ -30,6 +30,23 @@ export function applyLifecycleEvent(store, event, meta, fallbackTimestamp) {
   ])
 }
 
+// Moved records keep their content; the name now resolves through the resolver holding them.
+// A subname whose authorities changed has a name row too, and both follow the move.
+export function applyRecordsMoved(store, event, meta, fallbackTimestamp) {
+  const node = normalizeNode(event.node)
+  if (store.namesByNode.has(node)) {
+    const resolverChanged = { type: 'resolver_changed', node, actor: event.controller, resolver: event.toResolver }
+    applyLifecycleEvent(store, resolverChanged, meta, fallbackTimestamp)
+  }
+  const subname = store.subnamesByNode.get(node)
+  if (!subname) return
+  const moved = { ...subname, resolver: event.toResolver }
+  const parentNode = normalizeNode(subname.parentNode)
+  store.subnamesByNode.set(node, moved)
+  const siblings = store.subnamesByParent.get(parentNode) ?? []
+  store.subnamesByParent.set(parentNode, siblings.map((candidate) => (candidate.node === node ? moved : candidate)))
+}
+
 export function clearNodeDerivedState({
   node,
   recordsByNode,

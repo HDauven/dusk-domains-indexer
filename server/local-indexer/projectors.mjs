@@ -16,6 +16,7 @@ export {
 } from './projectors/marketplace.mjs'
 export {
   applyLifecycleEvent,
+  applyRecordsMoved,
   clearNodeDerivedState,
 } from './projectors/lifecycle.mjs'
 export {

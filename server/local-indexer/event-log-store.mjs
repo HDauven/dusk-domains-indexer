@@ -27,6 +27,7 @@ import { normalizeName, normalizeNode } from './http.mjs'
 import {
   applyControllerEvent,
   applyLifecycleEvent,
+  applyRecordsMoved,
   applyMarketplaceEvent,
   applyResolverEvent,
   applyReverseEvent,
@@ -166,6 +167,7 @@ export function applyReplayEvent(state, entry, warnings) {
       applyMarketplaceEvent(state, event, meta, timestamp)
     } else if (isPoolEvent(event.type)) {
       state.poolState = reducePoolEvent(event, state.poolState, meta)
+      if (event.type === 'records_moved') applyRecordsMoved(state, event, meta, timestamp)
       // The router starts with a fee config; later changes arrive as fee_config_updated.
       if (event.type === 'router_initialized') state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
     }

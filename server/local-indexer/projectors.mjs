@@ -4,6 +4,7 @@ export {
   isFeeConfigEvent,
   isLifecycleEvent,
   isMarketplaceEvent,
+  isPoolEvent,
   isReferralEvent,
   isResolverEvent,
   isReverseEvent,
@@ -26,3 +27,4 @@ export {
   recordIndexKey,
 } from './projectors/records.mjs'
 export { applySubnameEvent } from './projectors/subnames.mjs'
+export { emptyPoolState, reducePoolEvent } from './projectors/pool.mjs'

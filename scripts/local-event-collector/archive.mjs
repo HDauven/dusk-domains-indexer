@@ -33,6 +33,16 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
     contracts.set(contract.contractId, { ...contract, driver })
   }
   const scope = JSON.stringify(config.contracts.map(c => [c.key, c.contractId]).sort())
+  // Contract pools (ADR 0002 in dusk-domains-protocol) grow: the router adds registries that emit the
+  // core's events. Follow each one from the router event that adds it, which always comes first.
+  const registry = config.contracts.find(contract => contract.key === 'core')
+  const followPoolMember = entry => {
+    if (!registry || entry?.meta?.contractKey !== 'router' || entry.event?.type !== 'pool_member_added') return
+    if (entry.event.kind !== 'registry') return
+    const contractId = String(entry.event.member).toLowerCase().replace(/^0x/, '')
+    hexHash(contractId)
+    if (!contracts.has(contractId)) contracts.set(contractId, { ...contracts.get(registry.contractId), contractId })
+  }
   await mkdir(dirname(config.eventLog), { recursive: true })
   await mkdir(dirname(config.cursorFile), { recursive: true })
   let cursor = config.truncate ? null : await readOptionalJson(config.cursorFile)
@@ -58,6 +68,7 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
       assert.equal(parsed.warnings.length, 0, 'Committed journal is corrupt')
       assert.equal(parsed.entries.length, cursor.eventCount, 'Journal/cursor event count mismatch')
       assert(!committed || committed.endsWith('\n'), 'Cursor splits a journal row')
+      for (const entry of parsed.entries) followPoolMember(entry)
     } else {
       assert.equal(size, 0, 'Unbound/legacy journal: use NEW journal/cursor/SQLite paths for archive replay')
       cursor = { ...summarizeEventLogText(''), version: 2, source: archiveSource, scope,
@@ -120,6 +131,7 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
               Object.assign(entry.meta, { source: archiveSource, timeSource: 'block', blockHeight: header.height,
                 blockHash: header.hash, txId: raw.origin, eventIndex, eventId: header.hash + ':' + eventIndex })
               entries.push(entry)
+              followPoolMember(entry)
             }
           }
           if (batches.length) ({ height: scannedBlockHeight, hash: scannedBlockHash } = blocks[batches.length - 1].header)

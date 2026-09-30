@@ -9,6 +9,7 @@ This guide is the operator-facing companion to the launch runbook. It covers the
 Required services:
 
 - Dusk archive/full node endpoint for the selected network.
+- Dusk Domains Router contract ID. The router lists the pool's registries and resolvers.
 - Dusk Domains Core contract ID.
 - Dusk Domains Treasury contract ID.
 - Dusk Domains Marketplace contract ID when marketplace routes are enabled.
@@ -44,9 +45,11 @@ Use a larger machine if the archive node is co-located, if event history is back
 Public runtime config must expose only:
 
 ```text
+VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID
 VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID
+VITE_DUSK_DOMAINS_ROUTER_DRIVER_URL
 VITE_DUSK_DOMAINS_CORE_DRIVER_URL
 VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL
 VITE_DUSK_DOMAINS_MARKETPLACE_DRIVER_URL

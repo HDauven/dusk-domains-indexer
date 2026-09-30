@@ -124,6 +124,7 @@ describe('local event collector config', () => {
     expect(config.durationMs).toBe(100)
     expect(config.truncate).toBe(true)
     expect(config.contracts.map((contract) => [contract.key, contract.contractId])).toEqual([
+      ['router', '78'.repeat(32)],
       ['core', '77'.repeat(32)],
       ['treasury', '66'.repeat(32)],
     ])
@@ -176,6 +177,7 @@ async function createCollectorFixture(options = {}) {
   await mkdir(publicDir, { recursive: true })
 
   for (const driverFile of [
+    'dusk-domains-router.data-driver.wasm',
     'dusk-domains-core.data-driver.wasm',
     'dusk-domains-treasury.data-driver.wasm',
   ]) {
@@ -199,6 +201,7 @@ async function createCollectorFixture(options = {}) {
 function validEnv() {
   return `
 VITE_DUSK_DOMAINS_NODE_URL=http://127.0.0.1:18180/
+VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=0x${'78'.repeat(32)}
 VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=0x${'77'.repeat(32)}
 VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'66'.repeat(32)}
 `

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   activeContractKeys,
+  eventContractKeys,
   isContractId,
   legacyContractKeys,
   loadDeploymentSurface,
@@ -19,8 +20,9 @@ afterEach(async () => {
 
 describe('indexer deployment surface proof', () => {
   it('exports the production contract key set and legacy split-contract key set', () => {
-    expect(activeContractKeys).toEqual(['core', 'treasury', 'marketplace'])
-    expect(legacyContractKeys).toEqual(['registry', 'registrar', 'controller', 'resolver', 'reverse'])
+    expect(activeContractKeys).toEqual(['router', 'core', 'resolver', 'treasury', 'marketplace'])
+    expect(eventContractKeys).toEqual(['router', 'core', 'treasury', 'marketplace'])
+    expect(legacyContractKeys).toEqual(['registry', 'registrar', 'controller', 'reverse'])
   })
 
   it('normalizes contract ids strictly', () => {
@@ -36,12 +38,16 @@ describe('indexer deployment surface proof', () => {
     await expect(loadDeploymentSurface(fixture.envFile, fixture.proofReport)).resolves.toEqual({
       ok: true,
       contracts: {
+        router: `0x${'aa'.repeat(32)}`,
         core: `0x${'11'.repeat(32)}`,
+        resolver: `0x${'bb'.repeat(32)}`,
         treasury: `0x${'22'.repeat(32)}`,
         marketplace: `0x${'33'.repeat(32)}`,
       },
       reportContracts: {
+        router: `0x${'aa'.repeat(32)}`,
         core: `0x${'11'.repeat(32)}`,
+        resolver: `0x${'bb'.repeat(32)}`,
         treasury: `0x${'22'.repeat(32)}`,
         marketplace: `0x${'33'.repeat(32)}`,
       },
@@ -70,8 +76,8 @@ describe('indexer deployment surface proof', () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain('env/proof contract mismatch: treasury')
     expect(result.message).toContain('legacy env keys:')
-    expect(result.message).toContain('legacy proof contract keys: resolver')
-    expect(result.message).toContain('unexpected proof contract keys: resolver, extra')
+    expect(result.message).toContain('legacy proof contract keys: registrar')
+    expect(result.message).toContain('unexpected proof contract keys: registrar, extra')
     expect(result.message).toContain('proof report is not passing')
   })
 })
@@ -93,7 +99,9 @@ async function writeSurfaceFixture({
   const envFile = join(dir, '.env')
   const proofReport = join(dir, 'proof.json')
   await writeFile(envFile, [
+    `VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=0x${'aa'.repeat(32)}`,
     `VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${envCore}`,
+    `VITE_DUSK_DOMAINS_RESOLVER_CONTRACT_ID=0x${'bb'.repeat(32)}`,
     `VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=${envTreasury}`,
     `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${envMarketplace}`,
     legacySplitEnv ? `VITE_DUSK_DOMAINS_REGISTRY_CONTRACT_ID=0x${'44'.repeat(32)}` : '',
@@ -101,10 +109,12 @@ async function writeSurfaceFixture({
   await writeFile(proofReport, JSON.stringify({
     ok: proofOk,
     publicContracts: {
+      router: `0x${'aa'.repeat(32)}`,
       core: proofCore,
+      resolver: `0x${'bb'.repeat(32)}`,
       treasury: proofTreasury,
       marketplace: proofMarketplace,
-      ...(legacyProofKey ? { resolver: `0x${'55'.repeat(32)}` } : {}),
+      ...(legacyProofKey ? { registrar: `0x${'55'.repeat(32)}` } : {}),
       ...(extraProofKey ? { extra: `0x${'66'.repeat(32)}` } : {}),
     },
   }, null, 2), 'utf8')

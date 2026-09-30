@@ -45,6 +45,8 @@ describe('indexer event journal deployment binding', () => {
     expect(result.derivedDeploymentStartHeight).toBe(10)
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'event_journal_contract_keys', ok: true }),
+      expect.objectContaining({ id: 'event_journal_router_contract', ok: true }),
+      expect.objectContaining({ id: 'event_journal_router_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'event_journal_core_contract', ok: true }),
       expect.objectContaining({ id: 'event_journal_core_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'event_journal_treasury_contract', ok: true }),
@@ -60,7 +62,7 @@ describe('indexer event journal deployment binding', () => {
     const fixture = await writeJournalFixture({
       treasuryContractId: `0x${'99'.repeat(32)}`,
       extraRows: [
-        { meta: { contractKey: 'resolver', contractId: `0x${'77'.repeat(32)}`, blockHeight: 10 } },
+        { meta: { contractKey: 'registrar', contractId: `0x${'77'.repeat(32)}`, blockHeight: 10 } },
         { meta: { contractKey: 'mystery', contractId: `0x${'88'.repeat(32)}`, blockHeight: 10 } },
       ],
     })
@@ -76,9 +78,9 @@ describe('indexer event journal deployment binding', () => {
 
     expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')).toMatchObject({
       ok: false,
-      message: expect.stringContaining('legacy row 4'),
+      message: expect.stringContaining('legacy row 5'),
     })
-    expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')?.message).toContain('5:mystery')
+    expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')?.message).toContain('6:mystery')
     expect(result.checks.find((check) => check.id === 'event_journal_treasury_matches_deployment')).toMatchObject({
       ok: false,
       message: expect.stringContaining('mismatch'),
@@ -132,6 +134,7 @@ async function writeJournalFixture({
   coreContractId = `0x${'44'.repeat(32)}`,
   treasuryContractId = `0x${'55'.repeat(32)}`,
   marketplaceContractId = `0x${'66'.repeat(32)}`,
+  routerContractId = `0x${'33'.repeat(32)}`,
   extraRows = [],
 } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-event-journal-binding-'))
@@ -160,6 +163,13 @@ async function writeJournalFixture({
         blockHeight,
       },
     },
+    {
+      meta: {
+        contractKey: 'router',
+        contractId: routerContractId,
+        blockHeight,
+      },
+    },
     ...extraRows,
   ]
   await writeFile(eventLog, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8')
@@ -170,6 +180,7 @@ async function writeJournalFixture({
     deployment: {
       ok: true,
       contracts: {
+        router: routerContractId,
         core: coreContractId,
         treasury: `0x${'55'.repeat(32)}`,
         marketplace: marketplaceContractId,
@@ -177,3 +188,35 @@ async function writeJournalFixture({
     },
   }
 }
+
+describe('indexer event journal binding for a grown contract pool', () => {
+  it('accepts several core IDs only when the router added each registry', async () => {
+    const router = `0x${'33'.repeat(32)}`
+    const nextRegistry = `0x${'45'.repeat(32)}`
+    const addedRows = (members) => members.map((member) => ({
+      event: { type: 'pool_member_added', kind: 'registry', member },
+      meta: { contractKey: 'router', contractId: router, blockHeight: 10 },
+    }))
+    const audit = async (extraRows) => {
+      const fixture = await writeJournalFixture({ routerContractId: router, extraRows })
+      const result = await auditEventJournalDeploymentBinding({
+        eventLog: fixture.eventLog,
+        deployment: fixture.deployment,
+        deploymentStartHeight: 10,
+        deriveDeploymentStartHeight: false,
+        archiveSnapshotHeight: 9,
+        archiveSnapshot: '',
+        requireArchiveSnapshot: false,
+      })
+      return (id) => result.checks.find((check) => check.id === id)?.ok
+    }
+    const nextRegistryRow = { meta: { contractKey: 'core', contractId: nextRegistry, blockHeight: 11 } }
+
+    const pooled = await audit([...addedRows([`0x${'44'.repeat(32)}`, nextRegistry]), nextRegistryRow])
+    expect(pooled('event_journal_core_contract')).toBe(true)
+    expect(pooled('event_journal_core_matches_deployment')).toBe(true)
+
+    const unlisted = await audit([...addedRows([`0x${'44'.repeat(32)}`]), nextRegistryRow])
+    expect(unlisted('event_journal_core_contract')).toBe(false)
+  })
+})

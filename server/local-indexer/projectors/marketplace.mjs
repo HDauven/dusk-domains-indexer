@@ -8,7 +8,7 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
   if (event.type === 'marketplace_initialized') {
     store.marketplaceConfig = {
       initialized: true,
-      coreContract: normalizedHex(event.coreContract),
+      router: normalizedHex(event.router),
       treasuryContract: normalizedHex(event.treasuryContract),
       marketplaceAuthority: normalizedHex(event.marketplaceAuthority),
       operator: normalizedHex(event.operator),
@@ -169,7 +169,7 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
 export function emptyMarketplaceConfig() {
   return {
     initialized: false,
-    coreContract: null,
+    router: null,
     treasuryContract: null,
     marketplaceAuthority: null,
     operator: null,

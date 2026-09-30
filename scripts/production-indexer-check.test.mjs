@@ -116,13 +116,13 @@ describe('production indexer durability check', () => {
 
     expect(result.ok).toBe(true)
     expect(result.rebuilt).toMatchObject({
-      eventCount: 3,
-      rawEventCount: 3,
+      eventCount: 4,
+      rawEventCount: 4,
       warningCount: 0,
     })
     expect(result.health).toMatchObject({
       ok: true,
-      eventCount: 3,
+      eventCount: 4,
       currentBlockHeight: 12,
       finalizedBlockHeight: 12,
       lagBlocks: 0,

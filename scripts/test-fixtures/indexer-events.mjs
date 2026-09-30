@@ -10,9 +10,36 @@ export const fixtureReferrer = 'moonlight:0x555555555555555555555555555555555555
 export const fixtureBuyer = 'moonlight:0x6666666666666666666666666666666666666666666666666666666666666666'
 export const fixtureBuyerAuthority = `0x${'66'.repeat(32)}`
 export const fixtureMoonlightAddress = 'dusk1publicaddress'
+export const fixtureRouter = `0x${'c0'.repeat(32)}`
+export const fixtureTreasury = `0x${'c1'.repeat(32)}`
+export const fixtureRegistry = `0x${'c2'.repeat(32)}`
+export const fixtureNextRegistry = `0x${'c3'.repeat(32)}`
+export const fixtureRecordResolver = `0x${'c4'.repeat(32)}`
+export const fixtureNextRecordResolver = `0x${'c5'.repeat(32)}`
 
 export function createIndexerParityEvents() {
   return [
+    envelope({
+      type: 'router_initialized',
+      operator: principal(0x77),
+      treasury: fixtureTreasury,
+      marketplace: `0x${'00'.repeat(32)}`,
+      feeConfig: feeConfig(1),
+    }, { blockHeight: 1, txId: 'router-init-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({
+      type: 'pool_member_added',
+      kind: 'registry',
+      member: fixtureRegistry,
+      index: 0,
+      operator: principal(0x77),
+    }, { blockHeight: 2, txId: 'router-add-registry-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({
+      type: 'pool_member_added',
+      kind: 'resolver',
+      member: fixtureRecordResolver,
+      index: 0,
+      operator: principal(0x77),
+    }, { blockHeight: 2, txId: 'router-add-resolver-tx', contractKey: 'router', contractId: fixtureRouter }),
     envelope({
       type: 'registration_committed',
       commitment: fixtureCommitment,
@@ -193,6 +220,7 @@ export function createIndexerParityEvents() {
       operator: principal(0x77),
       operatorRecipient: '244Sywxj7PuMHpcPxemaXLcrY5rPgztra6H9Vz8cU1Ro5v23SxKTfVqr2yS7NXAXE1iq59ndn4aMZmYxuzu3Te3e9fokQKTUkYvFxYg2P2E8EEg1gWUbs3AFL2aNx62HQd7r',
       allowedFeeSources: [fixtureNode],
+      router: fixtureRouter,
     }, { blockHeight: 30, txId: 'treasury-init-tx', contractKey: 'treasury' }),
     envelope({
       type: 'treasury_operator_changed',
@@ -241,10 +269,37 @@ export function createIndexerParityEvents() {
       operator: fixtureOwner,
       previousConfig: feeConfig(1),
       config: feeConfig(2),
-    }, { blockHeight: 35, txId: 'fee-config-tx' }),
+    }, { blockHeight: 35, txId: 'fee-config-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({
+      type: 'pool_member_added',
+      kind: 'registry',
+      member: fixtureNextRegistry,
+      index: 1,
+      operator: principal(0x77),
+    }, { blockHeight: 36, txId: 'router-add-next-registry-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({
+      type: 'pool_member_added',
+      kind: 'resolver',
+      member: fixtureNextRecordResolver,
+      index: 1,
+      operator: principal(0x77),
+    }, { blockHeight: 37, txId: 'router-add-next-resolver-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({
+      type: 'records_moved',
+      node: fixtureNode,
+      controller: fixtureOwner,
+      fromResolver: fixtureRecordResolver,
+      toResolver: fixtureNextRecordResolver,
+      recordCount: 1,
+    }, { blockHeight: 38, txId: 'records-moved-tx' }),
+    envelope({
+      type: 'router_operator_changed',
+      previousOperator: principal(0x77),
+      operator: principal(0x78),
+    }, { blockHeight: 39, txId: 'router-operator-tx', contractKey: 'router', contractId: fixtureRouter }),
     envelope({
       type: 'marketplace_initialized',
-      coreContract: fixtureNode,
+      router: fixtureRouter,
       treasuryContract: fixtureParentNode,
       marketplaceAuthority: fixtureOwner,
       operator: fixtureOwner,

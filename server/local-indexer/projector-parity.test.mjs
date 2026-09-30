@@ -7,6 +7,12 @@ import {
   createIndexerParityEvents,
   fixtureCommitment,
   fixtureMoonlightAddress,
+  fixtureNextRecordResolver,
+  fixtureNextRegistry,
+  fixtureRecordResolver,
+  fixtureRegistry,
+  fixtureRouter,
+  fixtureTreasury,
   fixtureNode,
   fixtureOwner,
   fixtureParentNode,
@@ -79,6 +85,17 @@ describe('local indexer projector parity', () => {
       renewalReferralRewardBps: 6,
       premiumReferralRewardBps: 7,
       version: 8,
+    })
+    expect(serverStore.poolState).toEqual({
+      initialized: true,
+      router: fixtureRouter,
+      operator: { kind: 'Phoenix', bytes: Array(32).fill(0x78) },
+      treasury: fixtureTreasury,
+      marketplace: null,
+      registries: [fixtureRegistry, fixtureNextRegistry],
+      resolvers: [fixtureRecordResolver, fixtureNextRecordResolver],
+      txId: 'router-operator-tx',
+      blockHeight: 39,
     })
     expect([...serverStore.referralsByReferrer.values()][0]).toMatchObject({
       claimableLux: 0,

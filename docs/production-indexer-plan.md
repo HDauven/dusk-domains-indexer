@@ -89,7 +89,7 @@ Future normalized tables:
 | `reverse_records` | `(endpoint_type, endpoint_value)` | Public primary-name state. |
 | `subnames` | `node` | Subname lifecycle, parent node, owner, manager, resolver, policy. |
 | `activity` | `(node, block_height, tx_id, event_index)` | User-facing lifecycle and mutation history. |
-| `commitments` | `commitment` | Commit/reveal UI recovery state. |
+| `commitments` | `(controller, commitment)` | Commit/reveal UI recovery state. |
 | `treasury` | `chain_id` | Protocol fee accounting read model. |
 | `treasury_claims` | `(tx_id, event_index)` | Recent operator claim history. |
 | `referrals` | `referrer` | Claimable and claimed referral reward totals. |

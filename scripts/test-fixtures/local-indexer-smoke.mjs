@@ -159,6 +159,14 @@ export function createMockFetch(options = {}) {
           message: 'commitment must be a 32-byte hex value.',
         }, { status: 400 })
       }
+      const rawController = parsed.searchParams.get('controller')
+      if (rawController && !/^0x[a-f0-9]{64}$/.test(rawController)) {
+        return Response.json({
+          error: 'invalid_controller',
+          parameter: 'controller',
+          message: 'controller must be a 32-byte hex value.',
+        }, { status: 400 })
+      }
       return Response.json(null)
     }
     if (parsed.pathname === '/search') {

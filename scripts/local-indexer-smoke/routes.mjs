@@ -27,6 +27,7 @@ export const malformedRouteParameterProbes = Object.freeze([
   { route: '/record-history', expectedError: 'missing_node' },
   { route: '/commitment', expectedError: 'missing_commitment' },
   { route: '/commitment?commitment=not-a-node', expectedError: 'invalid_commitment' },
+  { route: `/commitment?commitment=0x${'aa'.repeat(32)}&controller=not-a-node`, expectedError: 'invalid_controller' },
   { route: '/activity?node=not-a-node', expectedError: 'invalid_node' },
   { route: '/subnames', expectedError: 'missing_node' },
   { route: '/subname', expectedError: 'missing_node' },

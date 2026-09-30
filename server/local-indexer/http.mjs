@@ -212,7 +212,21 @@ function requiredCommitmentParameter(url) {
     }
   }
 
-  return { commitment }
+  const rawController = url.searchParams.get('controller')
+  if (!rawController?.trim()) return { commitment }
+
+  const controller = normalizeNode(rawController)
+  if (!/^0x[a-f0-9]{64}$/.test(controller)) {
+    return {
+      error: {
+        error: 'invalid_controller',
+        parameter: 'controller',
+        message: 'controller must be a 32-byte hex value.',
+      },
+    }
+  }
+
+  return { commitment, controller }
 }
 
 function requiredRecordParameters(url) {

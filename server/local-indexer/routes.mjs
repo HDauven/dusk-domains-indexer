@@ -21,6 +21,7 @@ import {
   routeParameters,
   sendJson,
 } from './http.mjs'
+import { commitmentKey } from './projectors/controller.mjs'
 import { emptyMarketplaceConfig, marketplaceOfferKey, marketplaceOrderIsEscrowed } from './projectors/marketplace.mjs'
 
 export function createLocalIndexerHandler(storeProvider, options = {}) {
@@ -65,7 +66,10 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/commitment') {
-      reply(200, store.commitmentsById?.get(routeParams.commitment) ?? null)
+      const commitment = routeParams.controller
+        ? store.commitmentsByKey?.get(commitmentKey(routeParams.controller, routeParams.commitment))
+        : store.commitmentsById?.get(routeParams.commitment)
+      reply(200, commitment ?? null)
       return
     }
 

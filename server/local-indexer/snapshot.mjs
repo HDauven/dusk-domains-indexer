@@ -52,6 +52,7 @@ export async function loadSnapshotStore(snapshotFile) {
   const recordHistoryByNode = new Map()
   const recordHistoryByNodeKey = new Map()
   const commitmentsById = new Map()
+  const commitmentsByKey = new Map()
   const controllersByNode = new Map()
   const marketplaceFixedSalesByNode = new Map()
   const marketplaceAuctionsByNode = new Map()
@@ -255,6 +256,7 @@ export async function loadSnapshotStore(snapshotFile) {
     subnamesByParent,
     subnamesByCanonical,
     commitmentsById,
+    commitmentsByKey,
     recordsByNode,
     recordsByNodeKey,
     recordHistoryByNode,

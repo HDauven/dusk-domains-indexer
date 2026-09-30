@@ -3,11 +3,20 @@ import {
   numberOrNull,
 } from '../http.mjs'
 
+// Pending commitments are keyed by controller and hash, as the core contract keys them, so two
+// controllers committing the same hash each keep their own record. commitmentsById keeps the
+// latest record per hash for callers that do not name a controller.
 export function applyControllerEvent(store, event, meta) {
   const commitment = normalizeNode(event.commitment)
-  const current = store.commitmentsById.get(commitment)
+  const key = commitmentKey(event.controller, commitment)
+  const current = store.commitmentsByKey.get(key)
   const next = reduceControllerEvent(event, current, meta)
+  store.commitmentsByKey.set(key, next)
   store.commitmentsById.set(commitment, next)
+}
+
+export function commitmentKey(controller, commitment) {
+  return `${normalizeNode(controller)}:${normalizeNode(commitment)}`
 }
 
 function reduceControllerEvent(event, current, meta) {

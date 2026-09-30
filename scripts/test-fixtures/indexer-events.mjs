@@ -47,6 +47,12 @@ export function createIndexerParityEvents() {
       createdAt: '2026-06-27T12:00:00.000Z',
     }, { blockHeight: 10, txId: 'commit-tx' }),
     envelope({
+      type: 'registration_committed',
+      commitment: fixtureCommitment,
+      controller: fixtureManager,
+      createdAt: '2026-06-27T12:01:00.000Z',
+    }, { blockHeight: 12, txId: 'second-commit-tx' }),
+    envelope({
       type: 'registration_revealed',
       commitment: fixtureCommitment,
       node: fixtureNode,

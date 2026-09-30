@@ -606,6 +606,56 @@ describe('local indexer event-log API', () => {
     }
   })
 
+  it('keeps a separate commitment record per controller for the same hash', async () => {
+    const commitment = `0x${'aa'.repeat(32)}`
+    const node = `0x${'bb'.repeat(32)}`
+    const first = `0x${'cc'.repeat(32)}`
+    const second = `0x${'dd'.repeat(32)}`
+    const eventLogFile = await writeEventLog([
+      {
+        event: { type: 'registration_committed', commitment, controller: first, createdAt: '2026-06-19T12:00:00.000Z' },
+        meta: { txId: 'tx-first', blockHeight: 100 },
+      },
+      {
+        event: { type: 'registration_committed', commitment, controller: second, createdAt: '2026-06-19T12:05:00.000Z' },
+        meta: { txId: 'tx-second', blockHeight: 103 },
+      },
+      {
+        event: { type: 'registration_revealed', commitment, node, controller: first },
+        meta: { txId: 'tx-reveal', blockHeight: 106 },
+      },
+    ])
+    const store = await loadEventLogStore(eventLogFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/commitment?commitment=${commitment}&controller=${first}`)).resolves.toMatchObject({
+        controller: first,
+        node,
+        status: 'revealed',
+        committedTxId: 'tx-first',
+        committedBlockHeight: 100,
+        revealedTxId: 'tx-reveal',
+      })
+      await expect(expectJson(`${baseUrl}/commitment?commitment=${commitment}&controller=${second.slice(2).toUpperCase()}`)).resolves.toMatchObject({
+        controller: second,
+        node: null,
+        status: 'committed',
+        committedTxId: 'tx-second',
+        committedBlockHeight: 103,
+        revealedTxId: null,
+      })
+      await expect(expectJson(`${baseUrl}/commitment?commitment=${commitment}&controller=0x${'ee'.repeat(32)}`)).resolves.toBeNull()
+      // Without a controller the route keeps serving the latest record for the hash.
+      await expect(expectJson(`${baseUrl}/commitment?commitment=${commitment}`)).resolves.toMatchObject({
+        controller: first,
+        revealedTxId: 'tx-reveal',
+      })
+    } finally {
+      await close()
+    }
+  })
+
   it('preserves lifecycle block heights from replayed renewal events', async () => {
     const node = `0x${'aa'.repeat(32)}`
     const owner = '0xowner'

@@ -66,6 +66,10 @@ describe('local indexer HTTP boundary', () => {
       error: 'invalid_commitment',
       parameter: 'commitment',
     })
+    await expect(expectJson(`${baseUrl}/commitment?commitment=${'aa'.repeat(32)}&controller=bad`, { expectedStatus: 400 })).resolves.toMatchObject({
+      error: 'invalid_controller',
+      parameter: 'controller',
+    })
     await expect(expectJson(`${baseUrl}/activity?node=not-a-node`, { expectedStatus: 400 })).resolves.toMatchObject({
       error: 'invalid_node',
       parameter: 'node',
@@ -169,6 +173,10 @@ describe('local indexer HTTP boundary', () => {
     await expect(expectJson(`${baseUrl}/commitment?commitment=bad`, { expectedStatus: 400 })).resolves.toMatchObject({
       error: 'invalid_commitment',
       parameter: 'commitment',
+    })
+    await expect(expectJson(`${baseUrl}/commitment?commitment=${'aa'.repeat(32)}&controller=bad`, { expectedStatus: 400 })).resolves.toMatchObject({
+      error: 'invalid_controller',
+      parameter: 'controller',
     })
     await expect(expectJson(`${baseUrl}/subname`, { expectedStatus: 400 })).resolves.toMatchObject({
       error: 'missing_node',

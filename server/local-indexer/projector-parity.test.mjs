@@ -3,9 +3,11 @@ import {
   duskDomainsIndexedEventTypes,
 } from '@duskdomains/sdk/event-catalog'
 import { replayEventLog } from './event-log-store.mjs'
+import { commitmentKey } from './projectors/controller.mjs'
 import {
   createIndexerParityEvents,
   fixtureCommitment,
+  fixtureManager,
   fixtureMoonlightAddress,
   fixtureNextRecordResolver,
   fixtureNextRegistry,
@@ -32,11 +34,24 @@ describe('local indexer projector parity', () => {
     const serverStore = replayEventLog(envelopes, warnings, '2026-06-27T12:10:00.000Z')
 
     expect(warnings).toEqual([])
-    expect(serverStore.commitmentsById.get(fixtureCommitment)).toMatchObject({
+    const ownCommitment = serverStore.commitmentsByKey.get(commitmentKey(fixtureOwner, fixtureCommitment))
+    expect(ownCommitment).toMatchObject({
       commitment: fixtureCommitment,
       node: fixtureNode,
       controller: fixtureOwner,
+      status: 'revealed',
+      committedTxId: 'commit-tx',
+      committedBlockHeight: 10,
     })
+    expect(serverStore.commitmentsByKey.get(commitmentKey(fixtureManager, fixtureCommitment))).toMatchObject({
+      commitment: fixtureCommitment,
+      node: null,
+      controller: fixtureManager,
+      status: 'committed',
+      committedTxId: 'second-commit-tx',
+      committedBlockHeight: 12,
+    })
+    expect(serverStore.commitmentsById.get(fixtureCommitment)).toBe(ownCommitment)
     expect(serverStore.namesByCanonical.get('aurora.dusk')).toMatchObject({
       canonicalName: 'aurora.dusk',
       owner: fixtureOwner,

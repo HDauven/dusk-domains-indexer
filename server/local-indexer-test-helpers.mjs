@@ -8,8 +8,10 @@ import { createLocalIndexerHandler } from './local-indexer.mjs'
 export {
   createEventLog,
   createExpiredRoutingEventLogFixture,
+  createLapsedReregistrationEventLogFixture,
   createLifecycleCleanupEventLogFixture,
   createReleaseReregistrationEventLogFixture,
+  createSubnameRenewalEventLogFixture,
 } from './local-indexer-event-fixtures.mjs'
 
 export const expectedLocalIndexerRoutes = [

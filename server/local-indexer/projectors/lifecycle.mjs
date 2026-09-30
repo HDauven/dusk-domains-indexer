@@ -15,7 +15,12 @@ export function applyLifecycleEvent(store, event, meta, fallbackTimestamp) {
   const current = store.namesByNode.get(node)
   const canonicalName = 'label' in event ? `${event.label}.dusk` : current?.canonicalName ?? node
 
-  store.namesByNode.set(node, reduceLifecycleEvent(event, current, canonicalName))
+  const lifecycle = reduceLifecycleEvent(event, current, canonicalName)
+  // An authority change gives a subname a name row, which starts with the subname's grace end.
+  const subname = current ? null : store.subnamesByNode.get(node)
+  store.namesByNode.set(node, subname
+    ? { ...lifecycle, graceEndsAt: subname.graceEndsAt ?? null, graceEndsAtBlockHeight: subname.graceEndsAtBlockHeight ?? null }
+    : lifecycle)
   store.activityByNode.set(node, [
     activityEntry({
       eventType: lifecycleActivityType(event.type),
@@ -45,6 +50,14 @@ export function applyRecordsMoved(store, event, meta, fallbackTimestamp) {
   store.subnamesByNode.set(node, moved)
   const siblings = store.subnamesByParent.get(parentNode) ?? []
   store.subnamesByParent.set(parentNode, siblings.map((candidate) => (candidate.node === node ? moved : candidate)))
+}
+
+// Releasing a name, or registering a lapsed one again, also drops the name rows its subnames got
+// from authority changes.
+export function clearReleasedName(store, node) {
+  for (const staleNode of clearNodeDerivedState({ ...store, node })) {
+    if (staleNode !== node) store.namesByNode.delete(staleNode)
+  }
 }
 
 export function clearNodeDerivedState({
@@ -86,6 +99,7 @@ export function clearNodeDerivedState({
   for (const [key, reverse] of reverseByEndpoint) {
     if (staleNodes.has(normalizeNode(reverse?.node))) reverseByEndpoint.delete(key)
   }
+  return staleNodes
 }
 
 function collectNodeTree(rootNode, subnamesByNode) {

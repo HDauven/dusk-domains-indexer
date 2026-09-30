@@ -33,6 +33,7 @@ import {
   applyReverseEvent,
   applySubnameEvent,
   clearNodeDerivedState,
+  clearReleasedName,
   emptyPoolState,
   isControllerEvent,
   isFeeConfigEvent,
@@ -45,6 +46,7 @@ import {
   isSubnameEvent,
   isTreasuryEvent,
   reducePoolEvent,
+  renewInheritingSubnames,
 } from './projectors.mjs'
 import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
 import { assertSafeNumericTree } from './safe-numbers.mjs'
@@ -143,8 +145,12 @@ export function applyReplayEvent(state, entry, warnings) {
     meta.blockHeight = confirmedEventBlockHeight(event, meta)
     if (Number.isFinite(meta.blockHeight)) state.newestEventHeight = Math.max(state.newestEventHeight ?? 0, meta.blockHeight)
     if (isLifecycleEvent(event.type)) {
+      const node = normalizeNode(event.node)
+      // The contract clears a lapsed name it registers again without emitting name_released.
+      if (event.type === 'name_registered' && state.namesByNode.has(node)) clearReleasedName(state, node)
       applyLifecycleEvent(state, event, meta, timestamp)
-      if (event.type === 'name_released') clearNodeDerivedState({ ...state, node: normalizeNode(event.node) })
+      if (event.type === 'name_renewed') renewInheritingSubnames(state, node)
+      if (event.type === 'name_released') clearReleasedName(state, node)
     } else if (isResolverEvent(event.type)) {
       applyResolverEvent(state, event, meta, timestamp)
     } else if (isControllerEvent(event.type)) {

@@ -4,8 +4,10 @@ import { loadEventLogStore } from './local-indexer.mjs'
 import { replayEventLog } from './local-indexer/event-log-store.mjs'
 import {
   createExpiredRoutingEventLogFixture,
+  createLapsedReregistrationEventLogFixture,
   createLifecycleCleanupEventLogFixture,
   createReleaseReregistrationEventLogFixture,
+  createSubnameRenewalEventLogFixture,
   expectJson,
   startServer,
   writeCursor,
@@ -226,4 +228,113 @@ describe('local indexer event-log lifecycle cleanup', () => {
       await close()
     }
   })
+
+  it('reports a subname grace end from its parent', async () => {
+    const { events, fixedNode, belowFixedNode } = createSubnameRenewalEventLogFixture()
+    const eventLogFile = await writeEventLog(events)
+    const cursorFile = await writeCursor({ currentBlockHeight: 500, scannedBlockHeight: 500 })
+    const store = await loadEventLogStore(eventLogFile, cursorFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      for (const node of [fixedNode, belowFixedNode]) {
+        await expect(expectJson(`${baseUrl}/name?node=${node}`)).resolves.toMatchObject({
+          graceEndsAt: '2040-07-17T00:00:00.000Z',
+          graceEndsAtBlockHeight: 1300,
+        })
+        await expect(expectJson(`${baseUrl}/subname?node=${node}`)).resolves.toMatchObject({
+          graceEndsAt: '2040-07-17T00:00:00.000Z',
+          graceEndsAtBlockHeight: 1300,
+        })
+      }
+    } finally {
+      await close()
+    }
+  })
+
+  it('renews subnames that inherit their root expiry, down to a fixed subname', async () => {
+    const { events, renewal, node, childNode, grandchildNode, fixedNode, belowFixedNode } = createSubnameRenewalEventLogFixture()
+    const eventLogFile = await writeEventLog([...events, renewal])
+    const cursorFile = await writeCursor({ currentBlockHeight: 500, scannedBlockHeight: 500 })
+    const store = await loadEventLogStore(eventLogFile, cursorFile)
+    const { baseUrl, close } = await startServer(store)
+    const unchanged = {
+      expiresAt: '2040-03-01T00:00:00.000Z',
+      graceEndsAt: '2040-07-17T00:00:00.000Z',
+      expiresAtBlockHeight: 900,
+      graceEndsAtBlockHeight: 1300,
+    }
+
+    try {
+      await expect(expectJson(`${baseUrl}/subname?node=${childNode}`)).resolves.toMatchObject(renewed)
+      await expect(expectJson(`${baseUrl}/subname?node=${grandchildNode}`)).resolves.toMatchObject(renewed)
+      await expect(expectJson(`${baseUrl}/subname?node=${fixedNode}`)).resolves.toMatchObject(unchanged)
+      await expect(expectJson(`${baseUrl}/subname?node=${belowFixedNode}`)).resolves.toMatchObject(unchanged)
+      await expect(expectJson(`${baseUrl}/subnames?parentNode=${node}`)).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ node: childNode, ...renewed }),
+        expect.objectContaining({ node: fixedNode, ...unchanged }),
+      ]))
+      await expect(expectJson(`${baseUrl}/subnames?parentNode=${childNode}`)).resolves.toMatchObject([renewed])
+      await expect(expectJson(`${baseUrl}/name?node=${grandchildNode}`)).resolves.toMatchObject(renewed)
+      await expect(expectJson(`${baseUrl}/resolve?name=desk.settlement.acme.dusk`)).resolves.toMatchObject({
+        expiry: { status: 'active', expiresAt: '2041-06-17T00:00:00.000Z' },
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  it('renews the name row an authority change gave an inheriting subname', async () => {
+    const { events, childAuthorityChange, renewal, childNode, grandchildNode } = createSubnameRenewalEventLogFixture()
+    const authorized = [events[0], events[1], childAuthorityChange, events[2]]
+    const created = replayEventLog(authorized, [], '2026-06-17T00:00:00.000Z')
+    for (const lifecycle of [created.namesByNode.get(childNode), created.subnamesByNode.get(grandchildNode)]) {
+      expect(lifecycle).toMatchObject({
+        graceEndsAt: '2040-07-17T00:00:00.000Z',
+        graceEndsAtBlockHeight: 1300,
+      })
+    }
+
+    // Past the child's first expiry, only the renewal keeps it and its subname held.
+    const eventLogFile = await writeEventLog([...authorized, renewal])
+    const cursorFile = await writeCursor({ currentBlockHeight: 1100, scannedBlockHeight: 1100 })
+    const store = await loadEventLogStore(eventLogFile, cursorFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/name?node=${childNode}`)).resolves.toMatchObject(renewed)
+      await expect(expectJson(`${baseUrl}/subname?node=${childNode}`)).resolves.toMatchObject(renewed)
+      await expect(expectJson(`${baseUrl}/subname?node=${grandchildNode}`)).resolves.toMatchObject(renewed)
+    } finally {
+      await close()
+    }
+  })
+
+  it('drops a lapsed name\'s subnames when it is registered again without a release event', async () => {
+    const { events, node, subnode, moonlight } = createLapsedReregistrationEventLogFixture()
+    const eventLogFile = await writeEventLog(events)
+    const cursorFile = await writeCursor({ currentBlockHeight: 500, scannedBlockHeight: 500 })
+    const store = await loadEventLogStore(eventLogFile, cursorFile)
+    const { baseUrl, close } = await startServer(store)
+
+    try {
+      await expect(expectJson(`${baseUrl}/subname?node=${subnode}`)).resolves.toBeNull()
+      await expect(expectJson(`${baseUrl}/subnames?parentNode=${node}`)).resolves.toEqual([])
+      await expect(expectJson(`${baseUrl}/name?node=${subnode}`)).resolves.toBeNull()
+      await expect(expectJson(`${baseUrl}/records?node=${subnode}`)).resolves.toEqual([])
+      await expect(expectJson(`${baseUrl}/reverse?type=moonlight_address&value=${moonlight}`)).resolves.toBeNull()
+      await expect(expectJson(`${baseUrl}/resolve?name=acme.dusk`)).resolves.toMatchObject({
+        records: [{ key: 'moonlight_address', value: 'dusk1bobrecord01' }],
+      })
+    } finally {
+      await close()
+    }
+  })
 })
+
+const renewed = {
+  expiresAt: '2041-06-17T00:00:00.000Z',
+  graceEndsAt: '2041-07-17T00:00:00.000Z',
+  expiresAtBlockHeight: 2000,
+  graceEndsAtBlockHeight: 2300,
+}

@@ -41,7 +41,7 @@ export function searchName(store, query) {
     status = 'registered'
   } else if (indexedSubnameBlocksRegistration(store, store.subnamesByCanonical?.get(canonical), now)) {
     status = 'registered'
-  } else if (RESERVED_LABELS.has(label)) {
+  } else if (canonical.split('.').length === 2 && RESERVED_LABELS.has(label)) {
     status = 'reserved'
     reserved = {
       label,
@@ -59,7 +59,7 @@ export function searchName(store, query) {
     status,
     price: annualPrice(label, store.feeConfig ?? DEFAULT_FEE_CONFIG),
     issues,
-    transactionBlocked: status !== 'available',
+    transactionBlocked: status !== 'available' || canonical.split('.').length !== 2,
     ...(reserved ? { reserved } : {}),
   }
 }

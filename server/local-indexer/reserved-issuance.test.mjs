@@ -86,3 +86,36 @@ it('preserves issuance provenance when loading a snapshot', async () => {
     expect(searchName(snapshot, 'wallet.dusk').status).toBe('registered')
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+it('applies the reserved list only to roots in public search', () => {
+  const store = replay([])
+  for (const label of ['docs', 'wallet', 'support']) {
+    expect(searchName(store, `${label}.dusk`).status).toBe('reserved')
+    for (const parent of ['alice', 'wallet']) {
+      expect(searchName(store, `${label}.${parent}.dusk`)).toMatchObject({ status: 'available', transactionBlocked: true })
+    }
+  }
+})
+
+it('records a third-party renewal payer without adding them to the owner list', async () => {
+  const store = replay([...issuance('docs'), decode('name_renewed', { node: bytes(1), actor: bytes(6), expires_at: 500, grace_ends_at: 600, fee_lux: 50 })], 250)
+  const server = await startServer(async () => store)
+  try {
+    expect(await expectJson(`${server.baseUrl}/name?node=${hex(1)}`)).toMatchObject({ owner: hex(2), manager: hex(3), expiresAtBlockHeight: 500 })
+    expect(await expectJson(`${server.baseUrl}/names?owner=${hex(6)}`)).toEqual([])
+    expect(await expectJson(`${server.baseUrl}/activity?node=${hex(1)}`)).toContainEqual(expect.objectContaining({ eventType: 'renewal', actor: hex(6) }))
+  } finally { await server.close() }
+})
+
+it('retains expired commitment history consistently without cleanup events', async () => {
+  const old = decode('registration_committed', { commitment: bytes(10), controller: bytes(2), created_at: 100 })
+  const next = decode('registration_committed', { commitment: bytes(11), controller: bytes(2), created_at: 8741 })
+  // Both the backup prune and automatic cleanup are silent; this API is event history.
+  for (const events of [[old], [old, next]]) {
+    const server = await startServer(async () => replay(events, 8741))
+    try {
+      expect(await expectJson(`${server.baseUrl}/commitment?commitment=${hex(10)}&controller=${hex(2)}`))
+        .toMatchObject({ committedBlockHeight: 100, controller: hex(2), status: 'committed' })
+    } finally { await server.close() }
+  }
+})

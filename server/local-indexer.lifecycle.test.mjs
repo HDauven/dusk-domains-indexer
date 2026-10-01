@@ -195,7 +195,7 @@ describe('local indexer event-log lifecycle cleanup', () => {
   })
 
   it('replays record clears, primary clears, and subname lifecycle updates without stale state', async () => {
-    const { events, node, subnode, manager, nextManager, moonlight } = createLifecycleCleanupEventLogFixture()
+    const { events, node, subnode, manager, moonlight } = createLifecycleCleanupEventLogFixture()
     const eventLogFile = await writeEventLog(events)
     const store = await loadEventLogStore(eventLogFile)
     const { baseUrl, close } = await startServer(store)
@@ -213,8 +213,7 @@ describe('local indexer event-log lifecycle cleanup', () => {
       await expect(expectJson(`${baseUrl}/subnames?parentNode=${node}`)).resolves.toEqual([])
       await expect(expectJson(`${baseUrl}/subname?node=${subnode}`)).resolves.toBeNull()
       await expect(expectJson(`${baseUrl}/activity?node=${node}`)).resolves.toMatchObject([
-        { eventType: 'subname_revoked', target: 'revoked' },
-        { eventType: 'subname_delegated', target: nextManager },
+        { eventType: 'subname_pruned', target: 'pruned' },
         { eventType: 'subname_created', target: manager },
         { eventType: 'primary_name', target: `moonlight_address:${moonlight}` },
         { eventType: 'primary_name', target: `moonlight_address:${moonlight}` },

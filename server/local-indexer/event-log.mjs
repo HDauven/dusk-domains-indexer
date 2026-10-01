@@ -73,8 +73,7 @@ export function eventTimestamp(event, meta = {}) {
     ?? event?.createdAt
     ?? event?.releasedAt
     ?? event?.observedAt
-    ?? event?.revokedAt
-    ?? event?.delegatedAt
+    ?? event?.prunedAt
     ?? event?.record?.updatedAt
     ?? null
 }

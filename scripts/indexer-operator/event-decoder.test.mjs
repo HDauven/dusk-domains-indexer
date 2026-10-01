@@ -21,6 +21,22 @@ const routerContract = {
 }
 
 describe('Dusk Domains indexer event decoder', () => {
+  it('decodes v1 subname payloads and rejects removed events', () => {
+    const args = {
+      parent_node: bytes(1), node: bytes(2), parent_name: 'acme.dusk', name: 'pay.acme.dusk',
+      label: 'pay', actor: bytes(3), owner: bytes(3), manager: bytes(4), resolver: bytes(0),
+      expires_at: 100, parent_expires_at: 200, expiry_policy: 'FixedBeforeParent', created_at: 10,
+    }
+    const created = normalizeObservedEvent({ contract, observedAt, eventName: 'subname_created', event: args })
+    expect(created.event).toMatchObject({ expiryPolicy: 'fixed_before_parent', expiresAtBlockHeight: 100, parentExpiresAtBlockHeight: 200 })
+    expect(created.event).not.toHaveProperty('revocationPolicy')
+    const pruned = normalizeObservedEvent({ contract, observedAt, eventName: 'subname_pruned', event: { ...args, created_at: undefined, pruned_at: 100 } })
+    expect(pruned).toMatchObject({ event: { type: 'subname_pruned', node: hex(2), parentNode: hex(1), prunedAt: observedAt }, meta: { blockHeight: 100 } })
+    for (const eventName of ['subname_revoked', 'subname_delegated']) {
+      expect(normalizeObservedEvent({ contract, observedAt, eventName, event: args })).toBeNull()
+    }
+  })
+
   it('rejects u64 values that JavaScript cannot represent exactly', () => {
     expect(() => normalizeObservedEvent({
       contract: marketplaceContract,
@@ -274,11 +290,9 @@ function collectedEventFixtures() {
       expires_at: 50,
       parent_expires_at: 60,
       expiry_policy: 'FixedBeforeParent',
-      revocation_policy: 'Locked',
       created_at: 42,
     }, 'subname_created'],
-    ['subname_delegated', { parent_node: parentNode, node, name: 'pay.aurora.dusk', actor, manager, delegated_at: 43 }, 'subname_delegated'],
-    ['subname_revoked', { parent_node: parentNode, node, name: 'pay.aurora.dusk', actor, revoked_at: 44 }, 'subname_revoked'],
+    ['subname_pruned', { parent_node: parentNode, node, name: 'pay.aurora.dusk', actor, pruned_at: 44 }, 'subname_pruned'],
     ['core_referral_config_changed', {
       operator,
       previous_referral_reward_bps: 2_000,

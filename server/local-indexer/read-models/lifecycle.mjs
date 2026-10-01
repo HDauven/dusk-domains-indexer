@@ -28,7 +28,6 @@ export function lifecycleMomentPassed(blockHeight, isoDate, now) {
 export function indexedLifecycleBlocksRegistration(lifecycle, now) {
   if (!lifecycle) return false
   if (lifecycle.status === 'released') return false
-  if (lifecycle.status === 'revoked') return false
   const hasGrace = numberOrNull(lifecycle.graceEndsAtBlockHeight) !== null || Boolean(lifecycle.graceEndsAt)
   if (hasGrace) return !lifecycleMomentPassed(lifecycle.graceEndsAtBlockHeight, lifecycle.graceEndsAt, now)
   return !lifecycleMomentPassed(lifecycle.expiresAtBlockHeight, lifecycle.expiresAt, now)

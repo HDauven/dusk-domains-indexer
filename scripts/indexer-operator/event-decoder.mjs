@@ -27,7 +27,7 @@ export function normalizeObservedEvent({
   const eventHeight = numericBlockHeight([
     'created_at', 'updated_at', 'opened_at', 'closed_at', 'filled_at',
     'placed_at', 'cancelled_at', 'settled_at', 'accepted_at', 'claimed_at',
-    'observed_at', 'released_at', 'delegated_at', 'revoked_at',
+    'observed_at', 'released_at', 'pruned_at',
   ].map(key => event[key]).find(value => value != null) ?? event.record?.updated_at ?? event.config?.updated_at)
   const anchor = eventHeight ?? numericBlockHeight(observedBlockHeight)
   const lifecycleValueToIso = (value, time, seconds) => blockHeightToIso(value, time, seconds, anchor)
@@ -183,37 +183,21 @@ export function normalizeObservedEvent({
         expiresAtBlockHeight: numberOrNull(event.expires_at),
         parentExpiresAtBlockHeight: numberOrNull(event.parent_expires_at),
         expiryPolicy: enumValue(event.expiry_policy) === 'FixedBeforeParent' ? 'fixed_before_parent' : 'inherits_parent',
-        revocationPolicy: enumValue(event.revocation_policy) === 'Locked' ? 'locked' : 'parent_revocable',
         createdAt: lifecycleValueToIso(event.created_at, observedAt, targetBlockSeconds),
       },
       meta,
     }
   }
 
-  if (eventName === 'subname_delegated') {
+  if (eventName === 'subname_pruned') {
     return {
       event: {
-        type: 'subname_delegated',
+        type: 'subname_pruned',
         parentNode: bytesToHex(event.parent_node),
         node: bytesToHex(event.node),
         name: event.name,
         actor: bytesToHex(event.actor),
-        manager: bytesToHex(event.manager),
-        delegatedAt: lifecycleValueToIso(event.delegated_at, observedAt, targetBlockSeconds),
-      },
-      meta,
-    }
-  }
-
-  if (eventName === 'subname_revoked') {
-    return {
-      event: {
-        type: 'subname_revoked',
-        parentNode: bytesToHex(event.parent_node),
-        node: bytesToHex(event.node),
-        name: event.name,
-        actor: bytesToHex(event.actor),
-        revokedAt: lifecycleValueToIso(event.revoked_at, observedAt, targetBlockSeconds),
+        prunedAt: lifecycleValueToIso(event.pruned_at, observedAt, targetBlockSeconds),
       },
       meta,
     }

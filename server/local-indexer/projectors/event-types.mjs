@@ -7,7 +7,6 @@ import {
   isReferralEventType,
   isResolverEventType,
   isReverseEventType,
-  isSubnameEventType,
   isTreasuryEventType,
 } from '@duskdomains/sdk/event-catalog'
 
@@ -28,7 +27,8 @@ export function isControllerEvent(type) {
 }
 
 export function isSubnameEvent(type) {
-  return isSubnameEventType(type)
+  // The pinned catalog predates the v1 subname lifecycle.
+  return type === 'subname_created' || type === 'subname_pruned'
 }
 
 // Recognize the new contract events with the pinned SDK as well as its next release.

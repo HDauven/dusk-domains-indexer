@@ -47,8 +47,7 @@ export function lifecycleTimestamp(event) {
 
 export function subnameTimestamp(event) {
   if (event.type === 'subname_created') return event.createdAt
-  if (event.type === 'subname_delegated') return event.delegatedAt
-  return event.revokedAt
+  return event.prunedAt
 }
 
 export function newestEventTimestamp(events) {

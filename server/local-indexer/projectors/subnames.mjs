@@ -1,3 +1,4 @@
+import { clearReleasedName } from './lifecycle.mjs'
 import {
   activityEntry,
   subnameTimestamp,
@@ -10,31 +11,28 @@ import {
 export function applySubnameEvent(store, event, meta) {
   const parentNode = normalizeNode(event.parentNode)
   const node = normalizeNode(event.node)
-  const current = store.subnamesByNode.get(node)
+  if (event.type === 'subname_pruned' || store.subnamesByNode.has(node) || store.namesByNode.has(node)) {
+    clearReleasedName(store, node)
+    store.namesByNode.delete(node)
+  }
   const parent = store.subnamesByNode.get(parentNode) ?? store.namesByNode.get(parentNode)
-  const subname = reduceSubnameEvent(event, current, meta, parent)
+  const subname = event.type === 'subname_created' ? reduceSubnameEvent(event, meta, parent) : null
   const entry = activityEntry({
     eventType: event.type,
     node,
     name: event.name,
     actor: event.actor,
-    target: event.type === 'subname_revoked' ? 'revoked' : event.manager,
+    target: event.type === 'subname_pruned' ? 'pruned' : event.manager,
     timestamp: subnameTimestamp(event),
     meta,
   })
 
-  if (subname.status === 'active') {
+  if (subname) {
     store.subnamesByNode.set(node, subname)
     store.subnamesByParent.set(parentNode, [
       subname,
       ...(store.subnamesByParent.get(parentNode) ?? []).filter((candidate) => candidate.node !== node),
     ])
-  } else {
-    store.subnamesByNode.delete(node)
-    const remaining = (store.subnamesByParent.get(parentNode) ?? [])
-      .filter((candidate) => candidate.node !== node)
-    if (remaining.length > 0) store.subnamesByParent.set(parentNode, remaining)
-    else store.subnamesByParent.delete(parentNode)
   }
   store.activityByNode.set(node, [entry, ...(store.activityByNode.get(node) ?? [])])
   store.activityByNode.set(parentNode, [entry, ...(store.activityByNode.get(parentNode) ?? [])])
@@ -49,14 +47,22 @@ export function renewInheritingSubnames(store, rootNode) {
     const children = store.subnamesByParent.get(parentNode)
     if (!children) continue
     store.subnamesByParent.set(parentNode, children.map((subname) => {
-      if (subname.expiryPolicy !== 'inherits_parent') return subname
+      const parentExpiry = {
+        parentExpiresAt: root.expiresAt,
+        parentExpiresAtBlockHeight: root.expiresAtBlockHeight,
+      }
+      if (subname.expiryPolicy !== 'inherits_parent') {
+        const updated = { ...subname, ...parentExpiry }
+        store.subnamesByNode.set(subname.node, updated)
+        return updated
+      }
       const lifecycle = {
         expiresAt: root.expiresAt,
         graceEndsAt: root.graceEndsAt,
         expiresAtBlockHeight: root.expiresAtBlockHeight,
         graceEndsAtBlockHeight: root.graceEndsAtBlockHeight,
       }
-      const renewed = { ...subname, ...lifecycle }
+      const renewed = { ...subname, ...parentExpiry, ...lifecycle }
       store.subnamesByNode.set(subname.node, renewed)
       // An authority change gives a subname a name row too, which renews with it.
       const row = store.namesByNode.get(subname.node)
@@ -67,78 +73,29 @@ export function renewInheritingSubnames(store, rootNode) {
   }
 }
 
-function reduceSubnameEvent(event, current, meta, parent) {
-  if (event.type === 'subname_created') {
-    return {
-      parentNode: normalizeNode(event.parentNode),
-      node: normalizeNode(event.node),
-      parentName: event.parentName,
-      name: event.name,
-      canonicalName: normalizeName(event.name),
-      label: event.label,
-      owner: event.owner,
-      manager: event.manager,
-      resolver: event.resolver,
-      expiresAt: event.expiresAt,
-      graceEndsAt: parent?.graceEndsAt ?? null,
-      parentExpiresAt: event.parentExpiresAt,
-      expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight),
-      graceEndsAtBlockHeight: parent?.graceEndsAtBlockHeight ?? null,
-      parentExpiresAtBlockHeight: numberOrNull(event.parentExpiresAtBlockHeight),
-      expiryPolicy: event.expiryPolicy,
-      revocationPolicy: event.revocationPolicy,
-      status: 'active',
-      createdAt: event.createdAt,
-      revokedAt: null,
-      lastEventType: event.type,
-      txId: meta.txId ?? null,
-      blockHeight: meta.blockHeight ?? null,
-    }
-  }
-
-  const base = current ?? {
+function reduceSubnameEvent(event, meta, parent) {
+  return {
     parentNode: normalizeNode(event.parentNode),
     node: normalizeNode(event.node),
-    parentName: event.name.split('.').slice(1).join('.'),
+    parentName: event.parentName,
     name: event.name,
     canonicalName: normalizeName(event.name),
-    label: event.name.split('.')[0] ?? event.name,
-    owner: '',
-    manager: '',
-    resolver: '',
-    expiresAt: '',
-    graceEndsAt: null,
-    parentExpiresAt: '',
-    expiresAtBlockHeight: null,
-    graceEndsAtBlockHeight: null,
-    parentExpiresAtBlockHeight: null,
-    expiryPolicy: 'inherits_parent',
-    revocationPolicy: 'parent_revocable',
+    label: event.label,
+    owner: event.owner,
+    manager: event.manager,
+    resolver: event.resolver,
+    expiresAt: event.expiresAt,
+    graceEndsAt: parent?.graceEndsAt ?? null,
+    parentExpiresAt: event.parentExpiresAt,
+    expiresAtBlockHeight: numberOrNull(event.expiresAtBlockHeight),
+    graceEndsAtBlockHeight: parent?.graceEndsAtBlockHeight ?? null,
+    parentExpiresAtBlockHeight: numberOrNull(event.parentExpiresAtBlockHeight),
+    expiryPolicy: event.expiryPolicy,
     status: 'active',
-    createdAt: '',
-    revokedAt: null,
+    createdAt: event.createdAt,
     lastEventType: event.type,
-    txId: null,
-    blockHeight: null,
-  }
-
-  if (event.type === 'subname_delegated') {
-    return {
-      ...base,
-      manager: event.manager,
-      lastEventType: event.type,
-      txId: meta.txId ?? base.txId,
-      blockHeight: meta.blockHeight ?? base.blockHeight,
-    }
-  }
-
-  return {
-    ...base,
-    status: 'revoked',
-    revokedAt: event.revokedAt,
-    lastEventType: event.type,
-    txId: meta.txId ?? base.txId,
-    blockHeight: meta.blockHeight ?? base.blockHeight,
+    txId: meta.txId ?? null,
+    blockHeight: meta.blockHeight ?? null,
   }
 }
 

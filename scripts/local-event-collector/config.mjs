@@ -31,6 +31,7 @@ const coreContracts = [
       'record_cleared',
       'primary_name_changed',
       'subname_created',
+      'subname_pruned',
       'records_moved',
     ],
   },

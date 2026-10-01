@@ -130,6 +130,19 @@ describe('local event collector config', () => {
     ])
   })
 
+  it('subscribes to proposals, cancellation and completion for every operator', async () => {
+    const fixture = await createCollectorFixture({
+      env: validEnv() + `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=0x${'55'.repeat(32)}\n`,
+    })
+    await writeFile(join(fixture.publicDir, 'dusk-domains-marketplace.data-driver.wasm'), '')
+    const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
+    for (const key of ['router', 'treasury', 'marketplace']) {
+      expect(config.contracts.find((contract) => contract.key === key).events).toEqual(expect.arrayContaining([
+        `${key}_operator_proposed`, `${key}_operator_cancelled`, `${key}_operator_changed`,
+      ]))
+    }
+  })
+
   it('validates replay heights and unsafe numeric CLI inputs', () => {
     expect(parseArgs(['--from-block', '42']).fromBlock).toBe(42)
     for (const n of ['0', '-1', '9007199254740992']) {

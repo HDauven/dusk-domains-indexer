@@ -7,6 +7,7 @@ export function emptyPoolState() {
     initialized: false,
     router: null,
     operator: null,
+    pendingOperator: null,
     treasury: null,
     marketplace: null,
     registries: [],
@@ -33,6 +34,7 @@ export function reducePoolEvent(event, current, meta = {}) {
       initialized: true,
       router: meta.contractId ? normalizeNode(meta.contractId) : current.router,
       operator: event.operator ?? null,
+      pendingOperator: null,
       treasury: normalizeNode(event.treasury),
       marketplace: /^0x0+$/u.test(marketplace) ? null : marketplace,
     }
@@ -48,8 +50,14 @@ export function reducePoolEvent(event, current, meta = {}) {
       [list]: [...current[list], member],
     }
   }
+  if (event.type === 'router_operator_proposed') {
+    return { ...current, ...stamped, pendingOperator: event.pendingOperator }
+  }
+  if (event.type === 'router_operator_cancelled') {
+    return { ...current, ...stamped, pendingOperator: null }
+  }
   if (event.type === 'router_operator_changed') {
-    return { ...current, ...stamped, operator: event.operator ?? current.operator }
+    return { ...current, ...stamped, operator: event.operator ?? current.operator, pendingOperator: null }
   }
   return current
 }

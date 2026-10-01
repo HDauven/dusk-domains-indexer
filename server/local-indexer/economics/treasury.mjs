@@ -9,6 +9,8 @@ export function emptyTreasuryState() {
   return {
     initialized: false,
     operator: null,
+    pendingOperator: null,
+    pendingOperatorRecipient: null,
     operatorAuthority: null,
     operatorRecipient: null,
     allowedFeeSources: [],
@@ -39,6 +41,8 @@ export function normalizeTreasuryState(value) {
     operator,
     operatorAuthority: value.operatorAuthority ?? value.operator_authority ?? principalKey(operator) ?? null,
     operatorRecipient: value.operatorRecipient ?? value.operator_recipient ?? null,
+    pendingOperator: normalizePrincipal(value.pendingOperator ?? value.pending_operator ?? null),
+    pendingOperatorRecipient: value.pendingOperatorRecipient ?? value.pending_operator_recipient ?? null,
     allowedFeeSources: arrayOfStrings(value.allowedFeeSources ?? value.allowed_fee_sources),
     totalReceivedLux: Number(value.totalReceivedLux ?? value.total_received_lux ?? 0),
     availableLux: Number(value.availableLux ?? value.available_lux ?? 0),
@@ -67,7 +71,20 @@ export function reduceTreasuryEvent(event, current, meta) {
       operator,
       operatorAuthority: event.operatorAuthority ?? principalKey(operator),
       operatorRecipient: event.operatorRecipient,
+      pendingOperator: null,
+      pendingOperatorRecipient: null,
       allowedFeeSources: arrayOfStrings(event.allowedFeeSources),
+      lastEventType: event.type,
+      txId: meta.txId ?? current.txId,
+      blockHeight: meta.blockHeight ?? current.blockHeight,
+    }
+  }
+
+  if (event.type === 'treasury_operator_proposed' || event.type === 'treasury_operator_cancelled') {
+    return {
+      ...current,
+      pendingOperator: event.type === 'treasury_operator_proposed' ? normalizePrincipal(event.pendingOperator) : null,
+      pendingOperatorRecipient: event.type === 'treasury_operator_proposed' ? event.pendingOperatorRecipient : null,
       lastEventType: event.type,
       txId: meta.txId ?? current.txId,
       blockHeight: meta.blockHeight ?? current.blockHeight,
@@ -81,6 +98,8 @@ export function reduceTreasuryEvent(event, current, meta) {
       operator: operator ?? current.operator,
       operatorAuthority: event.operatorAuthority ?? principalKey(operator) ?? current.operatorAuthority,
       operatorRecipient: event.operatorRecipient ?? current.operatorRecipient,
+      pendingOperator: null,
+      pendingOperatorRecipient: null,
       lastEventType: event.type,
       txId: meta.txId ?? current.txId,
       blockHeight: meta.blockHeight ?? current.blockHeight,

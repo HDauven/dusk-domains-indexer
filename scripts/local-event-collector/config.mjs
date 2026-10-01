@@ -15,7 +15,7 @@ const coreContracts = [
     key: 'router',
     envKey: 'VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID',
     driverFile: 'dusk-domains-router.data-driver.wasm',
-    events: ['router_initialized', 'pool_member_added', 'router_operator_changed', 'fee_config_updated'],
+    events: ['router_initialized', 'pool_member_added', 'router_operator_changed', 'router_operator_proposed', 'router_operator_cancelled', 'fee_config_updated'],
   },
   {
     key: 'core',
@@ -38,7 +38,7 @@ const coreContracts = [
     key: 'treasury',
     envKey: 'VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID',
     driverFile: 'dusk-domains-treasury.data-driver.wasm',
-    events: ['treasury_initialized', 'treasury_operator_changed', 'treasury_fee_received', 'treasury_claimed', 'referral_reward_accrued', 'referral_reward_claimed'],
+    events: ['treasury_initialized', 'treasury_operator_changed', 'treasury_operator_proposed', 'treasury_operator_cancelled', 'treasury_fee_received', 'treasury_claimed', 'referral_reward_accrued', 'referral_reward_claimed'],
   },
 ]
 
@@ -50,6 +50,9 @@ const optionalContracts = [
     events: [
       'marketplace_initialized',
       'marketplace_config_updated',
+      'marketplace_operator_proposed',
+      'marketplace_operator_cancelled',
+      'marketplace_operator_changed',
       'domain_fixed_sale_opened',
       'domain_fixed_sale_closed',
       'domain_fixed_sale_filled',

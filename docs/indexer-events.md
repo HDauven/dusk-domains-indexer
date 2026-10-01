@@ -118,11 +118,11 @@ Indexers may serve reverse lookup results from this event stream, but wallets an
 
 Phoenix payment endpoints are not v1 public primary-name identities. Indexers should reject or ignore any reverse event that attempts to expose a Phoenix endpoint as a normal display identity.
 
-## Core Configuration Events
+## Router Configuration Events
 
 | Event | Purpose | Required payload |
 | --- | --- | --- |
-| `core_referral_config_changed` | The core operator changed the future referral reward share. | `operator`, `previous_referral_reward_bps`, `referral_reward_bps`. |
+| `fee_config_updated` | The router operator changed pricing or referral configuration. | `operator`, `previous_config`, `config`. |
 
 This is audit metadata. It does not change name resolution state, but production event stores should retain it so referral economics can be reconstructed from deployment onward.
 
@@ -131,7 +131,7 @@ This is audit metadata. It does not change name resolution state, but production
 | Event | Purpose | Required payload |
 | --- | --- | --- |
 | `treasury_initialized` | The protocol fee treasury operator settings were configured. | `operator`, `operator_recipient`, `allowed_fee_sources`. |
-| `treasury_operator_changed` | The current operator rotated the treasury operator principal and Moonlight recipient. | `previous_operator`, `operator`, `operator_recipient`. |
+| `treasury_operator_changed` | The proposed operator accepted the treasury role and Moonlight recipient. | `previous_operator`, `operator`, `operator_recipient`. |
 | `treasury_fee_received` | A controller or registrar forwarded a claimed protocol fee deposit into treasury custody. | `source_contract`, `reason`, `node`, `amount_lux`, `total_received_lux`, `available_lux`, `registration_received_lux`, `renewal_received_lux`, `other_received_lux`. |
 | `treasury_claimed` | The configured operator principal claimed available fees to the configured Moonlight recipient. | `operator`, `operator_recipient`, `amount_lux`, `remaining_lux`. |
 
@@ -147,3 +147,27 @@ Treasury events are protocol accounting metadata. They should not be attached to
 | `referral_reward_claimed` | A referrer claimed available referral rewards. | `referrer`, `amount_lux`, `remaining_lux`, `claimed_lux`, `referral_count`. |
 
 Referral events are per-referrer accounting metadata. `referrer` and `buyer` should be typed principals in new events and are normalized by the indexer into stable principal keys. The contract state remains canonical for claim authorization and payment safety.
+
+## Operator Handovers
+
+Router, treasury and marketplace each emit `<contract>_operator_proposed` with current
+`operator` and `pending_operator`, and `<contract>_operator_cancelled` with `operator`.
+Treasury proposals also carry `pending_operator_recipient`. A replacement is another
+proposal. Neither proposals nor cancellation change the current operator or payout key.
+
+Acceptance emits `<contract>_operator_changed` with `previous_operator` and `operator`;
+`treasury_operator_changed` retains its `operator_recipient`. Marketplace additionally
+emits the existing `marketplace_config_updated` for compatibility. Ordinary marketplace
+fee updates preserve pending handovers.
+
+The decoder converts pending fields to `pendingOperator` and `pendingOperatorRecipient`.
+Router pool state, treasury state and marketplace config expose the pending operator as
+null when no handover is outstanding. Completion and cancellation clear pending values.
+Treasury's payout recipient changes only on completion, together with the operator.
+Router/treasury operators are typed principals; marketplace operators remain 32-byte
+runtime authorities encoded as hex.
+
+The SDK event catalog includes all handover events. Until the indexer's SDK archive pin
+is advanced to that release, `projectors/event-types.mjs` also recognizes these exact
+names alongside the pinned catalog. This keeps normal installs functional without a
+local SDK override or an unpublished archive URL.

@@ -333,6 +333,42 @@ export function normalizeObservedEvent({
     }
   }
 
+  if (['router_operator_proposed', 'treasury_operator_proposed', 'marketplace_operator_proposed'].includes(eventName)) {
+    const decodeOperator = eventName.startsWith('marketplace_') ? bytesToHex : principalFromEvent
+    return {
+      event: {
+        type: eventName,
+        operator: decodeOperator(event.operator),
+        pendingOperator: decodeOperator(event.pending_operator),
+        ...(eventName === 'treasury_operator_proposed'
+          ? { pendingOperatorRecipient: bytesToBase58(event.pending_operator_recipient) }
+          : {}),
+      },
+      meta,
+    }
+  }
+
+  if (['router_operator_cancelled', 'treasury_operator_cancelled', 'marketplace_operator_cancelled'].includes(eventName)) {
+    return {
+      event: {
+        type: eventName,
+        operator: eventName.startsWith('marketplace_') ? bytesToHex(event.operator) : principalFromEvent(event.operator),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'marketplace_operator_changed') {
+    return {
+      event: {
+        type: eventName,
+        operator: bytesToHex(event.operator),
+        previousOperator: bytesToHex(event.previous_operator),
+      },
+      meta,
+    }
+  }
+
   if (eventName === 'router_operator_changed') {
     return {
       event: {

@@ -229,6 +229,22 @@ export function createIndexerParityEvents() {
       router: fixtureRouter,
     }, { blockHeight: 30, txId: 'treasury-init-tx', contractKey: 'treasury' }),
     envelope({
+      type: 'treasury_operator_proposed',
+      operator: principal(0x77),
+      pendingOperator: principal(0x78),
+      pendingOperatorRecipient: fixtureMoonlightAddress,
+    }, { contractKey: 'treasury' }),
+    envelope({
+      type: 'treasury_operator_cancelled',
+      operator: principal(0x77),
+    }, { contractKey: 'treasury' }),
+    envelope({
+      type: 'treasury_operator_proposed',
+      operator: principal(0x77),
+      pendingOperator: principal(0x78),
+      pendingOperatorRecipient: fixtureMoonlightAddress,
+    }, { contractKey: 'treasury' }),
+    envelope({
       type: 'treasury_operator_changed',
       previousOperator: principal(0x77),
       operator: principal(0x78),
@@ -299,6 +315,20 @@ export function createIndexerParityEvents() {
       recordCount: 1,
     }, { blockHeight: 38, txId: 'records-moved-tx' }),
     envelope({
+      type: 'router_operator_proposed',
+      operator: principal(0x77),
+      pendingOperator: principal(0x78),
+    }, { contractKey: 'router' }),
+    envelope({
+      type: 'router_operator_cancelled',
+      operator: principal(0x77),
+    }, { contractKey: 'router' }),
+    envelope({
+      type: 'router_operator_proposed',
+      operator: principal(0x77),
+      pendingOperator: principal(0x78),
+    }, { contractKey: 'router' }),
+    envelope({
       type: 'router_operator_changed',
       previousOperator: principal(0x77),
       operator: principal(0x78),
@@ -311,6 +341,21 @@ export function createIndexerParityEvents() {
       operator: fixtureOwner,
       feeBps: 250,
     }, { blockHeight: 41, txId: 'marketplace-init-tx', contractKey: 'marketplace' }),
+    envelope({
+      type: 'marketplace_operator_proposed',
+      operator: fixtureOwner,
+      pendingOperator: fixtureBuyerAuthority,
+    }, { contractKey: 'marketplace' }),
+    envelope({
+      type: 'marketplace_operator_cancelled',
+      operator: fixtureOwner,
+    }, { contractKey: 'marketplace' }),
+    envelope({
+      type: 'marketplace_operator_proposed',
+      operator: fixtureOwner,
+      pendingOperator: fixtureBuyerAuthority,
+    }, { contractKey: 'marketplace' }),
+    envelope({ type: 'marketplace_operator_changed', operator: fixtureOwner, previousOperator: fixtureBuyerAuthority }, { contractKey: 'marketplace' }),
     envelope({
       type: 'marketplace_config_updated',
       operator: fixtureOwner,

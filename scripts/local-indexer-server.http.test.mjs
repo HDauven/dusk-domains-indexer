@@ -46,13 +46,13 @@ describe('local indexer HTTP boundary', () => {
       }],
     })
     await expect(expectJson(`${baseUrl}/missing`, { expectedStatus: 404 })).resolves.toEqual({
-      error: 'not_found',
+      error: 'not_found', message: 'Route not found.',
     })
     await expect(expectJson(`${baseUrl}/resolve?name=aurora`, {
       method: 'POST',
       expectedStatus: 405,
     })).resolves.toEqual({
-      error: 'method_not_allowed',
+      error: 'method_not_allowed', message: 'Use GET or OPTIONS.',
     })
     await expect(expectJson(`${baseUrl}/name`, { expectedStatus: 400 })).resolves.toMatchObject({
       error: 'missing_node',
@@ -103,19 +103,19 @@ describe('local indexer HTTP boundary', () => {
     const corsOrigin = 'https://dusk.domains'
     const { baseUrl } = await startIndexer(store, { corsOrigin })
 
-    const health = await fetch(`${baseUrl}/health`)
+    const health = await fetch(`${baseUrl}/health`, { headers: { origin: corsOrigin } })
     expect(health.status).toBe(200)
     expect(health.headers.get('access-control-allow-origin')).toBe(corsOrigin)
     await health.json()
 
-    const options = await fetch(`${baseUrl}/resolve?name=aurora`, { method: 'OPTIONS' })
+    const options = await fetch(`${baseUrl}/resolve?name=aurora`, { method: 'OPTIONS', headers: { origin: corsOrigin } })
     expect(options.status).toBe(204)
     expect(options.headers.get('access-control-allow-origin')).toBe(corsOrigin)
 
-    const missing = await fetch(`${baseUrl}/missing`)
+    const missing = await fetch(`${baseUrl}/missing`, { headers: { origin: corsOrigin } })
     expect(missing.status).toBe(404)
     expect(missing.headers.get('access-control-allow-origin')).toBe(corsOrigin)
-    await expect(missing.json()).resolves.toEqual({ error: 'not_found' })
+    await expect(missing.json()).resolves.toEqual({ error: 'not_found', message: 'Route not found.' })
   })
 
   it('keeps wildcard CORS by default for local workflows', async () => {
@@ -157,10 +157,10 @@ describe('local indexer HTTP boundary', () => {
       method: 'POST',
       expectedStatus: 405,
     })).resolves.toEqual({
-      error: 'method_not_allowed',
+      error: 'method_not_allowed', message: 'Use GET or OPTIONS.',
     })
     await expect(expectJson(`${baseUrl}/missing`, { expectedStatus: 404 })).resolves.toEqual({
-      error: 'not_found',
+      error: 'not_found', message: 'Route not found.',
     })
     await expect(expectJson(`${baseUrl}/name?node=bad`, { expectedStatus: 400 })).resolves.toMatchObject({
       error: 'invalid_node',
@@ -198,8 +198,8 @@ describe('local indexer HTTP boundary', () => {
     expect(loadAttempts).toBe(0)
 
     await expect(expectJson(`${baseUrl}/health`, { expectedStatus: 500 })).resolves.toMatchObject({
-      error: 'local_indexer_error',
-      message: 'snapshot unavailable',
+      error: 'internal_error',
+      requestId: expect.any(String),
     })
     expect(loadAttempts).toBe(1)
   })

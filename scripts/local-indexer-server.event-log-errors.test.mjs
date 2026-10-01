@@ -42,7 +42,7 @@ describe('local indexer malformed event-log handling', () => {
       warnings: [{
         code: 'invalid_event_log_row',
         line: 2,
-      }, { code: 'history_unverified' }],
+      }],
     })
     await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
       canonicalName: 'aurora.dusk',
@@ -68,7 +68,7 @@ describe('local indexer malformed event-log handling', () => {
       names: 0,
       warnings: [{
         code: 'invalid_event_log_array',
-      }, { code: 'history_unverified' }],
+      }],
     })
     await expect(expectJson(`${baseUrl}/search?query=aurora`)).resolves.toMatchObject({
       canonical: 'aurora.dusk',
@@ -88,7 +88,7 @@ describe('local indexer malformed event-log handling', () => {
       warnings: [{
         code: 'invalid_event_log_event',
         type: 'record_changed',
-      }, { code: 'history_unverified' }],
+      }],
     })
     await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
       canonicalName: 'aurora.dusk',

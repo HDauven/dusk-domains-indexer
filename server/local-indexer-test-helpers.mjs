@@ -1,3 +1,4 @@
+import { LIST_FIELDS } from './local-indexer/pagination.mjs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -65,7 +66,13 @@ export async function startServer(storeProvider, handlerOptions = {}) {
 export async function expectJson(url) {
   const response = await fetch(url)
   expect(response.ok).toBe(true)
-  return response.json()
+  const body = await response.json()
+  const field = LIST_FIELDS[new URL(url).pathname]
+  if (field) {
+    expect(body.nextCursor).toBe(null)
+    return body[field]
+  }
+  return body
 }
 
 export async function writeSnapshot(snapshot, file) {

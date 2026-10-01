@@ -118,7 +118,9 @@ npm run backup
 npm run disk
 ```
 
-Hosted deployments should set `DUSK_DOMAINS_INDEXER_CORS_ORIGIN` or pass `--cors-origin` so browser reads are limited to the public frontend origin.
+Hosted deployments should set `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` or pass `--cors-origin` so browser reads are limited to the public frontend origin.
+
+Production HTTP policy: set `NODE_ENV=production` and configure `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` with exact, comma-separated origins. Empty production allowlists deny cross-origin access. `DUSK_DOMAINS_INDEXER_RATE_LIMIT` defaults on in production; `DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX=200` and `DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS=60000` tune it. Keep `DUSK_DOMAINS_INDEXER_TRUST_PROXY=false` unless a trusted proxy overwrites forwarding headers and the upstream is private. See the [API policy](docs/indexer-api.md) for pagination, 429 handling, and error request IDs.
 
 For production setup and recovery, see:
 

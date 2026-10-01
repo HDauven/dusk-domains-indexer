@@ -47,7 +47,9 @@ npm run check:indexer-sqlite
 npm run check:indexer-production
 ```
 
-Local development defaults to `Access-Control-Allow-Origin: *`. Hosted beta operators should set `DUSK_DOMAINS_INDEXER_CORS_ORIGIN` or pass `--cors-origin` so browser reads are limited to the public frontend origin at the API layer as well as at the reverse proxy.
+Local development defaults to `Access-Control-Allow-Origin: *`. Hosted beta operators should set `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` or pass `--cors-origin` so browser reads are limited to the public frontend origin at the API layer as well as at the reverse proxy.
+
+Production HTTP policy: set `NODE_ENV=production` and configure `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` with exact, comma-separated origins. Empty production allowlists deny cross-origin access. `DUSK_DOMAINS_INDEXER_RATE_LIMIT` defaults on in production; `DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX=200` and `DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS=60000` tune it. Keep `DUSK_DOMAINS_INDEXER_TRUST_PROXY=false` unless a trusted proxy overwrites forwarding headers and the upstream is private. See the [API policy](../../docs/indexer-api.md) for pagination, 429 handling, and error request IDs.
 
 See [Public Integration Release](../../docs/public-integration-release.md) for package boundaries and [Public Beta Operator Guide](../../docs/public-beta-operator-guide.md) for backup, restore, health, and monitoring procedures.
 

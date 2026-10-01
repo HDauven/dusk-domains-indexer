@@ -1,12 +1,16 @@
+import { randomUUID } from 'node:crypto'
+import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
+import { corsHeaders, createRateLimiter } from './security.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
 import { emptyTreasuryState, referralStateFor } from './economics.mjs'
+import { createRecentChangeWarnings } from './records.mjs'
 import { healthResponseForStore } from './health.mjs'
+import { indexedSubnameBlocksRegistration, lifecycleClock } from './read-models/lifecycle.mjs'
 import {
   endpointKey,
   reverseResponse,
 } from './naming.mjs'
 import {
-  activeSubnamesForParent,
   listRecordsForNode,
   listNames,
   liveSubnameForNode,
@@ -25,30 +29,46 @@ import { commitmentKey } from './projectors/controller.mjs'
 import { emptyMarketplaceConfig, marketplaceOfferKey, marketplaceOrderIsEscrowed } from './projectors/marketplace.mjs'
 
 export function createLocalIndexerHandler(storeProvider, options = {}) {
+  const rateLimit = createRateLimiter(options)
   return (request, response) => {
-    void handleRequest(storeProvider, request, response, options)
+    void handleRequest(storeProvider, request, response, { ...options, rateLimit })
   }
 }
 
 async function handleRequest(storeProvider, request, response, options) {
-  const reply = (status, body, headers = {}) => sendJson(response, status, body, headers, options)
+  const requestId = randomUUID()
+  const logger = options.logger ?? console
+  const reply = (status, body, headers = {}) => sendJson(response, status, body, {
+    ...corsHeaders(options, request), 'x-request-id': requestId, 'cache-control': 'no-store', ...headers,
+  })
 
   try {
+    const retryAfter = options.rateLimit(request)
+    if (retryAfter) {
+      reply(429, { error: 'rate_limited', message: 'Too many requests.' }, { 'retry-after': String(retryAfter) })
+      return
+    }
     if (request.method === 'OPTIONS') {
       reply(204, null)
       return
     }
 
     if (request.method !== 'GET') {
-      reply(405, { error: 'method_not_allowed' })
+      reply(405, { error: 'method_not_allowed', message: 'Use GET or OPTIONS.' })
       return
     }
 
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
+    let url
+    try {
+      url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    } catch {
+      reply(400, { error: 'invalid_url', message: 'Invalid request URL.' })
+      return
+    }
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
 
     if (!LOCAL_INDEXER_ROUTES.has(pathname)) {
-      reply(404, { error: 'not_found' })
+      reply(404, { error: 'not_found', message: 'Route not found.' })
       return
     }
 
@@ -58,10 +78,19 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
+    const page = pageParameters(pathname, url)
+    if (page.error) {
+      reply(400, page.error)
+      return
+    }
+    const replyPage = (rows, map = (item) => item) => {
+      const result = paginate(rows, page, (item) => listKey(pathname, item))
+      reply(200, { [LIST_FIELDS[pathname]]: result.items.map(map), nextCursor: result.nextCursor })
+    }
     const store = await resolveStore(storeProvider)
 
     if (pathname === '/health') {
-      reply(200, healthResponseForStore(store))
+      reply(200, publicHealth(store, page, logger, requestId))
       return
     }
 
@@ -75,18 +104,21 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/search') {
       const result = searchName(store, url.searchParams.get('query') ?? '')
-      reply(200, result)
+      reply(200, { ...result, nextCursor: null })
       return
     }
 
     if (pathname === '/names') {
-      reply(200, listNames(store, url.searchParams.get('owner')))
+      const result = paginate(namesForOwner(store, url.searchParams.get('owner')), page, (name) => listKey(pathname, name))
+      const names = listNames({ ...store, namesByCanonical: new Map(result.items.map((name) => [name.lifecycle.canonicalName, name])) })
+      const byNode = new Map(names.map((name) => [name.node, name]))
+      reply(200, { names: result.items.map((name) => byNode.get(name.node)), nextCursor: result.nextCursor })
       return
     }
 
     if (pathname === '/resolve') {
       const name = url.searchParams.get('name') ?? ''
-      const body = resolveForward(store, name)
+      const body = publicForward(store, name, page)
       reply(body.errors.some((error) => error.code === 'missing_name') ? 400 : 200, body, {
         'cache-control': `public, max-age=${body.cache.ttlSeconds}`,
       })
@@ -100,7 +132,7 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/records') {
-      reply(200, listRecordsForNode(store, routeParams.node))
+      replyPage(listRecordsForNode(store, routeParams.node))
       return
     }
 
@@ -110,12 +142,12 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/record-history') {
-      reply(200, recordHistoryForNode(store, routeParams.node, routeParams.key))
+      replyPage(recordHistoryForNode(store, routeParams.node, routeParams.key))
       return
     }
 
     if (pathname === '/activity') {
-      reply(200, store.activityByNode.get(routeParams.node) ?? [])
+      replyPage(store.activityByNode.get(routeParams.node) ?? [])
       return
     }
 
@@ -126,7 +158,8 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/subnames') {
-      reply(200, activeSubnamesForParent(store, routeParams.parentNode))
+      const now = lifecycleClock(store)
+      replyPage(filterRows(store.subnamesByParent.get(routeParams.parentNode) ?? [], (subname) => indexedSubnameBlocksRegistration(store, subname, now)))
       return
     }
 
@@ -157,9 +190,7 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/fixed-sales') {
-      reply(200, [...(store.marketplaceFixedSalesByNode?.values?.() ?? [])].map((sale) => (
-        marketplaceOrderForResponse(store, sale)
-      )))
+      replyPage(store.marketplaceFixedSalesByNode?.values() ?? [], (sale) => marketplaceOrderForResponse(store, sale))
       return
     }
 
@@ -169,9 +200,7 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/auctions') {
-      reply(200, [...(store.marketplaceAuctionsByNode?.values?.() ?? [])].map((auction) => (
-        marketplaceOrderForResponse(store, auction)
-      )))
+      replyPage(store.marketplaceAuctionsByNode?.values() ?? [], (auction) => marketplaceOrderForResponse(store, auction))
       return
     }
 
@@ -181,11 +210,11 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/offers') {
-      const offers = [...(store.marketplaceOffersByKey?.values?.() ?? [])].filter((offer) => (
+      const offers = filterRows(store.marketplaceOffersByKey?.values() ?? [], (offer) => (
         (!routeParams.node || offer.node === routeParams.node)
         && (!routeParams.buyerAuthority || offer.buyerAuthority === routeParams.buyerAuthority)
       ))
-      reply(200, offers)
+      replyPage(offers)
       return
     }
 
@@ -199,12 +228,10 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
-    reply(404, { error: 'not_found' })
+    reply(404, { error: 'not_found', message: 'Route not found.' })
   } catch (error) {
-    reply(500, {
-      error: 'local_indexer_error',
-      message: error instanceof Error ? error.message : String(error),
-    })
+    logger.error({ requestId, error })
+    reply(500, { error: 'internal_error', requestId })
   }
 }
 
@@ -236,4 +263,75 @@ function normalizedHex(value) {
 
 function stripHexPrefix(value) {
   return String(value).trim().toLowerCase().replace(/^0x/, '')
+}
+
+function* namesForOwner(store, owner) {
+  const filter = String(owner ?? '').trim().toLowerCase()
+  for (const name of store.namesByCanonical.values()) {
+    if (!filter || [name.lifecycle.owner, name.lifecycle.manager, ...(store.controllersByNode?.get(name.node) ?? [])]
+      .some((value) => String(value ?? '').toLowerCase() === filter)) yield name
+  }
+}
+
+function* filterRows(rows, matches) {
+  for (const row of rows) if (matches(row)) yield row
+}
+
+function publicHealth(store, page, logger, requestId) {
+  // One warning preserves the health check's degradation signal without copying the full history.
+  const health = healthResponseForStore({ ...store, warnings: store.warnings?.length ? [store.warnings[0]] : [] })
+  const warnings = paginate(store.warnings ?? [], page, (warning) => listKey('/health', warning))
+  if (warnings.items.length || health.degradedReason || health.cursor?.reason || health.durability?.ok === false) {
+    logger.warn({ requestId, warnings: warnings.items, degradedReason: health.degradedReason, cursor: health.cursor, durability: health.durability })
+  }
+  if (health.sqlite) health.sqlite = { ...health.sqlite, dbFile: undefined }
+  if (health.degradedReason) health.degradedReason = { code: health.degradedReason.code, message: 'Indexer health is degraded; consult server logs.' }
+  if (health.cursor) health.cursor = {
+    ...health.cursor,
+    reason: health.cursor.reason ? 'Collector is not ready; consult server logs.' : null,
+  }
+  if (health.durability) health.durability = {
+    ...health.durability,
+    message: health.durability.ok ? 'Durability checks passed.' : 'Durability checks failed; consult server logs.',
+    eventLogFile: undefined,
+    cursorFile: undefined,
+    checkpointFile: undefined,
+    checks: health.durability.checks?.map((check) => ({
+      id: check.id, ok: check.ok, message: check.ok ? 'Check passed.' : 'Check failed; consult server logs.',
+    })),
+  }
+  return {
+    ...health,
+    warnings: warnings.items.map((warning) => ({
+      code: warning.code, line: warning.line, type: warning.type, message: 'Indexer warning; consult server logs.',
+    })),
+    nextCursor: warnings.nextCursor,
+  }
+}
+
+function publicForward(store, name, page) {
+  let activity = []
+  // Resolve the current state as before, but select warnings before materializing a history.
+  const body = resolveForward({
+    ...store,
+    namesByCanonical: { get(canonical) {
+      const indexed = store.namesByCanonical.get(canonical)
+      if (!indexed) return undefined
+      activity = indexed.activity ?? []
+      return { ...indexed, activity: [] }
+    } },
+    activityByNode: { get(node) {
+      activity = store.activityByNode.get(node) ?? []
+      return []
+    } },
+  }, name)
+  const warnings = paginate(recentWarnings(activity, new Date(body.cache.asOf)), page, (row) => listKey('/resolve', row.entry))
+  return { ...body, warnings: warnings.items.map((row) => row.warning), nextCursor: warnings.nextCursor }
+}
+
+function* recentWarnings(activity, now) {
+  for (const entry of activity) {
+    const warning = createRecentChangeWarnings([entry], now)[0]
+    if (warning) yield { entry, warning }
+  }
 }

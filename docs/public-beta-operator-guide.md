@@ -262,7 +262,9 @@ RestartSec=60
 
 Do not store mnemonics, private keys, wallet backups, or operator credentials in `indexer.env`. Keep public node/contract/data-driver values in the separate runtime env file referenced by `DUSK_DOMAINS_RUNTIME_ENV_FILE`, and keep alert webhook credentials in the monitor process environment, not in public frontend env.
 
-For hosted beta, set `DUSK_DOMAINS_INDEXER_CORS_ORIGIN=https://dusk.domains` in `indexer.env` or pass `--cors-origin https://dusk.domains` to `npm run indexer:local`. Set `DUSK_DOMAINS_INDEXER_HEALTH_URL` for health/monitor commands and `DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL` only for the monitor process. Local development can keep the default wildcard origin; hosted deployments should return the public frontend origin from the Node API even when a reverse proxy also enforces CORS.
+For hosted beta, set `DUSK_DOMAINS_INDEXER_CORS_ORIGINS=https://dusk.domains` in `indexer.env` or pass `--cors-origin https://dusk.domains` to `npm run indexer:local`. Set `DUSK_DOMAINS_INDEXER_HEALTH_URL` for health/monitor commands and `DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL` only for the monitor process. Local development can keep the default wildcard origin; hosted deployments should return the public frontend origin from the Node API even when a reverse proxy also enforces CORS.
+
+Production HTTP policy: set `NODE_ENV=production` and configure `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` with exact, comma-separated origins. Empty production allowlists deny cross-origin access. `DUSK_DOMAINS_INDEXER_RATE_LIMIT` defaults on in production; `DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX=200` and `DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS=60000` tune it. Keep `DUSK_DOMAINS_INDEXER_TRUST_PROXY=false` unless a trusted proxy overwrites forwarding headers and the upstream is private. See the [API policy](indexer-api.md) for pagination, 429 handling, and error request IDs.
 
 Restart order for routine deploys:
 
@@ -299,7 +301,7 @@ Operator rules:
 - Keep `/health` public enough for uptime monitoring, but never include secrets, mnemonics, private RPC credentials, or wallet material in health output.
 - Use `Cache-Control` from the API for read routes. Do not add proxy caches that outlive the response TTL.
 - Forward the original host/protocol headers if the hosting provider requires them for logs, but do not trust them as protocol state.
-- Set a specific CORS origin on the Node API with `DUSK_DOMAINS_INDEXER_CORS_ORIGIN` or `--cors-origin`, then mirror or narrow that policy at the reverse proxy.
+- Set a specific CORS origin on the Node API with `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` or `--cors-origin`, then mirror or narrow that policy at the reverse proxy.
 
 Minimal proxy headers:
 

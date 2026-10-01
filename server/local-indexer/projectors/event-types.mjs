@@ -31,8 +31,11 @@ export function isSubnameEvent(type) {
   return isSubnameEventType(type)
 }
 
+// Recognize the new contract events with the pinned SDK as well as its next release.
 export function isTreasuryEvent(type) {
   return isTreasuryEventType(type)
+    || type === 'treasury_operator_proposed'
+    || type === 'treasury_operator_cancelled'
 }
 
 export function isReferralEvent(type) {
@@ -45,8 +48,13 @@ export function isFeeConfigEvent(type) {
 
 export function isMarketplaceEvent(type) {
   return isMarketplaceEventType(type)
+    || type === 'marketplace_operator_proposed'
+    || type === 'marketplace_operator_cancelled'
+    || type === 'marketplace_operator_changed'
 }
 
 export function isPoolEvent(type) {
   return isPoolEventType(type)
+    || type === 'router_operator_proposed'
+    || type === 'router_operator_cancelled'
 }

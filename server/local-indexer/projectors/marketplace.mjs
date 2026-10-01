@@ -12,7 +12,21 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
       treasuryContract: normalizedHex(event.treasuryContract),
       marketplaceAuthority: normalizedHex(event.marketplaceAuthority),
       operator: normalizedHex(event.operator),
+      pendingOperator: null,
       feeBps: Number(event.feeBps ?? 0),
+      updatedAtBlockHeight: meta.blockHeight ?? null,
+      txId: meta.txId ?? null,
+      blockHeight: meta.blockHeight ?? null,
+    }
+    return
+  }
+
+  if (event.type === 'marketplace_operator_proposed' || event.type === 'marketplace_operator_cancelled' || event.type === 'marketplace_operator_changed') {
+    const current = store.marketplaceConfig ?? emptyMarketplaceConfig()
+    store.marketplaceConfig = {
+      ...current,
+      operator: event.type === 'marketplace_operator_changed' ? normalizedHex(event.operator) : current.operator,
+      pendingOperator: event.type === 'marketplace_operator_proposed' ? normalizedHex(event.pendingOperator) : null,
       updatedAtBlockHeight: meta.blockHeight ?? null,
       txId: meta.txId ?? null,
       blockHeight: meta.blockHeight ?? null,
@@ -173,6 +187,7 @@ export function emptyMarketplaceConfig() {
     treasuryContract: null,
     marketplaceAuthority: null,
     operator: null,
+    pendingOperator: null,
     feeBps: 0,
     updatedAtBlockHeight: null,
     txId: null,

@@ -1,144 +1,50 @@
 # Dusk Domains Indexer
 
-Standalone indexer and read API for Dusk Domains.
+Node read API and finalized archive collector for `.dusk` names. It projects
+contract events into search, owner lists, records, primary names, history,
+treasury/referral balances and marketplace discovery. Contracts remain canonical.
 
-The indexer turns Dusk Domains contract events into queryable read models for search, My Domains, activity, reverse lookup, treasury, referrals and marketplace discovery. It is not canonical. Contracts remain the source of truth for ownership, records, primary names, orders and funds.
+## Run and test
 
-## Requirements
+Use Node 24. From this repository's root:
 
-- Node.js 24+
-- npm
-- An archive-enabled Rusk exposing `lastBlockPair` and `blocks`, plus a way to prove a block's events are complete:
-  - `contractEventBatch` (rusk-private #290, not yet in a Rusk release), or
-  - on Rusk 1.7 releases, `checkBlock(onlyFinalized: true)` and `contractEvents`. Events are read only for blocks the archive has finalized, and put back in the block's transaction order.
-
-  The collector picks one when it starts and records it as `archiveApi` (`event-batch` or `finalized-block`) in its cursor.
-- Optional SQLite database for durable hosted indexing
-
-## Setup
-
-```bash
-npm install
+```sh
+npm ci
 npm test
+npm run indexer:collect -- --env-file .env.local --public-dir public/contracts --from-block 1 --event-log target/events.jsonl --cursor-file target/cursor.json
 ```
 
-## Run Locally
+Supply the deployment's node URL and router/core/treasury IDs in `.env.local`,
+plus marketplace when configured, and matching data-driver Wasm in `public/contracts`.
+Use the deployment start height (or earlier) in place of `1`, retaining it on restart.
+The archive must serve `lastBlockPair`/`blocks` and either `contractEventBatch`
+or finalized `checkBlock`/`contractEvents`. `npm run backfill:check -- --node-url <archive> --json`
+probes that API; it does not prove historical retention.
 
-Start one collector per journal (Node.js uses the installed WASM data drivers; no Deno checkout is needed):
+Run the API in a second terminal:
 
-```bash
-npm run indexer:collect -- --env-file .env.local --public-dir public/contracts \
-  --node-url http://127.0.0.1:18180/ --from-block 1 \
-  --event-log target/dusk-domains.events.jsonl --cursor-file target/dusk-domains.cursor.json
+```sh
+npm start -- --sqlite target/indexer.sqlite --event-log target/events.jsonl --cursor target/cursor.json --checkpoint target/checkpoint.json --strict-health --watch --host 127.0.0.1 --port 8787
 ```
 
-For a new deployment, `--from-block` may be its first deployment height; keep that value on restart. Collection processes finalized blocks in order, in batches of at most 100, polling every five seconds. Expect finality plus polling delay, rather than unfinalized live updates. The journal is synced before its hash/byte cursor; an uncommitted crash tail is truncated and refetched. Missing archive blocks or decoding errors block progress instead of silently skipping events.
+One collector writes each journal; one API process writes its SQLite/WAL cache.
+The collector syncs the journal before its hash/byte cursor and refetches an
+uncommitted crash tail. Gaps or decoding failures stop progress. The API replays
+on startup, then applies appended lines; a replaced/shrunken journal is rebuilt.
+Snapshot mode is an explicit fixture/offline source, not finalized archive coverage.
+`npm test` includes the check for missing npm commands in tracked Markdown.
 
-**Legacy migration:** stop the old collector/API and preserve their files. Replay from at/before deployment into **new journal, cursor and SQLite paths**, then point the API at those files. Old live/proof projections lack identities needed for safe archive deduplication; they are never mixed automatically. Check `/health.ok` after catch-up. Event-log/SQLite health is degraded for missing/legacy cursors, stopped/stale collectors or incomplete replay; `finalizedBlockHeight` is null without archive coverage. Snapshot mode remains an explicit offline fallback. Step by step, with checks and an undo: [docs/archive-migration.md](docs/archive-migration.md).
+## Documentation
 
-`npm run backfill:check -- --node-url <archive> --json` probes the actual archive API. Availability at the head does not prove retention back to deployment. Nodes without the required archive surface must be upgraded; the collector does not silently fall back to live-only capture.
+- [HTTP API, pagination, rate limits and CORS](docs/indexer-api.md)
+- [Production operation, monitoring and recovery](docs/production-runbook.md)
+- [Legacy journal migration](docs/archive-migration.md)
+- [Shared SDK event schema](https://github.com/HDauven/dusk-domains-sdk/blob/main/docs/indexer-events.md)
+- [Contract storage bounds](https://github.com/HDauven/dusk-domains-protocol/blob/main/docs/storage-budget.md)
 
-Event-log mode:
+`server/local-indexer` owns persistence, health, HTTP and chain-height read views.
+`scripts` owns collection and operator utilities; `deploy/systemd` supplies service
+units. Event normalization, projection and reserved-name policy come from
+`@duskdomains/sdk/projection`; subscriptions use `@duskdomains/sdk/event-catalog`.
 
-```bash
-npm start -- \
-  --event-log target/dusk-domains.events.jsonl \
-  --cursor target/dusk-domains.cursor.json \
-  --watch
-```
-
-SQLite mode:
-
-```bash
-npm start -- \
-  --sqlite target/dusk-domains.sqlite \
-  --event-log target/dusk-domains.events.jsonl \
-  --cursor target/dusk-domains.cursor.json \
-  --checkpoint target/dusk-domains.checkpoint.json \
-  --strict-health \
-  --watch
-```
-
-SQLite mode uses WAL and a single writer. It stores raw events, replay state, cursor metadata and checkpoints so the service can restart without a full rebuild. With `--watch`, the API applies only journal lines past the last applied offset; a cursor heartbeat with no new events only refreshes health. A journal that shrinks or is replaced is rebuilt. `npm run bench:incremental` measures the cost per new block against a full rebuild.
-
-## API
-
-Common routes:
-
-```text
-GET /health
-GET /search?query=
-GET /names?owner=
-GET /resolve?name=
-GET /name?node=
-GET /records?node=
-GET /record?node=&key=
-GET /record-history?node=&key=
-GET /activity?node=
-GET /reverse?type=&value=
-GET /subnames?parentNode=
-GET /treasury
-GET /referrals?referrer=
-GET /fee-config
-GET /marketplace/config
-GET /marketplace/fixed-sales
-GET /marketplace/fixed-sale?node=
-GET /marketplace/auctions
-GET /marketplace/auction?node=
-GET /marketplace/offers?node=&buyerAuthority=
-GET /marketplace/offer?node=&buyerAuthority=
-GET /marketplace/refund?authority=
-```
-
-See `docs/indexer-api.md` for response shapes.
-
-Marketplace Lux values are accepted only while exactly representable as JSON
-safe integers. Unsafe `u64` values are quarantined as replay warnings rather
-than rounded into a different price or balance.
-
-## Source Layout
-
-```text
-server/local-indexer/   API server, read models, persistence and health checks
-scripts/                smoke tests, backup checks, monitoring and operator utilities
-deploy/systemd/         collector and API service units
-docs/                   API, events, storage and production runbooks
-```
-
-## Operations
-
-Useful commands:
-
-```bash
-npm start
-npm run indexer:collect
-npm run production:check
-npm run health
-npm run backup
-npm run disk
-```
-
-Hosted deployments should set `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` or pass `--cors-origin` so browser reads are limited to the public frontend origin.
-
-Production HTTP policy: set `NODE_ENV=production` and configure `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` with exact, comma-separated origins. Empty production allowlists deny cross-origin access. `DUSK_DOMAINS_INDEXER_RATE_LIMIT` defaults on in production; `DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX=200` and `DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS=60000` tune it. Keep `DUSK_DOMAINS_INDEXER_TRUST_PROXY=false` unless a trusted proxy overwrites forwarding headers and the upstream is private. See the [API policy](docs/indexer-api.md) for pagination, 429 handling, and error request IDs.
-
-For production setup and recovery, see:
-
-- `docs/production-runbook.md`
-- `docs/public-beta-operator-guide.md`
-- `docs/storage-budget.md`
-
-## Event Catalog
-
-The indexer imports event projection, decoded-event normalization and reserved-name policy from `@duskdomains/sdk/projection`. The collector consumes contract topic lists from `@duskdomains/sdk/event-catalog`. Event-family changes should land in the SDK first, then be consumed here with an exact dependency update.
-
-## License
-
-MIT
-
-The collector decodes `registrations_paused_changed` and `trading_paused_changed`
-from the router and marketplace. Replay maintains the independent flags, initially
-false, and `/health` exposes `pause: { registrationsPaused, tradingPaused }`.
-Marketplace config also exposes `tradingPaused`. Fee changes and operator handovers
-do not reset pauses. Consumers should use healthy, current status; contracts enforce
-the pause even before indexed status catches up. The SDK event catalog classifies both pause topics.
+Licensed under [MIT](LICENSE).

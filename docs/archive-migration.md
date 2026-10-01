@@ -1,97 +1,88 @@
-# Moving a host from the live collector to the archive collector
+# Replaying a legacy journal from the archive
 
-This is the one-time move for a host whose `/health` shows `cursor.source: "w3sper-live-subscription"`, as dusk.domains/api did in September 2026. The legacy journal's dates were anchored wrongly (a record from block 4,414,447 reports `updatedAt: 2028-02-17`), and its events lack identities needed to deduplicate against archive events. So the archive collector replays from the deployment height into **new files**, the API switches over, and the old files are kept untouched until the new ones are checked.
+Legacy live/proof journals lack stable archive event identities and cannot be
+appended to the finalized archive journal safely. This procedure preserves the
+old inputs and replays into new journal, cursor and SQLite paths.
 
-Nothing here edits the legacy journal, cursor or database.
+1. Record the existing deployment IDs, configured paths and deployment start height.
+   Choose the first deployment block or an earlier height; retain that start on restart.
+2. Remove the API from public traffic and stop both managed units. The shipped API
+   unit wants the collector, so keep both stopped throughout the temporary replay.
+   Keep the old journal, cursor and database/sidecars as a coherent backup.
 
-## 0. Before you start
+   ```sh
+   sudo systemctl stop dusk-domains-indexer dusk-domains-collector
+   ```
+3. Copy the matching router/core/treasury data drivers, plus marketplace when configured,
+   into a local directory. Supply the same contract IDs and archive URL in the deployment
+   env file. The router events extend collection to added registries.
+4. Select unused paths under `/var/lib/dusk-domains`, which the shipped units can
+   write. Ensure the service account can read the deployment env and drivers.
+   From the indexer repository root in terminal A, start the replay collector as
+   that account and leave it running in the foreground:
 
-- The host runs a release with block-height lifecycle checks and the collector unit (`deploy/systemd/dusk-domains-collector.service`).
-- You know the **deployment start height**: the block of the first contract deployment, or any height before it. The deploy output or the launch checklist records it. The legacy journal cannot provide it, because its events carry no heights (`/health` shows `deploymentStartHeight: 0`). If it is unknown, start well before the earliest height you can bound it by. An earlier start only costs replay time.
-- The runtime env file (`DUSK_DOMAINS_DEPLOYMENT_ENV_FILE`) has the contract IDs and a `VITE_DUSK_DOMAINS_NODE_URL` for an **archive** node that serves `lastBlockPair` and `blocks`, plus either `contractEventBatch` or `checkBlock` and `contractEvents` (see the README). Testnet ran Rusk 1.7.1 in September 2026, which has only the second pair, so the cursor will show `archiveApi: "finalized-block"`.
-- The data-driver WASM for the deployed contracts is in one directory: `dusk-domains-core.data-driver.wasm`, `dusk-domains-treasury.data-driver.wasm` and, if the marketplace is configured, `dusk-domains-marketplace.data-driver.wasm`. The frontend ships them under `public/contracts/deployments/<id>/`. Use the deployment whose contract IDs match the env file.
+   ```sh
+   sudo -u dusk-domains mkdir /var/lib/dusk-domains/archive
+   sudo -u dusk-domains npm run indexer:collect -- --env-file /var/lib/dusk-domains/.env.testnet.local --public-dir /var/lib/dusk-domains/contracts --from-block 1 --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor-file /var/lib/dusk-domains/archive/cursor.json
+   ```
 
-Record what is live now:
+   Replace `1` with the chosen start height. The archive must retain complete finalized
+   events from there. The collector supports `contractEventBatch` or the finalized
+   `checkBlock`/`contractEvents` adapter. Missing history fails closed.
+5. Once the journal and cursor exist, start a temporary API in terminal B from the
+   same repository root. It replays the journal into a new SQLite database:
 
-```bash
-curl -s https://dusk.domains/api/health | jq '{source: .cursor.source, events: .eventCount, names, currentBlockHeight, sqlite: .sqlite.dbFile, durability: .durability.eventLogFile}'
-```
+   ```sh
+   sudo -u dusk-domains npm start -- --sqlite /var/lib/dusk-domains/archive/indexer.sqlite --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor /var/lib/dusk-domains/archive/cursor.json --strict-health --watch --host 127.0.0.1 --port 8788
+   ```
 
-## 1. Prepare new paths
+   Leave that API running. In terminal C, from the same repository root, run:
 
-```bash
-sudo -u dusk-domains mkdir -p /var/lib/dusk-domains/archive /var/lib/dusk-domains/contracts
-sudo cp <frontend>/public/contracts/deployments/<id>/*.data-driver.wasm /var/lib/dusk-domains/contracts/
-sudo chown dusk-domains:dusk-domains /var/lib/dusk-domains/contracts/*
-```
+   ```sh
+   npm run health -- --health-url http://127.0.0.1:8788/health --max-lag-blocks 12 --max-source-age-minutes 10
+   ```
 
-Point `/etc/dusk-domains/indexer.env` at the new files. Keep the old values in a comment so the change can be undone:
+6. Wait for finalized catch-up. Confirm `cursor.source: rusk-finalized-archive`,
+   non-null finalized height, expected deployment binding and `ok: true`. Compare
+   canonical records and representative activity dates with chain evidence. Event
+   counts can differ after archive deduplication; equality with legacy counts is not
+   a correctness criterion.
+7. Stop the replay collector with Ctrl-C in terminal A and wait for its command to
+   exit. Then stop the temporary API with Ctrl-C in terminal B and wait for it to
+   exit. Both temporary processes must be gone before starting either managed
+   unit: two collectors can corrupt the journal or race on `cursor.json.tmp`.
+   Health is expected to be unsafe while the archive cursor says `stopped`.
+8. Edit `/etc/dusk-domains/indexer.env` so `DUSK_DOMAINS_INDEXER_EVENT_LOG`,
+   `DUSK_DOMAINS_INDEXER_CURSOR`, `DUSK_DOMAINS_INDEXER_SQLITE` and
+   `DUSK_DOMAINS_INDEXER_CHECKPOINT` point to `events.jsonl`, `cursor.json`,
+   `indexer.sqlite` and `checkpoint.json` under `/var/lib/dusk-domains/archive`.
+   Set `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT` to the exact `--from-block` value
+   used in step 4, and retain the same deployment env and driver directory:
 
-```bash
-DUSK_DOMAINS_INDEXER_EVENT_LOG=/var/lib/dusk-domains/archive/events.jsonl
-DUSK_DOMAINS_INDEXER_CURSOR=/var/lib/dusk-domains/archive/cursor.json
-DUSK_DOMAINS_INDEXER_SQLITE=/var/lib/dusk-domains/archive/indexer.sqlite
-DUSK_DOMAINS_COLLECTOR_DRIVER_DIR=/var/lib/dusk-domains/contracts
-DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT=<height>
-```
+   ```sh
+   sudo editor /etc/dusk-domains/indexer.env
+   ```
 
-## 2. Replay
+9. Start the managed API. Its `Wants=` starts the managed collector, which resumes
+   the new cursor. The API applies any journal entries left at cutover. Repeat
+   health checks until safe, then rebuild the separate JSON checkpoint and run the
+   production gate against the new paths. Keep both managed services running during
+   verification. If collection advances during the check, repeat the health request
+   and production check. Restore public traffic only after both pass.
+   Keep the original files until the
+   [backup/restore procedure](production-runbook.md#backup) has passed.
 
-Stop the legacy collector, whatever runs it today, and leave the API serving the old files. Then start the archive collector:
+   ```sh
+   sudo systemctl start dusk-domains-indexer
+   npm run health -- --health-url http://127.0.0.1:8787/health --max-lag-blocks 12 --max-source-age-minutes 10
+   sudo -u dusk-domains npm run production:check -- --rebuild --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor /var/lib/dusk-domains/archive/cursor.json --checkpoint /var/lib/dusk-domains/archive/checkpoint.json --sqlite /var/lib/dusk-domains/archive/indexer.sqlite --require-sqlite --env-file /var/lib/dusk-domains/.env.testnet.local --proof-report /var/lib/dusk-domains/deployment-proof.json
+   ```
 
-```bash
-sudo cp deploy/systemd/dusk-domains-collector.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dusk-domains-collector
-journalctl -u dusk-domains-collector -f
-```
+Collection responses are paginated. For comparisons, follow every `nextCursor`
+using the same filters; `/names` exposes `names`, and `/activity` exposes `activity`.
+Comparing only the first page cannot establish that all names survived replay.
+Released reserved names remain reserved; active and grace-held names are registered.
 
-Catch-up is done when the new cursor's `scannedBlockHeight` reaches the chain tip:
-
-```bash
-jq '{source, status, scannedBlockHeight, currentBlockHeight, eventCount}' /var/lib/dusk-domains/archive/cursor.json
-```
-
-`source` must read `rusk-finalized-archive`. The event count should be at least the legacy count from step 0. The legacy count includes events the archive may split or deduplicate differently, so compare names and records in step 4, not just counts.
-
-## 3. Switch the API
-
-```bash
-sudo cp deploy/systemd/dusk-domains-indexer.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart dusk-domains-indexer
-curl -s http://127.0.0.1:8787/health | jq '{ok, source: .cursor.source, events: .eventCount, names, lagBlocks, finalizedBlockHeight, sourceCommit: .package.sourceCommit}'
-```
-
-Expect `ok: true`, `source: rusk-finalized-archive`, a small `lagBlocks`, a non-null `finalizedBlockHeight` and the deployed commit.
-
-## 4. Spot-check dates against the chain
-
-For a few names, compare what the API says with the block the event landed in. Pick a recently registered name, a name with a recent record change, and the oldest name:
-
-```bash
-curl -s "http://127.0.0.1:8787/activity?node=<node>" | jq '.[] | {eventType, blockHeight, timestamp}'
-curl -s "http://127.0.0.1:8787/name?node=<node>" | jq '{canonicalName, expiresAt, expiresAtBlockHeight, graceEndsAtBlockHeight, status}'
-```
-
-- An activity `timestamp` should match its block's timestamp on the explorer to within one block (about 10 seconds). Nothing should be dated in the future.
-- `expiresAtBlockHeight` minus the registration block should be the registered term in blocks (about 3,153,600 per year). `expiresAt` should sit that far after the registration date.
-- `/search?query=<name>` should report `registered` for every name whose `graceEndsAtBlockHeight` is above the current height, and `available` otherwise.
-
-Compare the name list with the legacy API's before retiring it:
-
-```bash
-curl -s https://dusk.domains/api/names | jq -r '.[].canonicalName' | sort > /tmp/legacy-names
-curl -s http://127.0.0.1:8787/names | jq -r '.[].canonicalName' | sort > /tmp/archive-names
-diff /tmp/legacy-names /tmp/archive-names
-```
-
-A name missing from the archive side means the start height was too late or a contract ID is wrong. Stop and check before going further.
-
-## 5. Undo
-
-Restore the old paths in `indexer.env`, restart `dusk-domains-indexer`, and restart the legacy collector. The legacy files were never modified.
-
-## 6. Afterwards
-
-Keep the legacy journal, cursor and database with the backups for one release cycle, then delete them. The frontend can be redeployed from `main` once `/marketplace/fixed-sales`, `/marketplace/auctions` and `/marketplace/offers` answer on the new API (HDauven/dusk-domains-protocol#187).
+To undo a cutover, stop the new API/collector and restore the old configured paths.
+This restores the previous read service, not finalized archive guarantees: legacy
+health can remain degraded. See [production recovery](production-runbook.md).

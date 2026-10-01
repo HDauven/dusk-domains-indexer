@@ -1,5 +1,5 @@
 import { normalizeNode } from '../http.mjs'
-import { recordIndexKey } from '../projectors.mjs'
+import { recordIndexKey } from '@duskdomains/sdk/projection'
 
 export function listRecordsForNode(store, node) {
   return store.recordsByNode?.get(normalizeNode(node)) ?? []

@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
 import { corsHeaders, createRateLimiter } from './security.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
-import { emptyTreasuryState, referralStateFor } from './economics.mjs'
+import {
+  emptyTreasuryState,
+  referralStateFor,
+  commitmentKey,
+  emptyMarketplaceConfig,
+  marketplaceOfferKey,
+  marketplaceOrderIsEscrowed,
+} from '@duskdomains/sdk/projection'
 import { createRecentChangeWarnings } from './records.mjs'
 import { healthResponseForStore } from './health.mjs'
 import { indexedSubnameBlocksRegistration, lifecycleClock } from './read-models/lifecycle.mjs'
@@ -25,8 +32,6 @@ import {
   routeParameters,
   sendJson,
 } from './http.mjs'
-import { commitmentKey } from './projectors/controller.mjs'
-import { emptyMarketplaceConfig, marketplaceOfferKey, marketplaceOrderIsEscrowed } from './projectors/marketplace.mjs'
 
 export function createLocalIndexerHandler(storeProvider, options = {}) {
   const rateLimit = createRateLimiter(options)

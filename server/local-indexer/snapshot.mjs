@@ -1,19 +1,20 @@
-import { emptyPoolState } from './projectors/pool.mjs'
+import {
+  emptyPoolState,
+  normalizeFeeConfig,
+  normalizeReferralStateMap,
+  normalizeTreasuryState,
+  appendRecordHistory,
+  collectSnapshotControllers,
+  rebuildCurrentRecordIndexes,
+  emptyMarketplaceConfig,
+  marketplaceOfferKey,
+  assertSafeNumericTree,
+} from '@duskdomains/sdk/projection'
 import { readFile } from 'node:fs/promises'
 import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
 import { PUBLIC_PRIMARY_ENDPOINT_TYPES } from './constants.mjs'
-import {
-  normalizeFeeConfig,
-  normalizeReferralStateMap,
-  normalizeTreasuryState,
-} from './economics.mjs'
 import { endpointKey } from './naming.mjs'
-import {
-  appendRecordHistory,
-  collectSnapshotControllers,
-  rebuildCurrentRecordIndexes,
-} from './projectors.mjs'
 import {
   indexedLifecycleBlocksRegistration,
   indexedSubnameBlocksRegistration,
@@ -23,8 +24,6 @@ import {
   normalizeNode,
   numberOrNull,
 } from './http.mjs'
-import { emptyMarketplaceConfig, marketplaceOfferKey } from './projectors/marketplace.mjs'
-import { assertSafeNumericTree } from './safe-numbers.mjs'
 
 export async function loadSnapshotStore(snapshotFile) {
   const snapshot = JSON.parse(await readFile(snapshotFile, 'utf8'))

@@ -1,8 +1,7 @@
 import { expect, it } from 'vitest'
-import { normalizeObservedEvent } from '../../scripts/indexer-operator/event-decoder.mjs'
+import { normalizeObservedEvent, isMarketplaceEvent, isPoolEvent } from '@duskdomains/sdk/projection'
 import { replayEventLog } from './event-log-store.mjs'
 import { healthResponseForStore } from './health.mjs'
-import { isMarketplaceEvent, isPoolEvent } from './projectors/event-types.mjs'
 
 const hex = byte => `0x${byte.toString(16).padStart(2, '0').repeat(32)}`
 const principal = { kind: 'Contract', bytes: Array(32).fill(1) }

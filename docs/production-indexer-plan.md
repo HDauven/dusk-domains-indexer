@@ -13,7 +13,7 @@ Implemented:
 - Snapshot, JSONL event-log, and SQLite/WAL event-store modes are supported.
 - `/health` exposes source mode, generated timestamp, routes, schema version, event count, name count, current/finalized block height, lag, last event, optional cursor, optional replay checkpoint, optional durable checkpoint state, and warnings.
 - Event projectors cover lifecycle, commitments, resolver records, reverse records, subnames, treasury events, and referral events.
-- Data-driver event normalization is extracted to `scripts/indexer-operator/event-decoder.mjs`; the local collector now subscribes and appends normalized envelopes instead of owning decode semantics inline.
+- Data-driver event normalization is provided by `normalizeObservedEvent` from `@duskdomains/sdk/projection`; the collector appends the normalized envelopes.
 - `server/local-indexer/projector-parity.test.mjs` compares local-indexer replay with the shared SDK projector using the same normalized fixture events.
 - `npm run indexer:checkpoint` rebuilds `target/dusk-domains-devnet-indexer.checkpoint.json` from the observed event journal.
 - `npm run indexer:local -- --sqlite <db> --event-log <events.jsonl>` imports the event journal into a SQLite/WAL ledger and serves the same API routes from that durable store.
@@ -99,7 +99,7 @@ All projected tables must be rebuildable from `events`.
 
 ## Event Ingestion Rules
 
-- Normalize every decoded contract event into a stable event envelope before projection. For beta, `scripts/indexer-operator/event-decoder.mjs` is the reference decoder used by the local collector.
+- Normalize every decoded contract event into a stable event envelope before projection. The collector uses `normalizeObservedEvent` from `@duskdomains/sdk/projection`.
 - Preserve chain ID, contract ID, contract key, event type, block height, tx ID, event index, observed timestamp, and decoded payload.
 - Reject malformed event rows into a warning/dead-letter path without corrupting the read model.
 - Apply events idempotently using `(chain_id, block_height, tx_id, event_index)` or the strongest available unique key.

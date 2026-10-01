@@ -6,15 +6,6 @@ import {
   loadCursor,
   loadDurableCheckpoint,
 } from './checkpoint.mjs'
-import { DEFAULT_FEE_CONFIG } from './constants.mjs'
-import {
-  applyReferralEvent,
-  emptyTreasuryState,
-  reduceFeeConfigEvent,
-  reduceTreasuryEvent,
-  reduceTreasuryReferralClaim,
-  reduceTreasuryReferralReserve,
-} from './economics.mjs'
 import {
   dedupeEventLogEntries,
   confirmedEventBlockHeight,
@@ -23,33 +14,14 @@ import {
 } from './event-log.mjs'
 import { knownChainHeight, maxNumberOrNull } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
-import { normalizeName, normalizeNode } from './http.mjs'
+import { normalizeName } from './http.mjs'
 import {
-  applyControllerEvent,
-  applyLifecycleEvent,
-  applyRecordsMoved,
-  applyMarketplaceEvent,
-  applyResolverEvent,
-  applyReverseEvent,
-  applySubnameEvent,
+  createProjectionState,
+  applyProjectionEvent,
   clearNodeDerivedState,
-  clearReleasedName,
-  emptyPoolState,
-  isControllerEvent,
-  isFeeConfigEvent,
-  isLifecycleEvent,
-  isMarketplaceEvent,
-  isPoolEvent,
-  isReferralEvent,
-  isResolverEvent,
-  isReverseEvent,
-  isSubnameEvent,
-  isTreasuryEvent,
-  reducePoolEvent,
-  renewInheritingSubnames,
-} from './projectors.mjs'
+  assertSafeNumericTree,
+} from '@duskdomains/sdk/projection'
 import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
-import { assertSafeNumericTree } from './safe-numbers.mjs'
 
 export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) {
   const parsedLog = parseEventLog(await readFile(eventLogFile, 'utf8'))
@@ -102,34 +74,7 @@ export function replayEventLog(events, warnings, now, chainHeight = null) {
 // The projections every event folds into. Kept apart from the served view so new events can be
 // applied to it without replaying the journal.
 export function createReplayState() {
-  return {
-    namesByNode: new Map(),
-    recordsByNode: new Map(),
-    recordsByNodeKey: new Map(),
-    recordHistoryByNode: new Map(),
-    recordHistoryByNodeKey: new Map(),
-    activityByNode: new Map(),
-    reverseByEndpoint: new Map(),
-    reverseKeysByNode: new Map(),
-    subnamesByNode: new Map(),
-    subnamesByParent: new Map(),
-    subnamesByCanonical: new Map(),
-    commitmentsById: new Map(),
-    commitmentsByKey: new Map(),
-    controllersByNode: new Map(),
-    marketplaceFixedSalesByNode: new Map(),
-    marketplaceAuctionsByNode: new Map(),
-    marketplaceOffersByKey: new Map(),
-    marketplaceRefundsByAuthority: new Map(),
-    marketplaceConfig: null,
-    treasuryState: emptyTreasuryState(),
-    feeConfig: { ...DEFAULT_FEE_CONFIG },
-    poolState: emptyPoolState(),
-    referralsByReferrer: new Map(),
-    referralRewardsSupported: false,
-    newestEventHeight: null,
-    appliedCount: 0,
-  }
+  return { ...createProjectionState(), newestEventHeight: null, appliedCount: 0 }
 }
 
 export function applyReplayEvent(state, entry, warnings) {
@@ -145,39 +90,7 @@ export function applyReplayEvent(state, entry, warnings) {
     assertSafeNumericTree(meta, 'event metadata')
     meta.blockHeight = confirmedEventBlockHeight(event, meta)
     if (Number.isFinite(meta.blockHeight)) state.newestEventHeight = Math.max(state.newestEventHeight ?? 0, meta.blockHeight)
-    if (isLifecycleEvent(event.type)) {
-      const node = normalizeNode(event.node)
-      // The contract clears a lapsed name it registers again without emitting name_released.
-      if (event.type === 'name_registered' && state.namesByNode.has(node)) clearReleasedName(state, node)
-      applyLifecycleEvent(state, event, meta, timestamp)
-      if (event.type === 'name_renewed') renewInheritingSubnames(state, node)
-      if (event.type === 'name_released') clearReleasedName(state, node)
-    } else if (isResolverEvent(event.type)) {
-      applyResolverEvent(state, event, meta, timestamp)
-    } else if (isControllerEvent(event.type)) {
-      applyControllerEvent(state, event, meta)
-    } else if (isReverseEvent(event.type)) {
-      applyReverseEvent(state, event, meta)
-    } else if (isSubnameEvent(event.type)) {
-      applySubnameEvent(state, event, meta)
-    } else if (isTreasuryEvent(event.type)) {
-      state.treasuryState = reduceTreasuryEvent(event, state.treasuryState, meta)
-      if (event.type === 'treasury_initialized') state.referralRewardsSupported = true
-    } else if (isReferralEvent(event.type)) {
-      state.referralRewardsSupported = true
-      state.treasuryState = reduceTreasuryReferralReserve(event, state.treasuryState)
-      state.treasuryState = reduceTreasuryReferralClaim(event, state.treasuryState)
-      applyReferralEvent(state, event, meta)
-    } else if (isFeeConfigEvent(event.type)) {
-      state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
-    } else if (isMarketplaceEvent(event.type)) {
-      applyMarketplaceEvent(state, event, meta, timestamp)
-    } else if (isPoolEvent(event.type)) {
-      state.poolState = reducePoolEvent(event, state.poolState, meta)
-      if (event.type === 'records_moved') applyRecordsMoved(state, event, meta, timestamp)
-      // The router starts with a fee config; later changes arrive as fee_config_updated.
-      if (event.type === 'router_initialized') state.feeConfig = reduceFeeConfigEvent(event, state.feeConfig, meta)
-    }
+    applyProjectionEvent(state, event, meta, timestamp)
   } catch (error) {
     warnings.push({
       code: 'invalid_event_log_event',

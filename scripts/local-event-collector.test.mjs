@@ -1,3 +1,4 @@
+import { duskDomainsContractEventTopics } from '@duskdomains/sdk/event-catalog'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -138,6 +139,7 @@ describe('local event collector config', () => {
     const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
     expect(config.contracts.find(contract => contract.key === 'router').events).toContain('registrations_paused_changed')
     if (config.contracts.some(contract => contract.key === 'marketplace')) expect(config.contracts.find(contract => contract.key === 'marketplace').events).toContain('trading_paused_changed')
+    for (const contract of config.contracts) expect(contract.events).toBe(duskDomainsContractEventTopics[contract.key])
     for (const key of ['router', 'treasury', 'marketplace']) {
       expect(config.contracts.find((contract) => contract.key === key).events).toEqual(expect.arrayContaining([
         `${key}_operator_proposed`, `${key}_operator_cancelled`, `${key}_operator_changed`,

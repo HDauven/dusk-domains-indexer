@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertSafeNumericTree, checkedSafeSum, safeNonNegativeInteger } from './safe-numbers.mjs'
+import { assertSafeNumericTree, checkedSafeSum, safeNonNegativeInteger } from '@duskdomains/sdk/projection'
 
 describe('indexer safe integer boundaries', () => {
   it('accepts exact event and snapshot values', () => {

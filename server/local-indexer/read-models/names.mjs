@@ -1,3 +1,4 @@
+import { namespaceForNode } from './namespace.mjs'
 import { endpointKey } from '../naming.mjs'
 import {
   normalizeName,
@@ -25,6 +26,7 @@ export function listNames(store, owner) {
       records: name.records,
       ...primarySummaryForName(store, name),
       subnameCount: activeSubnamesForParent(store, name.node).length,
+      namespace: namespaceForNode(store, name.node),
       activityCount: store.activityByNode.get(name.node)?.length ?? 0,
     }))
     .sort((left, right) => left.canonicalName.localeCompare(right.canonicalName))

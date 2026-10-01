@@ -215,6 +215,7 @@ export function createIndexerParityEvents() {
       expiryPolicy: 'fixed_before_parent',
       createdAt: '2026-06-27T12:04:00.000Z',
     }, { blockHeight: 27, txId: 'subname-tx' }),
+    envelope({ type: 'subname_removed', parentNode: fixtureNode, node: fixtureSubnameNode, name: 'pay.aurora.dusk', actor: fixtureOwner, removedAt: '2026-06-27T12:05:00.000Z' }, { blockHeight: 29, txId: 'subname-remove-tx' }),
     envelope({
       type: 'subname_pruned',
       prunedAt: '2026-06-27T12:05:00.000Z',

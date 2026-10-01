@@ -17,7 +17,6 @@ import { PUBLIC_PRIMARY_ENDPOINT_TYPES } from './constants.mjs'
 import { endpointKey } from './naming.mjs'
 import {
   indexedLifecycleBlocksRegistration,
-  indexedSubnameBlocksRegistration,
 } from './read-models.mjs'
 import {
   normalizeName,
@@ -82,6 +81,7 @@ export async function loadSnapshotStore(snapshotFile) {
       canonicalName,
       issuedAsReserved: name.issuedAsReserved ?? false,
       reservedIssuance: name.reservedIssuance ?? null,
+      namespacePurchase: name.namespacePurchase ?? null,
       owner: name.owner ?? null,
       manager: name.manager ?? null,
       resolverId: name.resolverId ?? null,
@@ -132,12 +132,15 @@ export async function loadSnapshotStore(snapshotFile) {
     candidateSubnamesByNode.set(node, normalized)
   }
 
-  const subnameCandidateStore = {
-    namesByNode,
-    subnamesByNode: candidateSubnamesByNode,
-  }
   for (const normalized of candidateSubnamesByNode.values()) {
-    if (!indexedSubnameBlocksRegistration(subnameCandidateStore, normalized, now)) continue
+    const visited = new Set([normalized.node])
+    let rootNode = normalized.parentNode
+    while (candidateSubnamesByNode.has(rootNode) && !visited.has(rootNode)) {
+      visited.add(rootNode)
+      rootNode = candidateSubnamesByNode.get(rootNode).parentNode
+    }
+    // Fixed-expiry descendants still occupy namespace capacity until explicit cleanup.
+    if (visited.has(rootNode) || !indexedLifecycleBlocksRegistration(namesByNode.get(rootNode), now)) continue
     const node = normalizeNode(normalized.node)
     const parentNode = normalizeNode(normalized.parentNode)
     subnamesByNode.set(node, normalized)

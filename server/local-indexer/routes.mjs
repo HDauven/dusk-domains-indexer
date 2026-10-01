@@ -1,3 +1,4 @@
+import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
 import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
 import { corsHeaders, createRateLimiter } from './security.mjs'
@@ -132,7 +133,8 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/name') {
       const node = routeParams.node
-      reply(200, store.namesByNode.get(node) ?? subnameLifecycleForNode(store, node) ?? null)
+      const name = store.namesByNode.get(node) ?? subnameLifecycleForNode(store, node)
+      reply(200, name ? { ...name, namespace: namespaceForNode(store, node) } : null)
       return
     }
 
@@ -253,6 +255,7 @@ function marketplaceOrderForResponse(store, order) {
     ...order,
     node,
     marketplaceContractId,
+    namespace: namespaceSummary(store, node, order.sellerAuthority),
     escrowed: marketplaceOrderIsEscrowed(store.namesByNode?.get(node), marketplaceContractId),
   }
 }

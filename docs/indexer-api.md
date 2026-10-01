@@ -553,3 +553,21 @@ See the [shared event semantics](https://github.com/HDauven/dusk-domains-sdk/blo
 Renewal activity records the payer as actor. Any wallet may pay, including for a
 contract-owned name; this does not add the payer to the name's owners or managers.
 Reserved-label search policy applies only to roots, not subnames.
+
+## Namespaces
+
+`GET /name?node=...` and entries from `/names` include `namespace`: a descendant count,
+a count held by other owners, all stored subnames, and the name's ancestor authorities.
+Expired descendants remain in this list until removed or pruned because they still occupy
+contract capacity. `/subnames` retains its existing direct, active-child listing semantics.
+
+Fixed-sale and auction responses include a namespace count summary. For escrowed listings,
+“held by others” compares descendant owners with the seller. Name responses compare them
+with the current owner. Summaries are derived from current ownership at read time.
+
+Successful sales record `namespacePurchase` with the buyer and seller. Clients can use it
+to offer one batch take-back of the subnames still held by that seller. The shared projection
+applies subname owner/manager changes directly and clears identity when `dataCleared` is true.
+`subname_removed` removes the affected subtree and its records and primary names.
+Transfers with reset use the same `name_owner_changed.dataCleared` flag for roots and subnames; only the transferred name’s records and primary names are cleared.
+Ancestor authorities permit reassignment, take-back and removal; record editing, primary names and direct child creation require the name’s own owner or manager.

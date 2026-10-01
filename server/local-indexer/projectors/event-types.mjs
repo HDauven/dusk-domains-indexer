@@ -48,6 +48,7 @@ export function isFeeConfigEvent(type) {
 
 export function isMarketplaceEvent(type) {
   return isMarketplaceEventType(type)
+    || type === 'trading_paused_changed'
     || type === 'marketplace_operator_proposed'
     || type === 'marketplace_operator_cancelled'
     || type === 'marketplace_operator_changed'
@@ -55,6 +56,7 @@ export function isMarketplaceEvent(type) {
 
 export function isPoolEvent(type) {
   return isPoolEventType(type)
+    || type === 'registrations_paused_changed'
     || type === 'router_operator_proposed'
     || type === 'router_operator_cancelled'
 }

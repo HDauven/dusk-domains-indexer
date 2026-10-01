@@ -104,6 +104,7 @@ describe('local indexer projector parity', () => {
       version: 8,
     })
     expect(serverStore.poolState).toEqual({
+      registrationsPaused: false,
       pendingOperator: null,
       initialized: true,
       router: fixtureRouter,

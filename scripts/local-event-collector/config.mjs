@@ -15,7 +15,7 @@ const coreContracts = [
     key: 'router',
     envKey: 'VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID',
     driverFile: 'dusk-domains-router.data-driver.wasm',
-    events: ['router_initialized', 'reserved_name_issued', 'pool_member_added', 'router_operator_changed', 'router_operator_proposed', 'router_operator_cancelled', 'fee_config_updated'],
+    events: ['registrations_paused_changed', 'router_initialized', 'reserved_name_issued', 'pool_member_added', 'router_operator_changed', 'router_operator_proposed', 'router_operator_cancelled', 'fee_config_updated'],
   },
   {
     key: 'core',
@@ -51,6 +51,7 @@ const optionalContracts = [
     events: [
       'marketplace_initialized',
       'marketplace_config_updated',
+      'trading_paused_changed',
       'marketplace_operator_proposed',
       'marketplace_operator_cancelled',
       'marketplace_operator_changed',

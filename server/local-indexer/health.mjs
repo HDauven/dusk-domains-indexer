@@ -25,6 +25,10 @@ export function healthResponseForStore(store) {
 
   return {
     ok,
+    pause: {
+      registrationsPaused: store.poolState?.registrationsPaused ?? false,
+      tradingPaused: store.marketplaceConfig?.tradingPaused ?? false,
+    },
     apiVersion: LOCAL_INDEXER_API_VERSION,
     generatedAt: store.generatedAt,
     source: store.source,

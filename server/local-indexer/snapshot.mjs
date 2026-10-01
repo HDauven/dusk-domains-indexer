@@ -1,3 +1,4 @@
+import { emptyPoolState } from './projectors/pool.mjs'
 import { readFile } from 'node:fs/promises'
 import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
@@ -250,6 +251,7 @@ export async function loadSnapshotStore(snapshotFile) {
     generatedAt: snapshot.generatedAt ?? new Date().toISOString(),
     source: snapshot.source ?? 'local-indexer-snapshot',
     mode: 'snapshot',
+    poolState: { ...emptyPoolState(), ...snapshot.poolState },
     namesByCanonical,
     namesByNode,
     activityByNode,

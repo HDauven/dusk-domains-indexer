@@ -7,6 +7,7 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
   assertSafeNumericTree(meta, 'marketplace event metadata')
   if (event.type === 'marketplace_initialized') {
     store.marketplaceConfig = {
+      tradingPaused: false,
       initialized: true,
       router: normalizedHex(event.router),
       treasuryContract: normalizedHex(event.treasuryContract),
@@ -28,6 +29,18 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
       operator: event.type === 'marketplace_operator_changed' ? normalizedHex(event.operator) : current.operator,
       pendingOperator: event.type === 'marketplace_operator_proposed' ? normalizedHex(event.pendingOperator) : null,
       updatedAtBlockHeight: meta.blockHeight ?? null,
+      txId: meta.txId ?? null,
+      blockHeight: meta.blockHeight ?? null,
+    }
+    return
+  }
+
+  if (event.type === 'trading_paused_changed') {
+    store.marketplaceConfig = {
+      ...emptyMarketplaceConfig(),
+      ...store.marketplaceConfig,
+      tradingPaused: event.paused,
+      updatedAtBlockHeight: event.updatedAtBlockHeight,
       txId: meta.txId ?? null,
       blockHeight: meta.blockHeight ?? null,
     }
@@ -182,6 +195,7 @@ export function applyMarketplaceEvent(store, event, meta, fallbackTimestamp) {
 
 export function emptyMarketplaceConfig() {
   return {
+    tradingPaused: false,
     initialized: false,
     router: null,
     treasuryContract: null,

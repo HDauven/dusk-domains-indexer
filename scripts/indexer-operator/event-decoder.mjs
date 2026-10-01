@@ -27,7 +27,7 @@ export function normalizeObservedEvent({
   const eventHeight = numericBlockHeight([
     'created_at', 'updated_at', 'opened_at', 'closed_at', 'filled_at',
     'placed_at', 'cancelled_at', 'settled_at', 'accepted_at', 'claimed_at',
-    'observed_at', 'released_at', 'pruned_at',
+    'observed_at', 'released_at', 'pruned_at', 'issued_at',
   ].map(key => event[key]).find(value => value != null) ?? event.record?.updated_at ?? event.config?.updated_at)
   const anchor = eventHeight ?? numericBlockHeight(observedBlockHeight)
   const lifecycleValueToIso = (value, time, seconds) => blockHeightToIso(value, time, seconds, anchor)
@@ -65,6 +65,25 @@ export function normalizeObservedEvent({
         commitment: bytesToHex(event.commitment),
         node: bytesToHex(event.node),
         controller: bytesToHex(event.controller),
+      },
+      meta,
+    }
+  }
+
+  if (eventName === 'reserved_name_issued') {
+    const operator = principalFromEvent(event.operator)
+    return {
+      event: {
+        type: 'reserved_name_issued',
+        node: bytesToHex(event.node),
+        label: event.label,
+        actor: operator?.kind === 'Moonlight' ? bytesToBase58(operator.bytes) : bytesToHex(operator?.bytes),
+        owner: bytesToHex(event.owner),
+        manager: bytesToHex(event.manager),
+        registry: bytesToHex(event.registry),
+        operator,
+        issuedAt: observedAt,
+        issuedAtBlockHeight: numericBlockHeight(event.issued_at),
       },
       meta,
     }

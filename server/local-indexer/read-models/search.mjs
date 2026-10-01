@@ -37,6 +37,10 @@ export function searchName(store, query) {
   } else if (canonical.split('.').filter((part) => part !== 'dusk').some((part) => part.length < 3)) {
     status = 'invalid'
     issues.push({ tone: 'danger', text: 'Labels shorter than 3 characters are reserved.' })
+  } else if (indexedLifecycleBlocksRegistration(store.namesByCanonical.get(canonical)?.lifecycle, now)) {
+    status = 'registered'
+  } else if (indexedSubnameBlocksRegistration(store, store.subnamesByCanonical?.get(canonical), now)) {
+    status = 'registered'
   } else if (RESERVED_LABELS.has(label)) {
     status = 'reserved'
     reserved = {
@@ -45,10 +49,6 @@ export function searchName(store, query) {
       reason: RESERVED_REASONS[label],
     }
     issues.push({ tone: 'warning', text: RESERVED_REASONS[label] })
-  } else if (indexedLifecycleBlocksRegistration(store.namesByCanonical.get(canonical)?.lifecycle, now)) {
-    status = 'registered'
-  } else if (indexedSubnameBlocksRegistration(store, store.subnamesByCanonical?.get(canonical), now)) {
-    status = 'registered'
   }
 
   return {

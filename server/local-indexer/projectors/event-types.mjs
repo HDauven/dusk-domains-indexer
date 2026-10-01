@@ -11,7 +11,7 @@ import {
 } from '@duskdomains/sdk/event-catalog'
 
 export function isLifecycleEvent(type) {
-  return isLifecycleEventType(type)
+  return isLifecycleEventType(type) || type === 'reserved_name_issued'
 }
 
 export function isResolverEvent(type) {

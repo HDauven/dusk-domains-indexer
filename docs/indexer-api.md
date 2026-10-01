@@ -471,6 +471,11 @@ GET /commitment?commitment=0x...&controller=0x...
 
 Response is an `IndexedRegistrationCommitment` row or `null`. Committed rows include `committedTxId` and `committedBlockHeight`; revealed rows additionally include `node`, `revealedTxId`, and `revealedBlockHeight`.
 
+Commitment reads retain event history after both automatic cleanup on a new commit
+and permissionless pruning; neither cleanup emits an event. Use the committed
+block height and registry `pending_commitment` read to check usability. A registry
+allows at most 16 pending commitments per controller, with expiry after 8,640 blocks.
+
 Commitments are scoped per controller, as the core contract keys them by `(controller, commitment)`. With `controller`, the route returns that controller's row for the hash or `null`. Without it, the route returns the most recently updated row for the hash, whichever controller wrote it; clients reading their own commitment should pass `controller`.
 
 Clients should use this route only as a reactive UI/read-model aid. The home registry remains the source of truth for whether reveal is actually allowed.
@@ -544,3 +549,7 @@ contracts enforce admission gates even before indexed status catches up.
 Treasury and marketplace config expose `pendingOperator`; treasury also exposes
 `pendingOperatorRecipient`. Active operator/recipient changes only on acceptance.
 See the [shared event semantics](https://github.com/HDauven/dusk-domains-sdk/blob/main/docs/indexer-events.md).
+
+Renewal activity records the payer as actor. Any wallet may pay, including for a
+contract-owned name; this does not add the payer to the name's owners or managers.
+Reserved-label search policy applies only to roots, not subnames.

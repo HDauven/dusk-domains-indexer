@@ -21,6 +21,19 @@ const routerContract = {
 }
 
 describe('Dusk Domains indexer event decoder', () => {
+  it('rejects the retired core referral config event', () => {
+    expect(normalizeObservedEvent({
+      contract,
+      observedAt,
+      eventName: 'core_referral_config_changed',
+      event: {
+        operator: { kind: 'Contract', bytes: bytes(1) },
+        previous_referral_reward_bps: 2_000,
+        referral_reward_bps: 1_000,
+      },
+    })).toBeNull()
+  })
+
   it('decodes v1 subname payloads and rejects removed events', () => {
     const args = {
       parent_node: bytes(1), node: bytes(2), parent_name: 'acme.dusk', name: 'pay.acme.dusk',
@@ -293,11 +306,6 @@ function collectedEventFixtures() {
       created_at: 42,
     }, 'subname_created'],
     ['subname_pruned', { parent_node: parentNode, node, name: 'pay.aurora.dusk', actor, pruned_at: 44 }, 'subname_pruned'],
-    ['core_referral_config_changed', {
-      operator,
-      previous_referral_reward_bps: 2_000,
-      referral_reward_bps: 1_000,
-    }, 'core_referral_config_changed'],
     ['fee_config_updated', {
       operator,
       previous_config: feeConfig(1),

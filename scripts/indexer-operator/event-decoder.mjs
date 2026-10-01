@@ -272,18 +272,6 @@ export function normalizeObservedEvent({
     }
   }
 
-  if (eventName === 'core_referral_config_changed') {
-    return {
-      event: {
-        type: 'core_referral_config_changed',
-        operator: principalFromEvent(event.operator, event.operator_authority),
-        previousReferralRewardBps: Number(event.previous_referral_reward_bps ?? 0),
-        referralRewardBps: Number(event.referral_reward_bps ?? 0),
-      },
-      meta,
-    }
-  }
-
   if (eventName === 'registrations_paused_changed' || eventName === 'trading_paused_changed') {
     if (typeof event.paused !== 'boolean') throw new Error('Pause event requires a boolean paused value')
     return {

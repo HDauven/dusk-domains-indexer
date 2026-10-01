@@ -65,13 +65,14 @@ export function clearNodeDerivedState({
   recordsByNode,
   recordsByNodeKey,
   reverseByEndpoint,
+  reverseKeysByNode,
   controllersByNode,
   subnamesByNode,
   subnamesByParent,
   subnamesByCanonical,
 }) {
   const normalizedNode = normalizeNode(node)
-  const staleNodes = collectNodeTree(normalizedNode, subnamesByNode)
+  const staleNodes = collectNodeTree(normalizedNode, subnamesByParent)
 
   for (const staleNode of staleNodes) {
     const records = recordsByNode.get(staleNode) ?? []
@@ -85,37 +86,24 @@ export function clearNodeDerivedState({
 
     const subname = subnamesByNode?.get(staleNode)
     if (subname?.name) subnamesByCanonical?.delete(normalizeName(subname.name))
-    subnamesByNode?.delete(staleNode)
-  }
-
-  if (subnamesByParent) {
-    for (const [parentNode, children] of subnamesByParent) {
-      const filtered = children.filter((subname) => !staleNodes.has(normalizeNode(subname.node)))
-      if (filtered.length > 0) subnamesByParent.set(parentNode, filtered)
-      else subnamesByParent.delete(parentNode)
+    if (subname && !staleNodes.has(subname.parentNode)) {
+      const siblings = subnamesByParent.get(subname.parentNode) ?? []
+      const remaining = siblings.filter((sibling) => sibling.node !== staleNode)
+      if (remaining.length > 0) subnamesByParent.set(subname.parentNode, remaining)
+      else subnamesByParent.delete(subname.parentNode)
     }
-  }
-
-  for (const [key, reverse] of reverseByEndpoint) {
-    if (staleNodes.has(normalizeNode(reverse?.node))) reverseByEndpoint.delete(key)
+    subnamesByParent?.delete(staleNode)
+    subnamesByNode?.delete(staleNode)
+    for (const key of reverseKeysByNode.get(staleNode) ?? []) reverseByEndpoint.delete(key)
+    reverseKeysByNode.delete(staleNode)
   }
   return staleNodes
 }
 
-function collectNodeTree(rootNode, subnamesByNode) {
+function collectNodeTree(rootNode, subnamesByParent) {
   const staleNodes = new Set([rootNode])
-  if (!subnamesByNode) return staleNodes
-
-  let grew = true
-  while (grew) {
-    grew = false
-    for (const subname of subnamesByNode.values()) {
-      const childNode = normalizeNode(subname.node)
-      if (staleNodes.has(normalizeNode(subname.parentNode)) && !staleNodes.has(childNode)) {
-        staleNodes.add(childNode)
-        grew = true
-      }
-    }
+  for (const node of staleNodes) {
+    for (const child of subnamesByParent?.get(node) ?? []) staleNodes.add(child.node)
   }
   return staleNodes
 }

@@ -77,7 +77,6 @@ export function createEventLog(options = {}) {
         expiresAt: '2027-06-17T00:00:00.000Z',
         parentExpiresAt: '2027-06-17T00:00:00.000Z',
         expiryPolicy: 'fixed_before_parent',
-        revocationPolicy: 'parent_revocable',
         createdAt: '2026-06-17T00:00:02.000Z',
       },
       meta: { txId: 'tx-subname', blockHeight: 14 },
@@ -273,7 +272,6 @@ export function createExpiredRoutingEventLogFixture() {
           expiresAt: '2020-01-01T00:00:00.000Z',
           parentExpiresAt: '2020-01-01T00:00:00.000Z',
           expiryPolicy: 'inherits_parent',
-          revocationPolicy: 'parent_revocable',
           createdAt: '2020-01-01T00:02:00.000Z',
         },
         meta: { txId: 'tx-subname', blockHeight: 5 },
@@ -300,7 +298,6 @@ export function createLifecycleCleanupEventLogFixture() {
   const subnode = `0x${'bb'.repeat(32)}`
   const owner = '0xowner'
   const manager = '0xmanager'
-  const nextManager = '0xnextmanager'
   const resolver = `0x${'cc'.repeat(32)}`
   const moonlight = 'dusk1localresolverproof01'
 
@@ -308,7 +305,6 @@ export function createLifecycleCleanupEventLogFixture() {
     node,
     subnode,
     manager,
-    nextManager,
     moonlight,
     events: [
       {
@@ -416,36 +412,23 @@ export function createLifecycleCleanupEventLogFixture() {
           owner,
           manager,
           resolver,
-          expiresAt: '2027-06-17T00:00:00.000Z',
+          expiresAt: '2026-06-17T00:07:00.000Z',
           parentExpiresAt: '2027-06-17T00:00:00.000Z',
-          expiryPolicy: 'inherits_parent',
-          revocationPolicy: 'parent_revocable',
+          expiryPolicy: 'fixed_before_parent',
           createdAt: '2026-06-17T00:05:00.000Z',
         },
         meta: { txId: 'tx-subname', blockHeight: 8 },
       },
       {
         event: {
-          type: 'subname_delegated',
+          type: 'subname_pruned',
+          prunedAt: '2026-06-17T00:07:00.000Z',
           parentNode: node,
           node: subnode,
           name: 'settlement.aurora.dusk',
           actor: owner,
-          manager: nextManager,
-          delegatedAt: '2026-06-17T00:06:00.000Z',
         },
-        meta: { txId: 'tx-delegate', blockHeight: 9 },
-      },
-      {
-        event: {
-          type: 'subname_revoked',
-          parentNode: node,
-          node: subnode,
-          name: 'settlement.aurora.dusk',
-          actor: owner,
-          revokedAt: '2026-06-17T00:07:00.000Z',
-        },
-        meta: { txId: 'tx-revoke', blockHeight: 10 },
+        meta: { txId: 'tx-prune', blockHeight: 10 },
       },
     ],
   }
@@ -476,7 +459,6 @@ export function createSubnameRenewalEventLogFixture() {
       expiresAtBlockHeight,
       parentExpiresAtBlockHeight: 1000,
       expiryPolicy,
-      revocationPolicy: 'parent_revocable',
       createdAt: '2026-06-17T00:05:00.000Z',
     },
     meta: { txId: `tx-${name}`, blockHeight },
@@ -593,7 +575,6 @@ export function createLapsedReregistrationEventLogFixture() {
           expiresAtBlockHeight: 100,
           parentExpiresAtBlockHeight: 100,
           expiryPolicy: 'inherits_parent',
-          revocationPolicy: 'parent_revocable',
           createdAt: '2026-06-17T00:00:00.000Z',
         },
         meta: { txId: 'tx-alice-subname', blockHeight: 12 },

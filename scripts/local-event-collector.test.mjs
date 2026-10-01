@@ -143,6 +143,14 @@ describe('local event collector config', () => {
     }
   })
 
+  it('subscribes to subname creation and pruning', async () => {
+    const fixture = await createCollectorFixture()
+    const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
+    expect(config.contracts.find((contract) => contract.key === 'core').events).toEqual(expect.arrayContaining([
+      'subname_created', 'subname_pruned',
+    ]))
+  })
+
   it('validates replay heights and unsafe numeric CLI inputs', () => {
     expect(parseArgs(['--from-block', '42']).fromBlock).toBe(42)
     for (const n of ['0', '-1', '9007199254740992']) {

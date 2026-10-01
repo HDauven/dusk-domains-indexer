@@ -126,9 +126,8 @@ export async function writeSnapshot(options = {}, context = {}) {
       name: 'settlement.aurora.dusk',
       manager,
       resolver: resolverId,
-      status: options.revokedSubname ? 'revoked' : 'active',
+      status: options.expiredSubname ? 'expired' : 'active',
       createdAt: '2026-06-17T20:32:00.000Z',
-      revokedAt: options.revokedSubname ? '2026-06-17T20:33:00.000Z' : null,
       records: options.subnameRecord ? [{
         key: 'dusk_contract',
         value: subnameContract,
@@ -291,10 +290,9 @@ export async function writeEventLog(options = {}, context = {}) {
         owner,
         manager,
         resolver: resolverId,
-        expiresAt: '2027-06-18T00:00:00.000Z',
+        expiresAt: options.pruneSubname ? '2026-06-18T00:05:00.000Z' : '2027-06-18T00:00:00.000Z',
         parentExpiresAt: '2027-06-18T00:00:00.000Z',
-        expiryPolicy: 'inherits_parent',
-        revocationPolicy: 'parent_revocable',
+        expiryPolicy: options.pruneSubname ? 'fixed_before_parent' : 'inherits_parent',
         createdAt: '2026-06-18T00:04:00.000Z',
       },
       meta: { txId: 'tx-subname', blockHeight: 6 },
@@ -331,17 +329,17 @@ export async function writeEventLog(options = {}, context = {}) {
       meta: { txId: 'tx-record-rotate', blockHeight: 7 },
     })
   }
-  if (options.revokeSubname) {
+  if (options.pruneSubname) {
     events.push({
       event: {
-        type: 'subname_revoked',
+        type: 'subname_pruned',
+        prunedAt: '2026-06-18T00:05:00.000Z',
         parentNode: node,
         node: subnode,
         name: 'settlement.aurora.dusk',
         actor: owner,
-        revokedAt: '2026-06-18T00:05:00.000Z',
       },
-      meta: { txId: 'tx-subname-revoke', blockHeight: 7 },
+      meta: { txId: 'tx-subname-prune', blockHeight: 7 },
     })
   }
   if (options.contractReverse) {
@@ -445,7 +443,7 @@ export async function writeEventLog(options = {}, context = {}) {
     version: 1,
     source: 'test-collector',
     status: 'running',
-    eventCount: options.release || options.revokeSubname || options.rotateMoonlightRecord || options.subnameRecord ? 6 : 5,
+    eventCount: options.release || options.pruneSubname || options.rotateMoonlightRecord || options.subnameRecord ? 6 : 5,
     startedAt: '2026-06-18T00:00:00.000Z',
     updatedAt: '2026-06-18T00:04:00.000Z',
     lastEventAt: '2026-06-18T00:04:00.000Z',

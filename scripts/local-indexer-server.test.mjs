@@ -215,8 +215,8 @@ describe('local indexer HTTP API', () => {
     await expect(expectJson(`${baseUrl}/subname?node=${snapshot.subnode}`)).resolves.toBeNull()
   })
 
-  it('excludes revoked snapshot subnames from active parent lists and summaries', async () => {
-    const snapshot = await writeSnapshot({ revokedSubname: true })
+  it('excludes expired snapshot subnames from active parent lists and summaries', async () => {
+    const snapshot = await writeSnapshot({ expiredSubname: true })
     const store = await loadSnapshotStore(snapshot.file)
     const { baseUrl } = await startIndexer(store)
 

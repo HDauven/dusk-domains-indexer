@@ -349,8 +349,8 @@ describe('local indexer event-log HTTP API', () => {
     await expect(expectJson(`${baseUrl}/subname?node=${fixture.subnode}`)).resolves.toBeNull()
   })
 
-  it('excludes revoked event-log subnames from active parent lists and summaries', async () => {
-    const fixture = await writeEventLog({ revokeSubname: true })
+  it('excludes pruned event-log subnames from active parent lists and summaries', async () => {
+    const fixture = await writeEventLog({ pruneSubname: true })
     const store = await loadEventLogStore(fixture.eventLogFile, fixture.cursorFile)
     const { baseUrl } = await startIndexer(store)
 

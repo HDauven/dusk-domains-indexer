@@ -43,7 +43,16 @@ export function applyReverseEvent(store, event, meta) {
   const name = event.name && event.name.length > 0 ? event.name : null
   const key = endpointKey(event.endpoint)
 
+  const previous = store.reverseByEndpoint.get(key)
+  if (previous) {
+    const keys = store.reverseKeysByNode.get(previous.node)
+    keys?.delete(key)
+    if (keys?.size === 0) store.reverseKeysByNode.delete(previous.node)
+  }
   if (name) {
+    const keys = store.reverseKeysByNode.get(node) ?? new Set()
+    keys.add(key)
+    store.reverseKeysByNode.set(node, keys)
     store.reverseByEndpoint.set(key, {
       key,
       endpoint: event.endpoint,

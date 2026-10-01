@@ -6,7 +6,6 @@ import {
   referralEventTypes,
   resolverEventTypes,
   reverseEventTypes,
-  subnameEventTypes,
   treasuryEventTypes,
 } from '@duskdomains/sdk/event-catalog'
 import {
@@ -26,10 +25,15 @@ describe('local indexer event type router', () => {
     expect(lifecycleEventTypes.every(isLifecycleEvent)).toBe(true)
     expect(resolverEventTypes.every(isResolverEvent)).toBe(true)
     expect(reverseEventTypes.every(isReverseEvent)).toBe(true)
-    expect(subnameEventTypes.every(isSubnameEvent)).toBe(true)
+    expect(['subname_created', 'subname_pruned'].every(isSubnameEvent)).toBe(true)
     expect(treasuryEventTypes.every(isTreasuryEvent)).toBe(true)
     expect(referralEventTypes.every(isReferralEvent)).toBe(true)
     expect(feeConfigEventTypes.every(isFeeConfigEvent)).toBe(true)
+  })
+
+  it('does not route the removed revoke and delegate events from older SDK catalogs', () => {
+    expect(isSubnameEvent('subname_revoked')).toBe(false)
+    expect(isSubnameEvent('subname_delegated')).toBe(false)
   })
 
   it('does not route unknown event types into a projector family', () => {

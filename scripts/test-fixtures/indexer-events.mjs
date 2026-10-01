@@ -4,7 +4,6 @@ export const fixtureSubnameNode = `0x${'13'.repeat(32)}`
 export const fixtureCommitment = `0x${'aa'.repeat(32)}`
 export const fixtureOwner = `0x${'22'.repeat(32)}`
 export const fixtureManager = `0x${'33'.repeat(32)}`
-export const fixtureNextManager = `0x${'34'.repeat(32)}`
 export const fixtureResolver = `0x${'44'.repeat(32)}`
 export const fixtureReferrer = 'moonlight:0x5555555555555555555555555555555555555555555555555555555555555555'
 export const fixtureBuyer = 'moonlight:0x6666666666666666666666666666666666666666666666666666666666666666'
@@ -196,31 +195,21 @@ export function createIndexerParityEvents() {
       owner: fixtureOwner,
       manager: fixtureManager,
       resolver: fixtureResolver,
-      expiresAt: '2028-06-27T12:00:00.000Z',
+      expiresAt: '2026-06-27T12:04:40.000Z',
       parentExpiresAt: '2028-06-27T12:00:00.000Z',
-      expiresAtBlockHeight: 6_000_000,
+      expiresAtBlockHeight: 28,
       parentExpiresAtBlockHeight: 6_000_000,
-      expiryPolicy: 'inherits_parent',
-      revocationPolicy: 'parent_revocable',
+      expiryPolicy: 'fixed_before_parent',
       createdAt: '2026-06-27T12:04:00.000Z',
     }, { blockHeight: 27, txId: 'subname-tx' }),
     envelope({
-      type: 'subname_delegated',
+      type: 'subname_pruned',
+      prunedAt: '2026-06-27T12:05:00.000Z',
       parentNode: fixtureNode,
       node: fixtureSubnameNode,
       name: 'pay.aurora.dusk',
       actor: fixtureOwner,
-      manager: fixtureNextManager,
-      delegatedAt: '2026-06-27T12:04:30.000Z',
-    }, { blockHeight: 28, txId: 'subname-delegate-tx' }),
-    envelope({
-      type: 'subname_revoked',
-      parentNode: fixtureNode,
-      node: fixtureSubnameNode,
-      name: 'pay.aurora.dusk',
-      actor: fixtureOwner,
-      revokedAt: '2026-06-27T12:05:00.000Z',
-    }, { blockHeight: 29, txId: 'subname-revoke-tx' }),
+    }, { blockHeight: 29, txId: 'subname-prune-tx' }),
     envelope({
       type: 'treasury_initialized',
       operator: principal(0x77),

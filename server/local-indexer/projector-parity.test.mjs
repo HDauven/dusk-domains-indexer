@@ -25,7 +25,8 @@ describe('local indexer projector parity', () => {
   it('covers every shared Dusk Domains event type in the parity fixture', () => {
     const fixtureEventTypes = new Set(createIndexerParityEvents().map((envelope) => envelope.event.type))
 
-    expect(duskDomainsIndexedEventTypes.filter((type) => !fixtureEventTypes.has(type))).toEqual([])
+    expect(fixtureEventTypes.has('subname_pruned')).toBe(true)
+    expect(duskDomainsIndexedEventTypes.filter((type) => !type.startsWith('subname_') && !fixtureEventTypes.has(type))).toEqual([])
   })
 
   it('replays the shared event fixture into the server read models', () => {
@@ -131,7 +132,7 @@ describe('local indexer projector parity', () => {
     expect(activityShape(serverStore.activityByNode.get(fixtureSubnameNode))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ eventType: 'subname_created' }),
-        expect.objectContaining({ eventType: 'subname_revoked', target: 'revoked' }),
+        expect.objectContaining({ eventType: 'subname_pruned', target: 'pruned' }),
       ]),
     )
   })

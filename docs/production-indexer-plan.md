@@ -248,7 +248,7 @@ indexer export --out <snapshot.json>
 | Lifecycle | active, grace, expired, released, re-registered name. |
 | Resolver | set, overwrite, clear, bounded batch set/clear, malformed record, high-risk recent-change warning. |
 | Reverse | set, clear, mismatch, Phoenix rejected/ignored. |
-| Subnames | create, delegate, revoke, parent expiry/release clears active lists. |
+| Subnames | create, recreate after expiry, prune expired subtrees, inherited renewal, parent expiry/release clears active lists. |
 | Treasury | fee received, claim, over-claim not projected as success. |
 | Referrals | accrual, claim, unsupported deployment, supported empty referrer. |
 | Health | stale cursor, missing source, replay warnings, schema mismatch. |

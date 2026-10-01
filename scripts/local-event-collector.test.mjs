@@ -136,6 +136,8 @@ describe('local event collector config', () => {
     })
     await writeFile(join(fixture.publicDir, 'dusk-domains-marketplace.data-driver.wasm'), '')
     const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
+    expect(config.contracts.find(contract => contract.key === 'router').events).toContain('registrations_paused_changed')
+    if (config.contracts.some(contract => contract.key === 'marketplace')) expect(config.contracts.find(contract => contract.key === 'marketplace').events).toContain('trading_paused_changed')
     for (const key of ['router', 'treasury', 'marketplace']) {
       expect(config.contracts.find((contract) => contract.key === key).events).toEqual(expect.arrayContaining([
         `${key}_operator_proposed`, `${key}_operator_cancelled`, `${key}_operator_changed`,
@@ -146,6 +148,8 @@ describe('local event collector config', () => {
   it('subscribes to subname creation and pruning', async () => {
     const fixture = await createCollectorFixture()
     const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
+    expect(config.contracts.find(contract => contract.key === 'router').events).toContain('registrations_paused_changed')
+    if (config.contracts.some(contract => contract.key === 'marketplace')) expect(config.contracts.find(contract => contract.key === 'marketplace').events).toContain('trading_paused_changed')
     expect(config.contracts.find((contract) => contract.key === 'core').events).toEqual(expect.arrayContaining([
       'subname_created', 'subname_pruned',
     ]))

@@ -284,6 +284,19 @@ export function normalizeObservedEvent({
     }
   }
 
+  if (eventName === 'registrations_paused_changed' || eventName === 'trading_paused_changed') {
+    if (typeof event.paused !== 'boolean') throw new Error('Pause event requires a boolean paused value')
+    return {
+      event: {
+        type: eventName,
+        paused: event.paused,
+        operator: eventName === 'registrations_paused_changed'
+          ? principalFromEvent(event.operator) : bytesToHex(event.operator),
+        updatedAtBlockHeight: numberOrNull(event.updated_at),
+      },
+      meta,
+    }
+  }
   if (eventName === 'fee_config_updated') {
     return {
       event: {

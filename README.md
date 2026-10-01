@@ -135,3 +135,11 @@ The indexer consumes event definitions from `@duskdomains/sdk/event-catalog`. Ev
 ## License
 
 MIT
+
+The collector decodes `registrations_paused_changed` and `trading_paused_changed`
+from the router and marketplace. Replay maintains the independent flags, initially
+false, and `/health` exposes `pause: { registrationsPaused, tradingPaused }`.
+Marketplace config also exposes `tradingPaused`. Fee changes and operator handovers
+do not reset pauses. Consumers should use healthy, current status; contracts enforce
+the pause even before indexed status catches up. The event routing compatibility
+layer recognizes these topics with the existing pinned SDK.

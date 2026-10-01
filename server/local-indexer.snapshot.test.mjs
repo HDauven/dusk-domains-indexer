@@ -12,6 +12,15 @@ import {
 } from './local-indexer-test-helpers.mjs'
 
 describe('local indexer snapshot API', () => {
+  it('preserves pause flags when serving a snapshot', async () => {
+    const snapshotFile = await writeSnapshot({ ...createSnapshot({ owner: '0xowner' }), poolState: { registrationsPaused: true }, marketplaceConfig: { tradingPaused: true } })
+    const store = await loadSnapshotStore(snapshotFile)
+    const { baseUrl, close } = await startServer(store)
+    try {
+      expect((await expectJson(`${baseUrl}/health`)).pause).toEqual({ registrationsPaused: true, tradingPaused: true })
+    } finally { await close() }
+  })
+
   it('serves the local-live read routes from an E2E snapshot', async () => {
     const snapshotFile = await writeSnapshot(createSnapshot({ owner: '0xowner' }))
     const store = await loadSnapshotStore(snapshotFile)

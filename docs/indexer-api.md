@@ -1,7 +1,5 @@
 # Indexer API
 
-Status: MVP baseline
-
 The indexer/API layer is a read model over DuskDS events and contract reads. It must not become the canonical source of ownership, resolver records, or reverse records.
 
 ## Pagination and public HTTP policy
@@ -30,15 +28,11 @@ cursor are seen on a fresh traversal, and ownership, expiry, or order changes ma
 remove rows between requests. Cursors are versioned continuation tokens, not
 credentials or encrypted data.
 
-**Migration:** these endpoints previously returned bare arrays, so there were no
-existing top-level item field names to retain. They now return the named arrays
-below plus `nextCursor`; every item keeps its existing fields. Direct HTTP clients
-must unwrap the array. The updated SDK keeps its existing array-returning methods
-(first page), adds `*Page` methods exposing the named array and cursor, and accepts
-legacy array responses for a staged rollout. Deploy compatible clients before
-switching the server. `/names` without `owner` is always paginated.
+Collections return the named arrays below plus `nextCursor`. Direct HTTP clients
+unwrap the array. SDK array-returning methods read the first page; `*Page` methods
+also expose the cursor. The SDK accepts legacy bare arrays for compatibility.
 
-All 24 GET routes were reviewed:
+GET routes:
 
 | Route | Pagination and ordering |
 | --- | --- |
@@ -121,12 +115,7 @@ through one trusted proxy. With trust on, the indexer reads the last
 the header itself are ignored. Behind a chain of proxies, have the outermost one
 overwrite the header.
 
-The frontend fixture session (home, search, a name with 20 subnames, marketplace,
-and two continuation pages) makes 49 requests, including health and two wallet
-owner queries. The 200-request default provides roughly four such sessions per
-minute. Child resolution uses four workers and shares a successful health check
-for five seconds; explicit health polling remains fresh. Requests across tabs or
-users sharing a client key consume the same budget.
+Requests across tabs or users sharing a client key consume the same budget.
 
 ### Errors and CORS
 
@@ -162,7 +151,7 @@ production mode; `.env.example` enables the limiter and lists the frontend origi
 
 ## Health And Replay State
 
-Local and hosted indexers should expose operational read-model status through:
+Operational read-model status is available through:
 
 ```text
 GET /health
@@ -172,18 +161,18 @@ Response fields:
 
 | Field | Meaning |
 | --- | --- |
-| `ok` | Whether the indexer process can serve reads. |
+| `ok` | Whether replay, deployment and freshness checks consider reads healthy. |
 | `generatedAt` | Timestamp for the loaded snapshot or replayed event-log view. |
 | `source` | Human-readable source identifier. |
-| `mode` | `snapshot` or `event-log`. |
-| `currentBlockHeight` | Best known local chain height, derived from the live collector cursor when available. |
+| `mode` | `snapshot`, `event-log` or `sqlite`. |
+| `currentBlockHeight` | Best known local chain height, derived from the archive collector cursor when available. |
 | `routes` | Advertised local-live read routes served by this indexer instance. |
 | `names` | Number of active indexed names currently served by list/search/resolve routes. |
 | `apiVersion` | Public HTTP API version, currently `v1`. |
 | `eventSchemaVersion` | Dusk Domains event schema version interpreted by the indexer. |
 | `readModelSchemaVersion` | Read-model response schema version. |
 | `package` | Indexer package name/version, source commit when configured, and pinned SDK dependency. |
-| `deployment` | Best-effort deployment binding derived from indexed event metadata: chain ID, core, treasury and marketplace contract IDs, event counts, deployment start height and conflicts. |
+| `deployment` | Best-effort deployment binding derived from indexed event metadata: chain ID, router, pool registry, treasury and marketplace contract IDs, event counts, deployment start height and conflicts. |
 | `sqlite` | Present in SQLite mode; includes WAL journal mode and schema migration version. |
 | `degradedReason` | Reason code and message when `ok=false`; omitted when the indexer is healthy. |
 | `warnings` | Non-fatal replay warnings, such as malformed skipped event-log rows. |
@@ -192,22 +181,16 @@ Response fields:
 
 `checkpoint` is a local-live diagnostic, not canonical protocol state. It reports the number of deduped events replayed, raw event rows, duplicate count, warning count, and the last replayed event's contract, event name, transaction ID, and block height when those fields are known.
 
-`deployment.complete` is true only when the indexed journal proves non-conflicting `core` and `treasury` contract IDs. If deployment metadata is absent, SDK compatibility checks should treat the indexer as degraded for release-manifest-bound integrations.
+`deployment.complete` requires router, core and treasury IDs with no contract-ID conflicts. Multiple registry IDs are accepted when proved by router membership events. If deployment metadata is absent, SDK compatibility checks should treat the indexer as degraded for release-manifest-bound integrations.
 
 ## Forward Resolution
 
-MVP forward resolution is represented by `src/names/indexer.ts`.
+Forward resolution is implemented in `server/local-indexer/read-models/forward.mjs`.
 
 Request shape:
 
 ```text
 GET /resolve?name=aurora.dusk
-```
-
-Equivalent path-style routing may be used:
-
-```text
-GET /resolve/aurora.dusk
 ```
 
 Response fields:
@@ -233,7 +216,7 @@ Response fields:
 - The response TTL is the lower of the default indexer TTL and positive TTLs on returned records.
 - The default TTL is 300 seconds.
 - Missing or invalid names return `ttlSeconds: 0`.
-- HTTP adapters should set `Cache-Control: public, max-age=<ttlSeconds>`.
+- Successful responses set `Cache-Control: public, max-age=<ttlSeconds>`.
 - Wallets may cache successful reads until `cache.staleAt`, but value-bearing flows should refresh before signing.
 - Recent-change warnings are separate indexer state and should not be inferred only from cache TTL.
 
@@ -282,7 +265,7 @@ These routes are read-model helpers. Contract resolver state remains canonical, 
 
 ## Error Rules
 
-Forward resolution should return structured errors rather than ambiguous failures:
+Forward resolution returns structured errors rather than ambiguous failures:
 
 | Error | Meaning |
 | --- | --- |
@@ -310,12 +293,12 @@ Response fields:
 | `operator` | Typed principal allowed to claim protocol fees, encoded as `{ kind, bytes }` where `kind` is `Moonlight`, `Phoenix`, or `Contract`. |
 | `operatorRecipient` | Moonlight recipient configured for withdrawals. |
 | `operatorAuthority` | Legacy compatibility key derived from `operator` when reading old snapshots or event logs. New consumers should prefer `operator`. |
-| `allowedFeeSources` | Controller/registrar contract IDs accepted as protocol-fee sources. |
+| `allowedFeeSources` | Init-time fee-source list; pool registries are additionally admitted through the router. |
 | `totalReceivedLux` | Total protocol fees observed by the read model. |
 | `availableLux` | Fees currently available to claim according to indexed treasury events. |
 | `registrationReceivedLux` | Cumulative registration fees observed by the read model. |
 | `renewalReceivedLux` | Cumulative renewal fees observed by the read model. |
-| `otherReceivedLux` | Cumulative future/other fee receipts observed by the read model. |
+| `otherReceivedLux` | Cumulative other fee receipts observed by the read model. |
 | `lastFeeSourceContract` | Most recent fee-source contract ID, when the latest accounting event was a fee receipt. |
 | `lastFeeReason` | Most recent fee reason: `registration`, `renewal`, or `other`. |
 | `lastFeeNode` | Name node attached to the latest fee receipt when relevant. |
@@ -326,7 +309,7 @@ This is a read model over treasury events. Contract state remains canonical.
 
 ## Referral State
 
-Deployments that support referral rewards should expose referrer accounting through:
+Referrer accounting is available through:
 
 ```text
 GET /referrals?referrer=0x...
@@ -377,8 +360,7 @@ settlement and refund authorization.
 
 The current JSON read model exposes Lux amounts as exact JavaScript-safe
 integers. Event ingestion rejects values above `Number.MAX_SAFE_INTEGER`
-(about 9,007,199 DUSK) instead of rounding a contract `u64`. Supporting larger
-orders requires a versioned string-amount API and bigint-aware consumers.
+(about 9,007,199 DUSK) instead of rounding a contract `u64`. Larger amounts are not represented by this API.
 
 Direct node and endpoint routes fail fast on malformed route parameters before loading the backing snapshot or event-log store:
 
@@ -418,7 +400,7 @@ Response fields:
 | `transactionBlocked` | Whether registration should be blocked before signing. |
 | `reserved` | Reserved-name policy when applicable. |
 
-Availability is derived from lifecycle state. Active names and expired names still inside their grace window return `registered`. Released names and expired names whose grace period has ended return `available`, while their historical lifecycle and activity rows remain readable through `/name` and `/activity`. Available historical names must not remain in active `/resolve`, `/reverse`, or owner-filtered `/names` results.
+Availability is derived from lifecycle state. Active names and expired names still inside their grace window return `registered`. Released names and expired names whose grace period has ended return `available`, unless the label is reserved (then it returns `reserved`), while historical lifecycle and activity rows remain readable through `/name` and `/activity`. Available historical names must not remain in active `/resolve`, `/reverse`, or owner-filtered `/names` results.
 
 ## Indexed Name State
 
@@ -475,7 +457,7 @@ Request shape:
 GET /activity?node=0x...
 ```
 
-Response is an array of `ActivityEntry` objects with `id`, `eventType`, `node`, `name`, `actor`, `timestamp`, `blockHeight`, and optional `txId` / `target`.
+Response is `{ activity: ActivityEntry[], nextCursor }`. Each entry has `id`, `eventType`, `node`, `name`, `actor`, `timestamp`, `blockHeight`, and optional `txId` / `target`.
 
 ## Registration Commitments
 
@@ -491,7 +473,7 @@ Response is an `IndexedRegistrationCommitment` row or `null`. Committed rows inc
 
 Commitments are scoped per controller, as the core contract keys them by `(controller, commitment)`. With `controller`, the route returns that controller's row for the hash or `null`. Without it, the route returns the most recently updated row for the hash, whichever controller wrote it; clients reading their own commitment should pass `controller`.
 
-Clients should use this route only as a reactive UI/read-model aid. The controller contract remains the source of truth for whether reveal is actually allowed.
+Clients should use this route only as a reactive UI/read-model aid. The home registry remains the source of truth for whether reveal is actually allowed.
 
 ## Subnames
 
@@ -504,7 +486,7 @@ GET /subnames?parentNode=0x...
 GET /subname?node=0x...
 ```
 
-`/subnames` returns an array of `IndexedSubname` rows. `/subname` returns one row or `null`.
+`/subnames` returns `{ subnames: IndexedSubname[], nextCursor }`. `/subname` returns one row or `null`.
 
 Each `IndexedSubname` includes parent/name identifiers, owner, manager, resolver, expiry and grace end, expiry policy, status, creation timestamp, and transaction/block metadata. Subname records remain resolver records on the subname node and must not be merged into the parent records.
 
@@ -514,7 +496,7 @@ A subname's `graceEndsAt` is the grace end its parent had when the subname was c
 
 ## Typed Reverse Lookup
 
-Reverse lookup is typed by endpoint kind. MVP clients use it for Moonlight primary-name verification and may later use it for contract labels or external address families. Phoenix endpoints are recognized endpoint metadata, but they must not be treated as default public identity targets in v1.
+Reverse lookup is typed by endpoint kind. MVP clients use it for Moonlight primary-name verification; contract labels and external address families are not public primary names. Phoenix endpoints are recognized endpoint metadata, but they must not be treated as default public identity targets in v1.
 
 Request shape:
 
@@ -545,3 +527,20 @@ null
 ```
 
 Clients must forward-resolve the returned name for the same endpoint type and verify that it points back to the queried endpoint before displaying it as a primary name.
+
+## Reserved issuance and operator pauses
+
+Name rows expose `issuedAsReserved` and `reservedIssuance` (operator, registry,
+issuance timestamp/block height). Normal registration/ownership events precede
+the router issuance event. Provenance survives renewal/transfer and resets on
+re-registration. Held reserved names, including grace, appear registered;
+unissued/released protected labels remain reserved.
+
+`/health.pause` contains independent `registrationsPaused` and `tradingPaused`
+flags. `/marketplace/config` also exposes `tradingPaused`. Defaults are false;
+fee changes and operator handovers preserve them. Use healthy status for display;
+contracts enforce admission gates even before indexed status catches up.
+
+Treasury and marketplace config expose `pendingOperator`; treasury also exposes
+`pendingOperatorRecipient`. Active operator/recipient changes only on acceptance.
+See the [shared event semantics](https://github.com/HDauven/dusk-domains-sdk/blob/main/docs/indexer-events.md).

@@ -80,6 +80,8 @@ export async function loadSnapshotStore(snapshotFile) {
     const lifecycle = {
       node,
       canonicalName,
+      issuedAsReserved: name.issuedAsReserved ?? false,
+      reservedIssuance: name.reservedIssuance ?? null,
       owner: name.owner ?? null,
       manager: name.manager ?? null,
       resolverId: name.resolverId ?? null,

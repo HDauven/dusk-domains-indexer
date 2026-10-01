@@ -20,7 +20,7 @@ export function activityEntry(input) {
 }
 
 export function lifecycleActivityType(type) {
-  if (type === 'name_registered') return 'registration'
+  if (type === 'name_registered' || type === 'reserved_name_issued') return 'registration'
   if (type === 'name_renewed') return 'renewal'
   if (type === 'name_expired') return 'expiry'
   if (type === 'name_released') return 'release'
@@ -30,7 +30,7 @@ export function lifecycleActivityType(type) {
 }
 
 export function lifecycleActivityTarget(event) {
-  if (event.type === 'name_registered') return event.owner
+  if (event.type === 'name_registered' || event.type === 'reserved_name_issued') return event.owner
   if (event.type === 'name_renewed') return event.expiresAt
   if (event.type === 'name_expired') return event.observedAt
   if (event.type === 'name_released') return event.previousOwner

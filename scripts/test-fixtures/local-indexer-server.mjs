@@ -1,3 +1,4 @@
+import { LIST_FIELDS } from '../../server/local-indexer/pagination.mjs'
 import { createServer } from 'node:http'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -483,7 +484,13 @@ export async function startIndexer(store, context = {}) {
 export async function expectJson(url, options = {}) {
   const response = await fetch(url, { method: options.method ?? 'GET' })
   expect(response.status).toBe(options.expectedStatus ?? 200)
-  return response.json()
+  const body = await response.json()
+  const field = LIST_FIELDS[new URL(url).pathname]
+  if (field && response.ok) {
+    expect(body.nextCursor).toBe(null)
+    return body[field]
+  }
+  return body
 }
 
 export async function closeServer(server) {

@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import { isMain } from './is-main.mjs'
 import { parseEnvFile } from './env-file.mjs'
 import { createSanitizedEventLogFixture } from './event-log-fixtures.mjs'
-import { fetchJson, normalizeHttpBaseUrl, urlJoin } from './http-json.mjs'
+import { fetchJson as fetchJsonRaw, normalizeHttpBaseUrl, urlJoin } from './http-json.mjs'
 import {
   checkRouteManifest,
   indexerHealthContract,
@@ -183,7 +183,7 @@ async function smokeLocalIndexerRoutes({ envFile, baseUrl, name, fetcher, source
     pushCheck(checks, 'subnames', false, 'Forward resolution did not return a node.')
   }
 
-  const namesProbe = await fetchJson(fetcher, urlJoin(baseUrl, '/names'))
+  const namesProbe = await findNamePage(fetcher, urlJoin(baseUrl, '/names'), name)
   const names = Array.isArray(namesProbe.body) ? namesProbe.body : []
   const nameSummary = names.find((row) => row.canonicalName === name)
   const nameSummaryOk = namesProbe.ok && isNameSummaryFor(nameSummary, name, moonlightRecord, node)
@@ -193,7 +193,7 @@ async function smokeLocalIndexerRoutes({ envFile, baseUrl, name, fetcher, source
 
   const owner = nameSummary?.owner ?? nameSummary?.manager ?? null
   if (owner) {
-    const ownedNamesProbe = await fetchJson(fetcher, urlJoin(baseUrl, `/names?owner=${encodeURIComponent(owner)}`))
+    const ownedNamesProbe = await findNamePage(fetcher, urlJoin(baseUrl, `/names?owner=${encodeURIComponent(owner)}`), name)
     const ownedNames = Array.isArray(ownedNamesProbe.body) ? ownedNamesProbe.body : []
     const ownedNameSummary = ownedNames.find((row) => row.canonicalName === name)
     pushCheck(checks, 'names_owner_filter', ownedNamesProbe.ok && isNameSummaryFor(ownedNameSummary, name, moonlightRecord, node), ownedNamesProbe.ok
@@ -407,4 +407,30 @@ function requiredValue(argv, index, label) {
   const value = argv[index]
   if (!value || value.startsWith('--')) throw new Error(`${label} requires a value`)
   return value
+}
+
+// Smoke existing deployments too, while bounding traversal on a paginated API.
+async function fetchJson(fetcher, url) {
+  const field = { '/names': 'names', '/activity': 'activity', '/subnames': 'subnames' }[new URL(url).pathname]
+  if (!field) return fetchJsonRaw(fetcher, url)
+  const result = await fetchJsonRaw(fetcher, url)
+  if (!result.ok || Array.isArray(result.body)) return result
+  const body = result.body
+  if (!Array.isArray(body?.[field])) return result
+  return { ...result, body: body[field], nextCursor: body.nextCursor }
+}
+
+async function findNamePage(fetcher, url, name) {
+  const seen = new Set()
+  let nextUrl = url
+  for (let page = 0; page < 50; page += 1) {
+    const result = await fetchJson(fetcher, nextUrl)
+    if (!result.ok || !Array.isArray(result.body) || result.body.some((row) => row.canonicalName === name) || !result.nextCursor) return result
+    if (seen.has(result.nextCursor)) break
+    seen.add(result.nextCursor)
+    const next = new URL(url)
+    next.searchParams.set('cursor', result.nextCursor)
+    nextUrl = next.toString()
+  }
+  return { ok: false, body: null, error: 'Name pagination did not finish within 50 pages.' }
 }

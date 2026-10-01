@@ -14,6 +14,25 @@ afterEach(async () => {
 })
 
 describe('local indexer smoke check', () => {
+  it('finds the smoke name after a paginated first response', async () => {
+    const seen = []
+    const legacy = createMockFetch({ seen })
+    const result = await smokeLocalIndexer({
+      baseUrl: 'http://127.0.0.1:8787', name: 'aurora',
+      fetch: async (url, init) => {
+        const parsed = new URL(url)
+        if (parsed.pathname === '/names' && !parsed.searchParams.has('owner') && !parsed.searchParams.has('cursor')) {
+          return Response.json({ names: [], nextCursor: 'next-name-page' })
+        }
+        const response = await legacy(url, init)
+        if (parsed.pathname === '/names') return Response.json({ names: await response.json(), nextCursor: null })
+        return response
+      },
+    })
+    expect(result.ok).toBe(true)
+    expect(seen.some((url) => new URL(url).searchParams.get('cursor') === 'next-name-page')).toBe(true)
+  })
+
   it('checks every local-live indexer route for the configured name', async () => {
     const envFile = await fixtures.writeEnvFile('VITE_DUSK_DOMAINS_INDEXER_URL=http://127.0.0.1:8787\n')
     const seen = []

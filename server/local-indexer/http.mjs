@@ -73,11 +73,11 @@ export function routeParameters(pathname, url) {
 
 function requiredAuthorityParameter(url, parameter) {
   const value = url.searchParams.get(parameter)?.trim()
-  if (!value) return { error: { error: 'missing_authority', parameter } }
+  if (!value) return { error: { error: 'missing_authority', parameter, message: `${parameter} is required.` } }
   try {
     return { [parameter]: normalizeAuthority(value) }
   } catch {
-    return { error: { error: 'invalid_authority', parameter } }
+    return { error: { error: 'invalid_authority', parameter, message: `${parameter} must be a 32-byte hex authority.` } }
   }
 }
 
@@ -93,24 +93,13 @@ function normalizeAuthority(value) {
   return authority
 }
 
-export function sendJson(response, status, body, headers = {}, options = {}) {
+export function sendJson(response, status, body, headers = {}) {
+  const payload = status === 204 ? '' : JSON.stringify(body)
   response.writeHead(status, {
-    'access-control-allow-origin': corsOriginFromOptions(options),
-    'access-control-allow-methods': 'GET, OPTIONS',
-    'access-control-allow-headers': 'content-type, accept',
     'content-type': 'application/json; charset=utf-8',
     ...headers,
   })
-  if (status === 204) {
-    response.end()
-    return
-  }
-  response.end(JSON.stringify(body))
-}
-
-export function corsOriginFromOptions(options = {}) {
-  const origin = String(options.corsOrigin ?? '').trim()
-  return origin || '*'
+  response.end(payload)
 }
 
 export function normalizeName(value) {

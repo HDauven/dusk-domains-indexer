@@ -8,15 +8,16 @@ import {
 } from './stores.mjs'
 
 export async function serveLocalIndexer(args) {
+  if (args.production && !String(args.corsOrigin ?? '').split(',').some((origin) => origin.trim() && origin.trim() !== '*')) {
+    console.warn('Production CORS allowlist is empty; cross-origin browser access is disabled.')
+  }
   const source = sourceFromArgs(args)
   const storeProvider = !args.watch
     ? await createStaticLocalIndexerStore(source)
     : source.mode === 'sqlite' && source.eventLogFile
       ? await createIncrementalSqliteStore(source)
       : await createReloadingLocalIndexerStore(source)
-  const server = createServer(createLocalIndexerHandler(storeProvider, {
-    corsOrigin: args.corsOrigin,
-  }))
+  const server = createServer(createLocalIndexerHandler(storeProvider, args))
 
   server.listen(args.port, args.host, () => {
     console.log(`Dusk Domains local indexer listening on http://${args.host}:${args.port}`)
@@ -81,7 +82,7 @@ Options:
   --strict-health    Fail /health when cursor/checkpoint/finality state is missing, stale, or unsafe.
   --host <host>      Host to bind. Default: 127.0.0.1.
   --port <port>      Port to bind. Default: 8787.
-  --cors-origin <origin> CORS Access-Control-Allow-Origin value. Default: DUSK_DOMAINS_INDEXER_CORS_ORIGIN or *.
+  --cors-origin <origin> Comma-separated CORS origins. Default: DUSK_DOMAINS_INDEXER_CORS_ORIGINS; * in dev, none in production.
   --watch            Reload the snapshot/event log on request when the file changes.
   --help             Show this message.
 `

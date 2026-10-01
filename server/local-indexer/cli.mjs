@@ -1,3 +1,5 @@
+import { securityOptionsFromEnv } from './security.mjs'
+
 export function parseArgs(argv, env = process.env) {
   const parsed = {
     help: false,
@@ -10,7 +12,7 @@ export function parseArgs(argv, env = process.env) {
     maxLagBlocks: 12,
     host: '127.0.0.1',
     port: 8787,
-    corsOrigin: env.DUSK_DOMAINS_INDEXER_CORS_ORIGIN || '*',
+    ...securityOptionsFromEnv(env),
     watch: false,
   }
 

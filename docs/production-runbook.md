@@ -16,6 +16,29 @@ The indexer can be rebuilt from the event journal and the archive-node snapshot 
 
 `/health` must be treated as the SDK/indexer handshake. It exposes the indexer package version, pinned SDK dependency, API version, event schema version, read-model schema version, SQLite schema version, and the deployment binding derived from indexed event metadata.
 
+## Public HTTP configuration
+
+Set `NODE_ENV=production` (the shipped systemd unit and Docker image do this).
+Configure `DUSK_DOMAINS_INDEXER_CORS_ORIGINS=https://dusk.domains`; multiple exact
+origins are comma-separated. Empty production allowlists disable cross-origin
+browser access and emit a startup warning. The older singular
+`DUSK_DOMAINS_INDEXER_CORS_ORIGIN` is still accepted if the plural variable is absent.
+
+The app limiter defaults on in production. `DUSK_DOMAINS_INDEXER_RATE_LIMIT`,
+`DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX` (200), and
+`DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS` (60000) configure it. Count monitoring
+and OPTIONS traffic in the budget. Clients should wait for `Retry-After` on 429.
+Place an additional limit at the reverse proxy, particularly with multiple API
+processes. Set `DUSK_DOMAINS_INDEXER_TRUST_PROXY=true` only with a private upstream
+and a single proxy that appends the client address to `X-Forwarded-For`; the
+indexer uses the last entry. Otherwise keep it false.
+
+Update HTTP consumers for the named pagination envelopes before deploying the
+server. See [the complete API policy and 24-route inventory](indexer-api.md).
+Server failures expose `internal_error` and a request ID; correlate that ID in the
+service journal for details. Public health diagnostics redact internal messages
+and paths, and page warnings. The local health/replay helpers retain full details.
+
 ## Server Layout
 
 Recommended paths:

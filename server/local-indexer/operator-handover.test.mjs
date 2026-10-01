@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeObservedEvent } from '../../scripts/indexer-operator/event-decoder.mjs'
-import { bytesToBase58 } from '../../scripts/indexer-operator/event-value-codecs.mjs'
+import { normalizeObservedEvent, bytesToBase58, normalizeTreasuryState } from '@duskdomains/sdk/projection'
 import { replayEventLog } from './event-log-store.mjs'
-import { normalizeTreasuryState } from './economics/treasury.mjs'
 
 const bytes = (byte, length = 32) => Array(length).fill(byte)
 const principal = (byte) => ({ kind: 'Contract', bytes: bytes(byte) })

@@ -6,9 +6,9 @@ Dusk Domains indexers should treat DuskDS contract events as the source for sear
 
 Implementation references:
 
-- `scripts/indexer-operator/event-decoder.mjs` normalizes decoded W3sper/data-driver contract event payloads into stable JSON event envelopes.
+- `normalizeObservedEvent` from `@duskdomains/sdk/projection` normalizes decoded W3sper/data-driver contract event payloads into stable JSON event envelopes.
 - `@duskdomains/sdk/event-catalog` is the runtime-safe event type catalog shared by the SDK and Node indexer router.
-- `@duskdomains/sdk` defines shared SDK/operator projector semantics for normalized envelopes.
+- `@duskdomains/sdk/projection` defines shared SDK/operator projector semantics for normalized envelopes.
 - `server/local-indexer/*` owns persistence, HTTP routes, health, SQLite/WAL import, and checkpointing around the shared event semantics.
 
 ## Shared Rules
@@ -55,7 +55,7 @@ Indexer operators should project normalized JSON envelopes, not raw data-driver 
 
 `event` is the stable schema consumed by SDK and server projectors. `meta` is transport/provenance data and should preserve the strongest chain envelope available from the node. The current live collector uses W3sper decoded event payloads plus best available block-height observations; production archive replay should add raw tx/block/event-index metadata when available.
 
-The public SDK exports `duskDomainsIndexedEventTypes`, `isDuskDomainsIndexedEventType`, `normalizeDuskDomainsIndexedEventEnvelope`, `createDuskDomainsProjector`, and `applyDuskDomainsIndexedEvent` from `indexerKit`. Third-party indexers may use those helpers as the semantic boundary after decoding data-driver/RKYV events to JSON. The Node indexer uses the same event type catalog for router dispatch, so adding a new event family should update one catalog and then the SDK/server parity tests.
+The public SDK exports `duskDomainsIndexedEventTypes`, `isDuskDomainsIndexedEventType`, `normalizeDuskDomainsIndexedEventEnvelope`, `createDuskDomainsProjector`, and `applyDuskDomainsIndexedEvent` from `indexerKit`. Third-party indexers may use those helpers as the semantic boundary after decoding data-driver/RKYV events to JSON. The Node indexer imports projection and decoding from `@duskdomains/sdk/projection` and contract topic lists from `@duskdomains/sdk/event-catalog`.
 
 ## Registrar Events
 
@@ -172,7 +172,5 @@ Treasury's payout recipient changes only on completion, together with the operat
 Router/treasury operators are typed principals; marketplace operators remain 32-byte
 runtime authorities encoded as hex.
 
-The SDK event catalog includes all handover events. Until the indexer's SDK archive pin
-is advanced to that release, `projectors/event-types.mjs` also recognizes these exact
-names alongside the pinned catalog. This keeps normal installs functional without a
-local SDK override or an unpublished archive URL.
+The SDK event catalog includes all handover events. The shared SDK projector dispatches
+them using that catalog, and the collector obtains their contract topics from it.

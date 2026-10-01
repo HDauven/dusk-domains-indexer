@@ -99,7 +99,7 @@ than rounded into a different price or balance.
 ## Source Layout
 
 ```text
-server/local-indexer/   API server, read models, projectors, persistence and health checks
+server/local-indexer/   API server, read models, persistence and health checks
 scripts/                smoke tests, backup checks, monitoring and operator utilities
 deploy/systemd/         collector and API service units
 docs/                   API, events, storage and production runbooks
@@ -130,7 +130,7 @@ For production setup and recovery, see:
 
 ## Event Catalog
 
-The indexer consumes event definitions from `@duskdomains/sdk/event-catalog`. Event-family changes should land in the SDK first, then be consumed here with an exact dependency update.
+The indexer imports event projection, decoded-event normalization and reserved-name policy from `@duskdomains/sdk/projection`. The collector consumes contract topic lists from `@duskdomains/sdk/event-catalog`. Event-family changes should land in the SDK first, then be consumed here with an exact dependency update.
 
 ## License
 
@@ -141,5 +141,4 @@ from the router and marketplace. Replay maintains the independent flags, initial
 false, and `/health` exposes `pause: { registrationsPaused, tradingPaused }`.
 Marketplace config also exposes `tradingPaused`. Fee changes and operator handovers
 do not reset pauses. Consumers should use healthy, current status; contracts enforce
-the pause even before indexed status catches up. The event routing compatibility
-layer recognizes these topics with the existing pinned SDK.
+the pause even before indexed status catches up. The SDK event catalog classifies both pause topics.

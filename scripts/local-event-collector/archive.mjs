@@ -3,7 +3,8 @@ import { mkdir, open, readFile, rename } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { dataDrivers } from '@dusk/w3sper'
-import { normalizeObservedEvent } from '../indexer-operator/event-decoder.mjs'
+import { duskDomainsRetiredContractEventTopics } from '@duskdomains/sdk/event-catalog'
+import { normalizeObservedEvent } from '@duskdomains/sdk/projection'
 import { parseEventLog } from '../../server/local-indexer/event-log.mjs'
 import { summarizeEventLogText } from './cursor-summary.mjs'
 
@@ -121,7 +122,8 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
               if (!contract) continue
               assert.equal(typeof raw.reverted, 'boolean', 'Archive event lacks rollback metadata')
               if (raw.reverted) continue
-              assert(contract.events.includes(raw.topic), `Unsupported ${contract.key} event: ${raw.topic}`)
+              if (duskDomainsRetiredContractEventTopics[contract.key]?.includes(raw.topic)) continue
+              assert(contract.events.includes(raw.topic), `Unsupported ${contract.key} event \`${raw.topic}\` at block ${header.height}: upgrade the indexer`)
               hexHash(raw.origin)
               assert(typeof raw.data === 'string' && /^(?:[0-9a-f]{2})*$/i.test(raw.data), 'Invalid archive event bytes')
               const event = contract.driver.decodeEvent(raw.topic, Buffer.from(raw.data, 'hex'))

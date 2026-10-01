@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   duskDomainsIndexedEventTypes,
+  controllerEventTypes, lifecycleEventTypes, resolverEventTypes, reverseEventTypes, subnameEventTypes,
+  treasuryEventTypes, referralEventTypes, feeConfigEventTypes, marketplaceEventTypes, poolEventTypes,
 } from '@duskdomains/sdk/event-catalog'
 import { replayEventLog } from './event-log-store.mjs'
-import { commitmentKey } from './projectors/controller.mjs'
+import { commitmentKey, createLifecycleEventProjector, createProjectionState, applyProjectionEvent, emptyMarketplaceConfig, marketplaceOrderIsEscrowed } from '@duskdomains/sdk/projection'
 import {
   createIndexerParityEvents,
   fixtureCommitment,
@@ -21,12 +23,56 @@ import {
   fixtureSubnameNode,
 } from '../../scripts/test-fixtures/indexer-events.mjs'
 
-describe('local indexer projector parity', () => {
+describe('shared SDK projection and server replay', () => {
   it('covers every shared Dusk Domains event type in the parity fixture', () => {
     const fixtureEventTypes = new Set(createIndexerParityEvents().map((envelope) => envelope.event.type))
 
     expect(fixtureEventTypes.has('subname_pruned')).toBe(true)
-    expect(duskDomainsIndexedEventTypes.filter((type) => !type.startsWith('subname_') && !fixtureEventTypes.has(type))).toEqual([])
+    expect(duskDomainsIndexedEventTypes.filter((type) => !fixtureEventTypes.has(type))).toEqual([])
+  })
+
+  it.each([undefined, '2026-06-27T12:00:00.000Z'])('matches the SDK projector after every event with observation time %s', (observedAt) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-27T12:00:00.000Z'))
+    try {
+      const sdk = createLifecycleEventProjector()
+      const state = createProjectionState()
+      const events = createIndexerParityEvents().map(entry => ({ ...entry, meta: { ...entry.meta, ...(observedAt ? { observedAt } : {}) } }))
+      const warnings = []
+      const methods = {
+        lifecycle: 'apply', controller: 'applyController', resolver: 'applyResolver', reverse: 'applyReverse',
+        subname: 'applySubname', treasury: 'applyTreasury', referral: 'applyReferral', feeConfig: 'applyFeeConfig',
+        marketplace: 'applyMarketplace', pool: 'applyPool',
+      }
+      for (const [index, entry] of events.entries()) {
+        const meta = { ...entry.meta, eventId: `replay:${index}` }
+        const method = Object.entries(eventGroups).find(([, types]) => types.includes(entry.event.type))?.[0]
+        expect(method, entry.event.type).toBeDefined()
+        sdk[methods[method]](entry.event, meta)
+        applyProjectionEvent(state, entry.event, meta)
+        const server = replayEventLog(events.slice(0, index + 1), warnings, '2026-06-27T12:10:00.000Z')
+        expect(warnings).toEqual([])
+        for (const [node, name] of state.namesByNode) expect(sdk.getNameByNode(node)).toEqual(name)
+        for (const [node, activity] of server.activityByNode) expect(sdk.getActivity(node)).toEqual(activity)
+        for (const [node, records] of server.recordsByNode) expect(sdk.getResolverRecords(node)).toEqual(records)
+        for (const reverse of server.reverseByEndpoint.values()) expect(sdk.getPrimaryNameByEndpoint(reverse.endpoint)).toEqual(reverse)
+        for (const subname of server.subnamesByNode.values()) expect(sdk.getSubnameByNode(subname.node)).toEqual(subname)
+        expect(sdk.getTreasuryState()).toEqual(server.treasuryState)
+        expect(sdk.getFeeConfig()).toEqual(server.feeConfig)
+        expect(sdk.getPoolState()).toEqual(server.poolState)
+        expect(sdk.getMarketplaceConfig()).toEqual(server.marketplaceConfig ?? emptyMarketplaceConfig())
+        const escrow = value => ({ ...value, escrowed: marketplaceOrderIsEscrowed(state.namesByNode.get(value.node), value.marketplaceContractId) })
+        expect(sdk.getMarketplaceFixedSales()).toEqual([...server.marketplaceFixedSalesByNode.values()].map(escrow))
+        expect(sdk.getMarketplaceAuctions()).toEqual([...server.marketplaceAuctionsByNode.values()].map(escrow))
+        expect(sdk.getMarketplaceOffers()).toEqual([...server.marketplaceOffersByKey.values()])
+        for (const commitment of server.commitmentsByKey.values()) expect(sdk.getCommitment(commitment.commitment, commitment.controller)).toEqual(commitment)
+        for (const referral of server.referralsByReferrer.values()) expect(sdk.getReferralState(referral.referrer)).toEqual(referral)
+        for (const offer of server.marketplaceOffersByKey.values()) expect(sdk.getMarketplaceOffer(offer.node, offer.buyerAuthority)).toEqual(offer)
+        for (const refund of server.marketplaceRefundsByAuthority.values()) expect(sdk.getMarketplaceRefund(refund.authority)).toEqual(refund)
+      }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('replays the shared event fixture into the server read models', () => {
@@ -73,12 +119,7 @@ describe('local indexer projector parity', () => {
       'set',
     ])
 
-    const endpoint = {
-      type: 'moonlight_address',
-      value: fixtureMoonlightAddress,
-    }
     expect(serverStore.reverseByEndpoint.get(`moonlight_address:${fixtureMoonlightAddress}`) ?? null).toBeNull()
-    expect(endpoint.type).toBe('moonlight_address')
 
     expect(serverStore.subnamesByNode.get(fixtureSubnameNode) ?? null).toBeNull()
     expect(serverStore.subnamesByParent.get(fixtureNode) ?? []).toEqual([])
@@ -146,4 +187,10 @@ function activityShape(entries = []) {
     txId: entry.txId ?? null,
     blockHeight: entry.blockHeight ?? null,
   }))
+}
+
+const eventGroups = {
+  controller: controllerEventTypes, lifecycle: lifecycleEventTypes, resolver: resolverEventTypes,
+  reverse: reverseEventTypes, subname: subnameEventTypes, treasury: treasuryEventTypes,
+  referral: referralEventTypes, feeConfig: feeConfigEventTypes, marketplace: marketplaceEventTypes, pool: poolEventTypes,
 }

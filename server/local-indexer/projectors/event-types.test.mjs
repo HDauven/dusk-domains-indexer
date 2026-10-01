@@ -17,7 +17,7 @@ import {
   isReverseEvent,
   isSubnameEvent,
   isTreasuryEvent,
-} from './event-types.mjs'
+} from '@duskdomains/sdk/projection'
 
 describe('local indexer event type router', () => {
   it('uses the shared Dusk Domains event catalog for every event family', () => {

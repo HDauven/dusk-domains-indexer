@@ -5,7 +5,7 @@ import {
   reduceTreasuryEvent,
   reduceTreasuryReferralClaim,
   reduceTreasuryReferralReserve,
-} from './treasury.mjs'
+} from '@duskdomains/sdk/projection'
 
 describe('treasury economics reducer', () => {
   it('moves accrued referral rewards out of operator-claimable funds', () => {

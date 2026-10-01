@@ -1,3 +1,4 @@
+import { getReservedNamePolicy } from '@duskdomains/sdk/projection'
 import { blake2b } from '@noble/hashes/blake2.js'
 import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js'
 import {
@@ -18,12 +19,7 @@ export function annualPrice(label, feeConfig = DEFAULT_FEE_CONFIG) {
 }
 
 export function reservedCategory(label) {
-  if (label === 'dusk' || label === 'rusk') return 'protocol'
-  if (label === 'support') return 'support'
-  if (label === 'security') return 'security'
-  if (label === 'exchange') return 'exchange'
-  if (label === 'foundation' || label === 'npex' || label === 'trade') return 'partner'
-  return 'ecosystem'
+  return getReservedNamePolicy(label)?.category ?? 'ecosystem'
 }
 
 export function endpointKey(endpoint) {

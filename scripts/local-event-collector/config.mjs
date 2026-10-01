@@ -1,3 +1,4 @@
+import { duskDomainsContractEventTopics } from '@duskdomains/sdk/event-catalog'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -15,31 +16,19 @@ const coreContracts = [
     key: 'router',
     envKey: 'VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID',
     driverFile: 'dusk-domains-router.data-driver.wasm',
-    events: ['registrations_paused_changed', 'router_initialized', 'reserved_name_issued', 'pool_member_added', 'router_operator_changed', 'router_operator_proposed', 'router_operator_cancelled', 'fee_config_updated'],
+    events: duskDomainsContractEventTopics.router,
   },
   {
     key: 'core',
     envKey: 'VITE_DUSK_DOMAINS_CORE_CONTRACT_ID',
     driverFile: 'dusk-domains-core.data-driver.wasm',
-    events: [
-      'registration_committed',
-      'registration_revealed',
-      'name_registered',
-      'name_renewed',
-      'name_owner_changed',
-      'record_changed',
-      'record_cleared',
-      'primary_name_changed',
-      'subname_created',
-      'subname_pruned',
-      'records_moved',
-    ],
+    events: duskDomainsContractEventTopics.core,
   },
   {
     key: 'treasury',
     envKey: 'VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID',
     driverFile: 'dusk-domains-treasury.data-driver.wasm',
-    events: ['treasury_initialized', 'treasury_operator_changed', 'treasury_operator_proposed', 'treasury_operator_cancelled', 'treasury_fee_received', 'treasury_claimed', 'referral_reward_accrued', 'referral_reward_claimed'],
+    events: duskDomainsContractEventTopics.treasury,
   },
 ]
 
@@ -48,25 +37,7 @@ const optionalContracts = [
     key: 'marketplace',
     envKey: 'VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID',
     driverFile: 'dusk-domains-marketplace.data-driver.wasm',
-    events: [
-      'marketplace_initialized',
-      'marketplace_config_updated',
-      'trading_paused_changed',
-      'marketplace_operator_proposed',
-      'marketplace_operator_cancelled',
-      'marketplace_operator_changed',
-      'domain_fixed_sale_opened',
-      'domain_fixed_sale_closed',
-      'domain_fixed_sale_filled',
-      'domain_auction_created',
-      'domain_bid_placed',
-      'domain_auction_cancelled',
-      'domain_auction_settled',
-      'domain_offer_placed',
-      'domain_offer_closed',
-      'domain_offer_accepted',
-      'marketplace_refund_claimed',
-    ],
+    events: duskDomainsContractEventTopics.marketplace,
   },
 ]
 

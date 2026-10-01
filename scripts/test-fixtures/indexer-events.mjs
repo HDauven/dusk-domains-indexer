@@ -1,3 +1,4 @@
+export const fixtureReservedNode = `0x${'14'.repeat(32)}`
 export const fixtureNode = `0x${'11'.repeat(32)}`
 export const fixtureParentNode = `0x${'12'.repeat(32)}`
 export const fixtureSubnameNode = `0x${'13'.repeat(32)}`
@@ -25,6 +26,8 @@ export function createIndexerParityEvents() {
       marketplace: `0x${'00'.repeat(32)}`,
       feeConfig: feeConfig(1),
     }, { blockHeight: 1, txId: 'router-init-tx', contractKey: 'router', contractId: fixtureRouter }),
+    envelope({ type: 'registrations_paused_changed', operator: principal(0x77), paused: true, updatedAtBlockHeight: 1 }, { blockHeight: 1, contractKey: 'router', contractId: fixtureRouter }),
+    envelope({ type: 'registrations_paused_changed', operator: principal(0x77), paused: false, updatedAtBlockHeight: 1 }, { blockHeight: 1, contractKey: 'router', contractId: fixtureRouter }),
     envelope({
       type: 'pool_member_added',
       kind: 'registry',
@@ -80,6 +83,16 @@ export function createIndexerParityEvents() {
       expiresAt: '2028-06-27T12:00:00.000Z',
       expiresAtBlockHeight: 6_000_000,
     }, { blockHeight: 21, txId: 'owner-tx' }),
+    envelope({
+      type: 'name_registered', node: fixtureReservedNode, label: 'docs', actor: fixtureOwner, owner: fixtureOwner,
+      expiresAt: '2028-06-27T12:00:00.000Z', graceEndsAt: '2028-07-27T12:00:00.000Z',
+      expiresAtBlockHeight: 6_000_000, graceEndsAtBlockHeight: 6_259_200, feeLux: 0,
+    }, { blockHeight: 21, txId: 'reserved-register-tx' }),
+    envelope({
+      type: 'reserved_name_issued', node: fixtureReservedNode, label: 'docs', actor: fixtureOwner,
+      owner: fixtureOwner, manager: fixtureManager, registry: fixtureRegistry, operator: principal(0x77),
+      issuedAt: '2026-06-27T12:00:00.000Z', issuedAtBlockHeight: 21,
+    }, { blockHeight: 21, txId: 'reserved-issue-tx', contractKey: 'router', contractId: fixtureRouter }),
     envelope({
       type: 'name_registered',
       node: fixtureParentNode,
@@ -507,6 +520,8 @@ export function createIndexerParityEvents() {
       amountLux: 60_000_000_000,
       claimedAtBlockHeight: 8_800,
     }, { blockHeight: 8_800, txId: 'marketplace-refund-tx', contractKey: 'marketplace' }),
+    envelope({ type: 'trading_paused_changed', operator: fixtureOwner, paused: true, updatedAtBlockHeight: 40 }, { blockHeight: 40 }),
+    envelope({ type: 'trading_paused_changed', operator: fixtureOwner, paused: false, updatedAtBlockHeight: 40 }, { blockHeight: 40 }),
   ]
 }
 

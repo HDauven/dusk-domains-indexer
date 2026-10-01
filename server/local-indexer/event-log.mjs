@@ -67,16 +67,7 @@ export function stableJson(value) {
   return JSON.stringify(value)
 }
 
-export function eventTimestamp(event, meta = {}) {
-  return meta.observedAt
-    ?? event?.updatedAt
-    ?? event?.createdAt
-    ?? event?.releasedAt
-    ?? event?.observedAt
-    ?? event?.prunedAt
-    ?? event?.record?.updatedAt
-    ?? null
-}
+export { eventTimestamp } from '@duskdomains/sdk/projection'
 
 export function confirmedEventBlockHeight(event, meta = {}) {
   if (meta.source !== 'w3sper-live-subscription' || Object.hasOwn(meta, 'observedBlockHeight')) return meta.blockHeight ?? null

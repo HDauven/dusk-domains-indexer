@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { normalizeObservedEvent } from '../../scripts/indexer-operator/event-decoder.mjs'
+import { normalizeObservedEvent } from '@duskdomains/sdk/projection'
 import { loadSnapshotStore } from './snapshot.mjs'
 import { replayEventLog } from './event-log-store.mjs'
 import { searchName } from './read-models/search.mjs'

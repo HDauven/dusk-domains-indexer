@@ -283,11 +283,11 @@ describe('local indexer event-log lifecycle cleanup', () => {
     }
   })
 
-  it('renews the name row an authority change gave an inheriting subname', async () => {
+  it('renews a transferred subname without a duplicate lifecycle row', async () => {
     const { events, childAuthorityChange, renewal, childNode, grandchildNode } = createSubnameRenewalEventLogFixture()
     const authorized = [events[0], events[1], childAuthorityChange, events[2]]
     const created = replayEventLog(authorized, [], '2026-06-17T00:00:00.000Z')
-    for (const lifecycle of [created.namesByNode.get(childNode), created.subnamesByNode.get(grandchildNode)]) {
+    for (const lifecycle of [created.subnamesByNode.get(childNode), created.subnamesByNode.get(grandchildNode)]) {
       expect(lifecycle).toMatchObject({
         graceEndsAt: '2040-07-17T00:00:00.000Z',
         graceEndsAtBlockHeight: 1300,

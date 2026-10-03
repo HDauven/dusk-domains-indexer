@@ -484,6 +484,10 @@ GET /activity?node=0x...
 
 Response is `{ activity: ActivityEntry[], nextCursor }`. Each entry has `id`, `eventType`, `node`, `name`, `actor`, `timestamp`, `blockHeight`, and optional `txId` / `target`.
 
+Primary-name events produce `primary_name_set` or `primary_name_cleared` activity,
+with the endpoint retained as `target` in both cases. Clearing retains the
+previous name. Historical snapshots may still contain `primary_name` entries.
+
 ## Registration Commitments
 
 The local live app uses the controller commitment read model to unlock reveal after the committed block has matured.

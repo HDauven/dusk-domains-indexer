@@ -8,6 +8,10 @@ export const HIGH_RISK_RECORD_KEYS = new Set([
   'dusk_contract',
   'dusk_asset',
   'evm_address',
+  'address.btc',
+  'address.eth',
+  'address.sol',
+  'address.evm',
   'website',
   'compliance_ref',
 ])

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Serve crawler HTML previews for active names with safe site defaults. ([#201])
+- Render bounded, cached PNG name cards with bundled Instrument Serif fonts. ([#201])
+
 - Validate cross-chain address records with the shared SDK validators. ([#242])
 - Serve distinct primary-name set and cleared activity with recent-change warnings. ([#243])
 
@@ -26,3 +29,4 @@
 
 [#242]: https://github.com/HDauven/dusk-domains-protocol/issues/242
 [#243]: https://github.com/HDauven/dusk-domains-protocol/issues/243
+[#201]: https://github.com/HDauven/dusk-domains-protocol/issues/201

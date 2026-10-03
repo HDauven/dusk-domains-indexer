@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@dusk/w3sper": "npm:@jsr/dusk__w3sper@^1.6.0",
-    "@duskdomains/sdk": "https://github.com/HDauven/dusk-domains-sdk/archive/9c75e4848fd63c65aa607b86b8a53d4fede5465f.tar.gz",
+    "@duskdomains/sdk": "https://github.com/HDauven/dusk-domains-sdk/archive/57d568cbf31e2a17092e39b3bdfd976259e0b96a.tar.gz",
     "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {

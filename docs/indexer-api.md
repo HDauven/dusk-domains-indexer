@@ -60,6 +60,13 @@ GET routes:
 | `/marketplace/offers` | `offers`; node then buyer authority ascending; optional filters apply before pagination. |
 | `/marketplace/offer` | Single offer or null. |
 | `/marketplace/refund` | Single refund balance or null. |
+| `/share/name/<name>` | HTML link preview with canonical app URL; default site preview for unknown, invalid or expired names. |
+| `/share/name/<name>.png` | 1200×630 PNG card; invalid names return `400`, unknown or expired names get a generic card. |
+
+Share responses use `Cache-Control: public, max-age=300` and the same request
+limiter as JSON reads. Preview descriptions use only public `text.description`
+records. See the [Caddy integration](../deploy/README.md#app-and-link-previews-on-duskdomains)
+for serving previews to crawlers visiting app name URLs.
 
 String keys use deterministic code-point ordering. Selection retains at most
 `limit + 1` rows and hydrates only the selected name/order summaries. Owner-filtered

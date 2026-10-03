@@ -1,4 +1,5 @@
 import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
+import { createShareHandler } from './share/routes.mjs'
 import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
 import { namesPage } from './name-authority-index.mjs'
@@ -39,8 +40,9 @@ import {
 
 export function createLocalIndexerHandler(storeProvider, options = {}) {
   const rateLimit = createRateLimiter(options)
+  const share = createShareHandler()
   return (request, response) => {
-    void handleRequest(storeProvider, request, response, { ...options, rateLimit })
+    void handleRequest(storeProvider, request, response, { ...options, rateLimit, share })
   }
 }
 
@@ -75,6 +77,8 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
+
+    if (await options.share(pathname, storeProvider, response, { ...corsHeaders(options, request), 'x-request-id': requestId })) return
 
     if (!LOCAL_INDEXER_ROUTES.has(pathname)) {
       reply(404, { error: 'not_found', message: 'Route not found.' })

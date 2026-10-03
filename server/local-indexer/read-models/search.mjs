@@ -1,3 +1,4 @@
+import { premiumForName } from './premium.mjs'
 import {
   DEFAULT_FEE_CONFIG,
   RESERVED_LABELS,
@@ -19,6 +20,9 @@ import {
 export function searchName(store, query) {
   const canonical = normalizeName(query)
   const label = apexLabel(canonical)
+  const lifecycle = store.lifecyclesByCanonical?.get(canonical)
+    ?? store.namesByCanonical.get(canonical)?.lifecycle
+  const premium = premiumForName(store, lifecycle)
   const issues = []
   const now = lifecycleClock(store)
   let status = canonical ? 'available' : 'invalid'
@@ -48,7 +52,9 @@ export function searchName(store, query) {
     displayName: canonical,
     label,
     status,
-    price: annualPrice(label, store.feeConfig ?? DEFAULT_FEE_CONFIG),
+    price: annualPrice(label, store.feeConfig ?? DEFAULT_FEE_CONFIG) + premium.premiumLux / 1_000_000_000,
+    ...premium,
+    graceEndsAtBlockHeight: lifecycle?.graceEndsAtBlockHeight ?? null,
     issues,
     transactionBlocked: status !== 'available' || canonical.split('.').length !== 2,
     ...(reserved ? { reserved } : {}),

@@ -1,3 +1,4 @@
+import { premiumForName } from './read-models/premium.mjs'
 import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
 import { createShareHandler } from './share/routes.mjs'
 import { randomUUID } from 'node:crypto'
@@ -145,7 +146,7 @@ async function handleRequest(storeProvider, request, response, options) {
     if (pathname === '/name') {
       const node = routeParams.node
       const name = store.namesByNode.get(node) ?? subnameLifecycleForNode(store, node)
-      reply(200, name ? { ...name, namespace: namespaceForNode(store, node) } : null)
+      reply(200, name ? { ...name, ...premiumForName(store, name), namespace: namespaceForNode(store, node) } : null)
       return
     }
 

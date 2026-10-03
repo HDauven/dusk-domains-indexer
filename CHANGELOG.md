@@ -5,6 +5,10 @@
 - Serve crawler HTML previews for active names with safe site defaults. ([#201])
 - Render bounded, cached PNG name cards with bundled Instrument Serif fonts. ([#201])
 
+- Collect treasury events with decimal-string Lux totals without losing following events. ([#124])
+- Expose dropped-name premiums in search and name responses. ([#124])
+- Preserve registrations and exact accounting totals when cumulative premiums exceed the safe-number range. ([#124])
+
 - Validate cross-chain address records with the shared SDK validators. ([#242])
 - Serve distinct primary-name set and cleared activity with recent-change warnings. ([#243])
 
@@ -30,3 +34,4 @@
 [#242]: https://github.com/HDauven/dusk-domains-protocol/issues/242
 [#243]: https://github.com/HDauven/dusk-domains-protocol/issues/243
 [#201]: https://github.com/HDauven/dusk-domains-protocol/issues/201
+[#124]: https://github.com/HDauven/dusk-domains-protocol/issues/124

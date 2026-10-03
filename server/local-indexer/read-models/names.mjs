@@ -1,3 +1,4 @@
+import { premiumForName } from './premium.mjs'
 import { namespaceForNode } from './namespace.mjs'
 import { endpointKey } from '../naming.mjs'
 import {
@@ -23,6 +24,7 @@ export function listNames(store, owner) {
     })
     .map((name) => ({
       ...name.lifecycle,
+      ...premiumForName(store, name.lifecycle),
       records: name.records,
       ...primarySummaryForName(store, name),
       subnameCount: activeSubnamesForParent(store, name.node).length,

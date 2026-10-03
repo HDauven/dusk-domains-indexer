@@ -39,7 +39,7 @@ GET routes:
 | `/health` | `warnings` + `nextCursor`; stable diagnostic keys. Other arrays are bounded route/schema/deployment diagnostics. |
 | `/commitment` | Single commitment or null. |
 | `/search` | Single exact-name availability result, **not** a search-results list in this API. Existing fields retained; accepts/validates `limit` and returns `nextCursor: null`. No continuation cursor is valid. |
-| `/names` | `names`; canonical name then node, ascending. Owner/controller filter applies before pagination. |
+| `/names` | `names`; canonical name then node, ascending. The `owner` filter matches owners, managers and observed record controllers before pagination. |
 | `/resolve` | `warnings` + `nextCursor`, newest timestamp first with immutable event identity as a tie-breaker. Resolution fields retained; embedded current records are contract-bounded (16). |
 | `/name` | Single lifecycle state or null. |
 | `/records` | `records`; record key ascending (also contract-bounded to 16). |
@@ -62,9 +62,13 @@ GET routes:
 | `/marketplace/refund` | Single refund balance or null. |
 
 String keys use deterministic code-point ordering. Selection retains at most
-`limit + 1` rows and hydrates only the selected name/order summaries. The existing
-in-memory read model still requires a linear scan; this is not a database-index
-migration. A reverse-proxy limit remains recommended to bound aggregate traffic.
+`limit + 1` rows and hydrates only the selected name/order summaries. Owner-filtered
+name pages use an ordered authority index: a cursor seek followed by at most
+`limit + 1` entries. The index is rebuilt with the served view after events or
+lifecycle boundaries, including snapshot loading. If a supplied store lacks that
+index, filtered requests return 503 `name_index_unavailable` without scanning names.
+Other collections still scan their current in-memory rows. A reverse-proxy limit
+remains recommended to bound aggregate traffic.
 
 SDK examples:
 
@@ -101,6 +105,7 @@ the store. Defaults:
 | `DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX` | `200` | Requests per IPv4 address or IPv6 /64 per window; positive integer. |
 | `DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS` | `60000` | Window duration in milliseconds; positive integer. |
 | `DUSK_DOMAINS_INDEXER_TRUST_PROXY` | `false` | Use the last `X-Forwarded-For` address, the one the proxy appended, when valid instead of the socket peer. |
+| `DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST` | `false` | Explicitly permit proxy trust on a listener outside loopback; requires network isolation from direct clients. |
 | `DUSK_DOMAINS_INDEXER_CORS_ORIGINS` | `*` in development; empty in production | Comma-separated exact browser origins. |
 
 All requests, including health checks and preflights, count. Exhaustion returns
@@ -109,11 +114,20 @@ HTTP 429, `{ "error": "rate_limited", "message": "Too many requests." }`, and
 At most 100,000 active client keys are retained; new clients receive 429 while
 that table is full. Budgets are
 process-local and reset on restart. Add a reverse-proxy/global limit in front of
-multiple instances. Keep proxy trust off unless the indexer is reachable only
-through one trusted proxy. With trust on, the indexer reads the last
+multiple instances. The shipped systemd unit and `.env.example` enable proxy trust
+for Caddy forwarding to `127.0.0.1:8787`. Caddy appends the public client's address,
+giving each client its own application budget; local health probes use the
+loopback socket budget. With trust on, the indexer reads the last
 `X-Forwarded-For` entry, which that proxy writes, so addresses a client puts in
-the header itself are ignored. Behind a chain of proxies, have the outermost one
-overwrite the header.
+the header itself are ignored. Missing or invalid forwarded addresses fall back
+to the socket peer. This setup assumes Caddy receives public connections directly.
+See [deployment configuration](../deploy/README.md).
+
+Startup refuses proxy trust on a non-loopback listener unless
+`DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST=true`. Use that opt-in only when a
+firewall or private network restricts the listener to the trusted proxy. Use a
+literal loopback address (`127.0.0.1` or `::1`) for the normal deployment. Local
+development and direct listeners retain proxy trust disabled by default.
 
 Requests across tabs or users sharing a client key consume the same budget.
 
@@ -192,6 +206,13 @@ Request shape:
 ```text
 GET /resolve?name=aurora.dusk
 ```
+
+Resolution validates names with the same policy as search before hashing: at most
+63 characters including `.dusk`, labels of at least three lowercase letters or
+digits with interior hyphens allowed. The length and label bounds permit at most
+14 labels before `.dusk`. Input is trimmed, lowercased and given the `.dusk` suffix
+when absent. Invalid input returns HTTP 400 with the existing `missing_name`
+entry in `errors` and a zero cache TTL.
 
 Response fields:
 
@@ -350,8 +371,12 @@ fee and escrow status. Offers are keyed by domain node and buyer authority.
 
 Outbid, canceled-offer and failed-settlement funds are aggregated by authority
 in `/marketplace/refund`. A successful `marketplace_refund_claimed` event clears
-that row. Filled, canceled, expired and settled orders leave current views while
-their events remain in the append-only journal and domain activity.
+that row. Filled, canceled, expired and settled order events remove their orders
+from current views while their events remain in the append-only journal and
+domain activity. An order retained after its name lapses reports `escrowed: false`
+on both list and single-order routes. Escrow requires marketplace ownership and
+management while the name still blocks registration, including its grace period,
+using the store's indexed chain height.
 
 These routes support browsing and filtering only. Clients must refresh the
 exact order from the marketplace contract before signing a value-bearing call.
@@ -499,6 +524,14 @@ A subname's `graceEndsAt` is the grace end its parent had when the subname was c
 
 `/subnames` is an active namespace list. It excludes expired or pruned subnames and returns an empty list if the parent name is released or expired beyond grace. `/subname` also returns null for inactive subnames.
 
+Expired or inactive subnames and their descendants lose current records and
+primary-name entries. `/records` returns an empty page and `/record` and `/reverse`
+return null for those identities. Cleanup follows replay and lifecycle clock
+advances, including cursor updates without new events; route liveness checks also
+protect cached views. Historical activity and record history remain available.
+Stored subname lifecycle rows still count toward namespace capacity until removed
+or pruned on chain.
+
 ## Typed Reverse Lookup
 
 Reverse lookup is typed by endpoint kind. MVP clients use it for Moonlight primary-name verification; contract labels and external address families are not public primary names. Phoenix endpoints are recognized endpoint metadata, but they must not be treated as default public identity targets in v1.
@@ -510,6 +543,8 @@ GET /reverse?type=moonlight_address&value=dusk1...
 ```
 
 Unknown endpoint types return `400 unsupported_endpoint_type`. Recognized endpoint types that are not public primary-name identities, such as `phoenix_payment_endpoint`, return `null` rather than a displayable primary name.
+
+Reverse entries return `null` when their node is unknown or no longer held, including descendants of released or post-grace roots. Legacy entries without a node are checked against the indexed lifecycle for their name.
 
 Response shape:
 

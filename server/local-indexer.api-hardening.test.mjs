@@ -3,6 +3,7 @@ import { createLocalIndexerHandler } from './local-indexer/routes.mjs'
 import { serveLocalIndexer } from './local-indexer/server.mjs'
 import { createRateLimiter } from './local-indexer/security.mjs'
 import { parseArgs } from './local-indexer/cli.mjs'
+import { indexNamesByAuthority } from './local-indexer/name-authority-index.mjs'
 
 const node = `0x${'11'.repeat(32)}`
 const owner = `0x${'22'.repeat(32)}`
@@ -20,6 +21,7 @@ function storeWithRows(count = 205) {
     id: `event${index}`, buyerAuthority: owner,
   }))
   return {
+    namesByAuthority: indexNamesByAuthority(new Map(names.map((name) => [name.lifecycle.canonicalName, name]))),
     namesByCanonical: new Map(names.map((name) => [name.lifecycle.canonicalName, name])),
     namesByNode: new Map([[node, { node, status: 'active' }], ...names.map((name) => [name.node, name.lifecycle])]),
     subnamesByNode: new Map(), reverseByEndpoint: new Map(),

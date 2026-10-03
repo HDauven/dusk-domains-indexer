@@ -2,12 +2,14 @@ import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { createIncrementalSqliteStore } from './incremental-sqlite-store.mjs'
 import { createLocalIndexerHandler } from './routes.mjs'
+import { validateProxyListener } from './security.mjs'
 import {
   createReloadingLocalIndexerStore,
   createStaticLocalIndexerStore,
 } from './stores.mjs'
 
 export async function serveLocalIndexer(args) {
+  validateProxyListener(args)
   if (args.production && !String(args.corsOrigin ?? '').split(',').some((origin) => origin.trim() && origin.trim() !== '*')) {
     console.warn('Production CORS allowlist is empty; cross-origin browser access is disabled.')
   }

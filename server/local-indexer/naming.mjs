@@ -11,6 +11,18 @@ export function apexLabel(canonical) {
   return canonical.replace(/\.dusk$/, '').split('.')[0] ?? ''
 }
 
+export function nameValidationIssue(canonical) {
+  if (!canonical) return { tone: 'info', text: 'Enter a name to check availability.' }
+  if (canonical.length > 63) return { tone: 'danger', text: 'Names must be 63 characters or shorter.' }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.dusk$/.test(canonical)) {
+    return { tone: 'danger', text: 'Use lowercase letters, numbers, or interior hyphens.' }
+  }
+  if (canonical.split('.').slice(0, -1).some((part) => part.length < 3)) {
+    return { tone: 'danger', text: 'Labels shorter than 3 characters are reserved.' }
+  }
+  return null
+}
+
 export function annualPrice(label, feeConfig = DEFAULT_FEE_CONFIG) {
   if (label.length <= 2) return 0
   if (label.length === 3) return feeConfig.threeCharYearLux / LUX_PER_DUSK

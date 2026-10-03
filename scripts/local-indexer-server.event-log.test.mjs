@@ -294,14 +294,12 @@ describe('local indexer event-log HTTP API', () => {
     }])
   })
 
-  it('does not verify My Names when reverse points the endpoint at another node', async () => {
+  it('rejects reverse lookup for an unknown node while keeping My Names unverified', async () => {
     const fixture = await writeEventLog({ reverseWrongNode: true })
     const store = await loadEventLogStore(fixture.eventLogFile, fixture.cursorFile)
     const { baseUrl } = await startIndexer(store)
 
-    await expect(expectJson(`${baseUrl}/reverse?type=moonlight_address&value=${fixture.moonlight}`)).resolves.toMatchObject({
-      primaryName: 'aurora.dusk',
-    })
+    await expect(expectJson(`${baseUrl}/reverse?type=moonlight_address&value=${fixture.moonlight}`)).resolves.toBeNull()
     await expect(expectJson(`${baseUrl}/names?owner=${fixture.owner}`)).resolves.toMatchObject([{
       canonicalName: 'aurora.dusk',
       primaryName: 'aurora.dusk',

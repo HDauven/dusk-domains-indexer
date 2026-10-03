@@ -75,11 +75,13 @@ export class IncrementalSqliteIndexer {
   async refresh() {
     const applied = await this.tail()
     const cursorChanged = await this.readCursor(false)
-    if (!applied && !cursorChanged) return
+    const dateBoundary = this.view?.nextLifecycleDateBoundary
+    const crossedDate = dateBoundary != null && Date.now() >= dateBoundary
+    if (!applied && !cursorChanged && !crossedDate) return
     const height = knownChainHeight({ cursor: this.cursor })
     const boundary = this.view?.nextLifecycleBoundary
     const crossed = boundary != null && height != null && height >= boundary
-    this.buildStore(applied || crossed)
+    this.buildStore(applied || crossed || crossedDate)
   }
 
   resetTotals() {

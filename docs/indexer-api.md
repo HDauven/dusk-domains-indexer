@@ -324,7 +324,9 @@ Response fields:
 | `allowedFeeSources` | Init-time fee-source list; pool registries are additionally admitted through the router. |
 | `totalReceivedLux` | Total protocol fees observed by the read model. |
 | `availableLux` | Fees currently available to claim according to indexed treasury events. |
-| `registrationReceivedLux` | Cumulative registration fees observed by the read model. |
+| `registrationReceivedLux` | Cumulative registration fees, including premiums, observed by the read model. |
+| `premiumReceivedLux` | Cumulative `premium_lux` from registration events. A subset of registration receipts, not an additional receipt. |
+| `premiumAccountingError` | Null unless premium statistics failed; lifecycle projection continues, and statistics need rebuilding. |
 | `renewalReceivedLux` | Cumulative renewal fees observed by the read model. |
 | `otherReceivedLux` | Cumulative other fee receipts observed by the read model. |
 | `lastFeeSourceContract` | Most recent fee-source contract ID, when the latest accounting event was a fee receipt. |
@@ -332,6 +334,16 @@ Response fields:
 | `lastFeeNode` | Name node attached to the latest fee receipt when relevant. |
 | `lastEventType` | Latest treasury event applied. |
 | `claims` | Recent operator claim events with amount, remaining balance, transaction ID, and block height. |
+
+Treasury and referral Lux amounts are safe integer numbers within
+`Number.MAX_SAFE_INTEGER` and decimal strings above it, including amounts in
+`claims` and `recentActivity`. Use exact integer arithmetic such as `BigInt(value)`
+for both representations. Snapshot loading and replay preserve these amounts.
+
+The collector consumes driver JSON with decimal strings for every `*_lux`
+amount, including nested fields. It also accepts legacy safe numeric amounts and
+string or numeric heights, counts and timestamps. Totals already rounded by an
+older driver are rejected; use a matching driver that preserves their digits.
 
 This is a read model over treasury events. Contract state remains canonical.
 
@@ -617,3 +629,42 @@ applies subname owner/manager changes directly and clears identity when `dataCle
 `subname_removed` removes the affected subtree and its records and primary names.
 Transfers with reset use the same `name_owner_changed.dataCleared` flag for roots and subnames; only the transferred name’s records and primary names are cleared.
 Ancestor authorities permit reassignment, take-back and removal; record editing, primary names and direct child creation require the name’s own owner or manager.
+
+## Dropped-name premiums and fee configuration
+
+`GET /fee-config` includes `premiumStartLux`. It starts at
+1,000,000,000,000,000 Lux (1,000,000 DUSK) on new deployments. The router operator
+can change it; 0 disables premiums. `premiumReferralRewardBps` defaults to zero,
+independent of the base registration referral share.
+
+`GET /search?query=aurora` and `GET /name?node=0x...` expose:
+
+| Field | Meaning |
+| --- | --- |
+| `premiumLux` | Current premium in Lux, or 0 for an exempt name or outside the window. |
+| `premiumEndsAt` | Estimated date when the premium ends, or null outside the window. |
+| `premiumEndsAtBlockHeight` | Exact end height when indexed heights are available. |
+| `premiumNextStepAt` | Estimated date of the next daily drop, or null. |
+| `premiumNextStepBlockHeight` | Exact next-step height when available. |
+| `graceEndsAtBlockHeight` | The previous registration's grace end; used to price a dropped root. |
+
+Search `price` includes one year's base fee plus the current premium, in DUSK.
+`/name` also retains `registrationPremiumLux`, the premium paid for its most recent
+registration, separately from its current re-registration premium. Name summaries
+in `/names` expose the same current premium fields.
+
+The 21-day window starts at the indexed root's grace end. For whole days `d`,
+`premiumLux = (premiumStartLux >> d) - (premiumStartLux >> 21)` until day 21;
+then it is zero. Calculation uses integer Lux and 8,640-block days. Indexed chain
+heights take precedence over dates. Old snapshots without heights use estimated
+lifecycle dates. Search retains access to dropped roots even after they leave the
+active names list. Router config changes and advancing chain height affect quotes
+without requiring another name event.
+
+Never-registered roots, reserved names and subnames have no premium. Renewal
+remains at the base price. `name_registered.premium_lux` is projected independently
+from its total `fee_lux`; missing historical premium fields mean zero.
+
+Quotes are observations. Refresh before signing and warn during the final ten
+minutes before a step. The contract requires the exact total at reveal, so a step
+crossed after quoting requires a retry at the lower price.

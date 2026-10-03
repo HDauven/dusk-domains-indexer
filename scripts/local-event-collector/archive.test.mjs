@@ -264,3 +264,64 @@ it('follows registries the router adds, from the same block on and across restar
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+it('collects the real driver large-total treasury event, continues with later events and serves exact totals', async () => {
+  // Copied from the SDK fixture captured by the protocol's capture-driver-integers.mjs:
+  // Rust RKYV -> built Forge driver WASM -> w3sper JSON.parse. The loader mock above
+  // returns that captured JSON; no hand-written large-total payload replaces it.
+  const fixture = JSON.parse(await readFile(new URL('../test-fixtures/driver-integers.json', import.meta.url), 'utf8'))
+  const { loadEventLogStore, createLocalIndexerHandler } = await import('../../server/local-indexer.mjs')
+  const dir = await mkdtemp(join(tmpdir(), 'archive-collector-integers-'))
+  const hash = n => n.toString(16).padStart(64, '0')
+  const header = height => ({ height, hash: hash(height), prevBlockHash: hash(height - 1), timestamp: 1_780_000_000 + height })
+  const [treasury, core] = [900, 901].map(hash)
+  const raw = (source, topic, value) => ({ source, topic, origin: hash(902), reverted: false,
+    data: Buffer.from(JSON.stringify(value)).toString('hex') })
+  const events = [
+    raw(treasury, fixture.event.topic, fixture.event.decoded),
+    raw(core, 'name_registered', { node: Array(32).fill(2), label: 'aurora', actor: Array(32).fill(3), owner: Array(32).fill(3),
+      expires_at: '100', grace_ends_at: '200', fee_lux: '10', premium_lux: '0' }),
+  ]
+  const config = { fromBlock: 1, nodeUrl: 'http://node/', publicDir: dir,
+    eventLog: join(dir, 'events.jsonl'), cursorFile: join(dir, 'cursor.json'),
+    contracts: [
+      { key: 'treasury', contractId: treasury, driverFile: 'driver.wasm', events: [fixture.event.topic] },
+      { key: 'core', contractId: core, driverFile: 'driver.wasm', events: ['name_registered'] },
+    ] }
+  const controller = new AbortController()
+  const fetcher = async (_url, { body }) => {
+    let result
+    if (body.includes('__type')) result = { __type: { fields: [{ name: 'contractEventBatch' }] } }
+    else if (body.includes('block(height:')) result = { block: { header: header(0) } }
+    else if (body.includes('lastBlockPair')) {
+      result = { lastBlockPair: { json: { last_block: [2, hash(2)], last_finalized_block: [2, hash(2)] } } }
+    } else if (body.includes('blocks(range:')) result = { blocks: [1, 2].map(height => ({ header: header(height) })) }
+    else {
+      controller.abort() // Finish this batch, even if decoding fails.
+      result = Object.fromEntries(events.map((event, i) => [`b${i}`, { blockHash: hash(i + 1), complete: true, json: [event] }]))
+    }
+    return { ok: true, json: async () => result }
+  }
+  try {
+    await writeFile(join(dir, 'driver.wasm'), '')
+    await collectArchive(config, { signal: controller.signal, fetcher })
+    const cursor = JSON.parse(await readFile(config.cursorFile, 'utf8'))
+    assert.equal(cursor.reason, null)
+    assert.equal(cursor.scannedBlockHeight, 2)
+    assert.equal(cursor.eventCount, 2)
+    const store = await loadEventLogStore(config.eventLog, config.cursorFile)
+    assert.deepEqual(store.warnings, [])
+    assert.deepEqual(store.events.map(entry => entry.event.type), ['treasury_fee_received', 'name_registered'])
+    assert(store.namesByCanonical.has('aurora.dusk'))
+    const handler = createLocalIndexerHandler(store)
+    const response = await new Promise(resolve => {
+      let status
+      handler({ url: '/treasury', method: 'GET', headers: {}, socket: { remoteAddress: '127.0.0.1' } }, {
+        writeHead(code) { status = code }, end(body) { resolve({ status, body: JSON.parse(body) }) },
+      })
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual([response.body.totalReceivedLux, response.body.availableLux, response.body.registrationReceivedLux],
+      ['9999995231628421', '9999995231628419', '9999995231628417'])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

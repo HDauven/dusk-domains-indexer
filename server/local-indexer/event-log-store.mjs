@@ -146,6 +146,7 @@ export function finalizeReplayState(state, now, chainHeight = null) {
 
   return {
     namesByCanonical,
+    lifecyclesByCanonical: new Map([...view.namesByNode.values()].map(name => [name.canonicalName, name])),
     namesByAuthority: indexNamesByAuthority(namesByCanonical, view.controllersByNode),
     namesByNode: view.namesByNode,
     activityByNode: view.activityByNode,

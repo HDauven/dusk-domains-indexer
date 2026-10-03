@@ -29,7 +29,10 @@ and OPTIONS traffic in the budget. Clients should wait for `Retry-After` on 429.
 Place an additional limit at the reverse proxy, particularly with multiple API
 processes. Set `DUSK_DOMAINS_INDEXER_TRUST_PROXY=true` only with a private upstream
 and a single proxy that appends the client address to `X-Forwarded-For`; the
-indexer uses the last entry. Otherwise keep it false.
+indexer uses the last entry. The shipped systemd unit and environment template
+enable this setup for Caddy on loopback; see [deployment configuration](../deploy/README.md).
+Non-loopback listeners require `DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST=true`
+and network access restricted to the proxy. Otherwise keep proxy trust false.
 
 Update HTTP consumers for the named pagination envelopes before deploying the
 server. See [the complete API policy and 24-route inventory](indexer-api.md).

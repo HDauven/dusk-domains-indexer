@@ -143,7 +143,7 @@ describe('incremental SQLite store', () => {
 
     const full = await loadSqliteStore(join(dir, 'full.sqlite'), { eventLogFile, cursorFile: source.cursorFile })
 
-    for (const key of ['namesByCanonical', 'namesByNode', 'recordsByNode', 'reverseByEndpoint', 'subnamesByNode', 'activityByNode']) {
+    for (const key of ['namesByCanonical', 'namesByAuthority', 'namesByNode', 'recordsByNode', 'reverseByEndpoint', 'subnamesByNode', 'activityByNode']) {
       expect([...incremental[key].entries()]).toEqual([...full[key].entries()])
     }
     expect(incremental.deployment).toEqual(full.deployment)

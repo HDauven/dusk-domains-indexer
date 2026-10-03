@@ -15,13 +15,14 @@ import {
 import { knownChainHeight, maxNumberOrNull } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
 import { normalizeName } from './http.mjs'
+import { indexNamesByAuthority } from './name-authority-index.mjs'
 import {
   createProjectionState,
   applyProjectionEvent,
   clearNodeDerivedState,
   assertSafeNumericTree,
 } from '@duskdomains/sdk/projection'
-import { indexedLifecycleBlocksRegistration } from './read-models.mjs'
+import { indexedLifecycleBlocksRegistration, indexedSubnameBlocksRegistration } from './read-models.mjs'
 
 export async function loadEventLogStore(eventLogFile, cursorFile, options = {}) {
   const parsedLog = parseEventLog(await readFile(eventLogFile, 'utf8'))
@@ -120,6 +121,12 @@ export function finalizeReplayState(state, now, chainHeight = null) {
   for (const [node, lifecycle] of view.namesByNode) {
     if (!indexedLifecycleBlocksRegistration(lifecycle, clock)) clearNodeDerivedState({ ...view, node })
   }
+  for (const subname of view.subnamesByNode.values()) {
+    if (indexedSubnameBlocksRegistration(view, subname, clock)) continue
+    // Ancestor liveness clears descendant identities too. Keep lifecycle rows for capacity.
+    clearNodeDerivedState({ ...view, node: subname.node,
+      subnamesByNode: undefined, subnamesByParent: undefined, subnamesByCanonical: undefined })
+  }
 
   const namesByCanonical = new Map()
   for (const [node, lifecycle] of view.namesByNode) {
@@ -139,6 +146,7 @@ export function finalizeReplayState(state, now, chainHeight = null) {
 
   return {
     namesByCanonical,
+    namesByAuthority: indexNamesByAuthority(namesByCanonical, view.controllersByNode),
     namesByNode: view.namesByNode,
     activityByNode: view.activityByNode,
     reverseByEndpoint: view.reverseByEndpoint,
@@ -163,7 +171,24 @@ export function finalizeReplayState(state, now, chainHeight = null) {
     referralsByReferrer: view.referralsByReferrer,
     referralRewardsSupported: view.referralRewardsSupported,
     nextLifecycleBoundary: nextLifecycleBoundary(view.namesByNode, view.subnamesByNode, clock.blockHeight),
+    nextLifecycleDateBoundary: nextLifecycleDateBoundary(view.namesByNode, view.subnamesByNode, clock),
   }
+}
+
+function nextLifecycleDateBoundary(namesByNode, subnamesByNode, clock) {
+  let next = null
+  const consider = (height, date) => {
+    if (clock.blockHeight !== null && height != null) return
+    const boundary = Date.parse(date)
+    if (!Number.isFinite(boundary) || boundary <= clock.date.getTime()) return
+    next = next === null ? boundary : Math.min(next, boundary)
+  }
+  for (const lifecycle of namesByNode.values()) {
+    consider(lifecycle.expiresAtBlockHeight, lifecycle.expiresAt)
+    consider(lifecycle.graceEndsAtBlockHeight, lifecycle.graceEndsAt)
+  }
+  for (const subname of subnamesByNode.values()) consider(subname.expiresAtBlockHeight, subname.expiresAt)
+  return next
 }
 
 // The lowest expiry or grace height still ahead. Until the chain reaches it, a new tip cannot

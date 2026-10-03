@@ -6,6 +6,7 @@ import {
 import {
   annualPrice,
   apexLabel,
+  nameValidationIssue,
   reservedCategory,
 } from '../naming.mjs'
 import { normalizeName } from '../http.mjs'
@@ -23,20 +24,10 @@ export function searchName(store, query) {
   let status = canonical ? 'available' : 'invalid'
   let reserved
 
-  if (!canonical) {
-    issues.push({ tone: 'info', text: 'Enter a name to check availability.' })
-  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.dusk$/.test(canonical)) {
+  const issue = nameValidationIssue(canonical)
+  if (issue) {
     status = 'invalid'
-    issues.push({
-      tone: 'danger',
-      text: 'Use lowercase letters, numbers, or interior hyphens.',
-    })
-  } else if (canonical.length > 63) {
-    status = 'invalid'
-    issues.push({ tone: 'danger', text: 'Names must be 63 characters or shorter.' })
-  } else if (canonical.split('.').filter((part) => part !== 'dusk').some((part) => part.length < 3)) {
-    status = 'invalid'
-    issues.push({ tone: 'danger', text: 'Labels shorter than 3 characters are reserved.' })
+    issues.push(issue)
   } else if (indexedLifecycleBlocksRegistration(store.namesByCanonical.get(canonical)?.lifecycle, now)) {
     status = 'registered'
   } else if (indexedSubnameBlocksRegistration(store, store.subnamesByCanonical?.get(canonical), now)) {

@@ -93,7 +93,7 @@ export function listKey(pathname, item) {
   return [-(item.blockHeight ?? -1), -(item.eventIndex ?? -1), -(Date.parse(item.timestamp ?? item.updatedAt ?? '') || 0), item.txId ?? '', item.id ?? item.key ?? '', digest(JSON.stringify(item))]
 }
 
-function compareKeys(left, right) {
+export function compareKeys(left, right) {
   for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
     if (left[index] === right[index]) continue
     return left[index] < right[index] ? -1 : 1

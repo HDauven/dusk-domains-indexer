@@ -1,4 +1,4 @@
-import { namehashHex } from '../naming.mjs'
+import { namehashHex, nameValidationIssue } from '../naming.mjs'
 import {
   normalizeName,
   normalizeNode,
@@ -16,7 +16,7 @@ export function resolveForward(store, rawName) {
   const now = new Date()
   const clock = lifecycleClock(store, now)
 
-  if (!canonicalName || !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.dusk$/.test(canonicalName)) {
+  if (nameValidationIssue(canonicalName)) {
     return emptyForwardResponse(canonicalName, now, {
       code: 'missing_name',
       message: 'Name is invalid or unavailable to the indexer.',

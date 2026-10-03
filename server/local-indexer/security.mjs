@@ -9,6 +9,15 @@ export function securityOptionsFromEnv(env) {
     rateLimitMax: envInteger(env.DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX, 200, 'DUSK_DOMAINS_INDEXER_RATE_LIMIT_MAX'),
     rateLimitWindowMs: envInteger(env.DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS, 60_000, 'DUSK_DOMAINS_INDEXER_RATE_LIMIT_WINDOW_MS'),
     trustedProxy: envBoolean(env.DUSK_DOMAINS_INDEXER_TRUST_PROXY, false, 'DUSK_DOMAINS_INDEXER_TRUST_PROXY'),
+    allowPublicProxyTrust: envBoolean(env.DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST, false, 'DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST'),
+  }
+}
+
+export function validateProxyListener(options) {
+  const host = options.host
+  const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'))
+  if (options.trustedProxy && !loopback && !options.allowPublicProxyTrust) {
+    throw new Error('Trusted proxy requires a loopback listener; set DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST=true only when network access is restricted to the proxy.')
   }
 }
 

@@ -1,6 +1,7 @@
 import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
 import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
+import { namesPage } from './name-authority-index.mjs'
 import { corsHeaders, createRateLimiter } from './security.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
 import {
@@ -13,7 +14,7 @@ import {
 } from '@duskdomains/sdk/projection'
 import { createRecentChangeWarnings } from './records.mjs'
 import { healthResponseForStore } from './health.mjs'
-import { indexedSubnameBlocksRegistration, lifecycleClock } from './read-models/lifecycle.mjs'
+import { indexedLifecycleBlocksRegistration, indexedNamespaceNodeBlocksRegistration, indexedSubnameBlocksRegistration, lifecycleClock } from './read-models/lifecycle.mjs'
 import {
   endpointKey,
   reverseResponse,
@@ -30,6 +31,8 @@ import {
 } from './read-models.mjs'
 import {
   LOCAL_INDEXER_ROUTES,
+  normalizeName,
+  normalizeNode,
   routeParameters,
   sendJson,
 } from './http.mjs'
@@ -115,7 +118,11 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/names') {
-      const result = paginate(namesForOwner(store, url.searchParams.get('owner')), page, (name) => listKey(pathname, name))
+      const result = namesPage(store, url.searchParams.get('owner'), page)
+      if (result.error) {
+        reply(503, result)
+        return
+      }
       const names = listNames({ ...store, namesByCanonical: new Map(result.items.map((name) => [name.lifecycle.canonicalName, name])) })
       const byNode = new Map(names.map((name) => [name.node, name]))
       reply(200, { names: result.items.map((name) => byNode.get(name.node)), nextCursor: result.nextCursor })
@@ -160,7 +167,11 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/reverse') {
       const reverse = store.reverseByEndpoint.get(endpointKey(routeParams.endpoint))
-      reply(200, reverse ? reverseResponse(reverse) : null)
+      const primaryName = normalizeName(reverse?.primaryName ?? reverse?.name)
+      const node = normalizeNode(reverse?.node
+        ?? store.subnamesByCanonical?.get(primaryName)?.node
+        ?? store.namesByCanonical.get(primaryName)?.node)
+      reply(200, reverse && indexedNamespaceNodeBlocksRegistration(store, node, lifecycleClock(store)) ? reverseResponse(reverse) : null)
       return
     }
 
@@ -256,7 +267,8 @@ function marketplaceOrderForResponse(store, order) {
     node,
     marketplaceContractId,
     namespace: namespaceSummary(store, node, order.sellerAuthority),
-    escrowed: marketplaceOrderIsEscrowed(store.namesByNode?.get(node), marketplaceContractId),
+    escrowed: indexedLifecycleBlocksRegistration(store.namesByNode?.get(node), lifecycleClock(store))
+      && marketplaceOrderIsEscrowed(store.namesByNode?.get(node), marketplaceContractId),
   }
 }
 
@@ -271,14 +283,6 @@ function normalizedHex(value) {
 
 function stripHexPrefix(value) {
   return String(value).trim().toLowerCase().replace(/^0x/, '')
-}
-
-function* namesForOwner(store, owner) {
-  const filter = String(owner ?? '').trim().toLowerCase()
-  for (const name of store.namesByCanonical.values()) {
-    if (!filter || [name.lifecycle.owner, name.lifecycle.manager, ...(store.controllersByNode?.get(name.node) ?? [])]
-      .some((value) => String(value ?? '').toLowerCase() === filter)) yield name
-  }
 }
 
 function* filterRows(rows, matches) {

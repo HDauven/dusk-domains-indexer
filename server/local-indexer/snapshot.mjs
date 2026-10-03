@@ -15,6 +15,8 @@ import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
 import { PUBLIC_PRIMARY_ENDPOINT_TYPES } from './constants.mjs'
 import { endpointKey } from './naming.mjs'
+import { indexNamesByAuthority } from './name-authority-index.mjs'
+import { indexedNamespaceNodeBlocksRegistration } from './read-models/lifecycle.mjs'
 import {
   indexedLifecycleBlocksRegistration,
 } from './read-models.mjs'
@@ -41,6 +43,7 @@ export async function loadSnapshotStore(snapshotFile) {
   const now = { blockHeight: knownChainHeight({ cursor, checkpoint }), date: new Date() }
   const namesByCanonical = new Map()
   const namesByNode = new Map()
+  const nodesByCanonical = new Map()
   const activityByNode = new Map()
   const reverseByEndpoint = new Map()
   const subnamesByNode = new Map()
@@ -104,23 +107,11 @@ export async function loadSnapshotStore(snapshotFile) {
       })
     }
     namesByNode.set(node, lifecycle)
+    nodesByCanonical.set(canonicalName, node)
     activityByNode.set(node, Array.isArray(name.activity) ? name.activity : [])
     if (indexedLifecycleBlocksRegistration(lifecycle, now)) {
       controllersByNode.set(node, collectSnapshotControllers(name))
     }
-  }
-
-  for (const row of reverse) {
-    if (!row?.endpoint?.type || !row?.endpoint?.value) continue
-    if (!PUBLIC_PRIMARY_ENDPOINT_TYPES.has(row.endpoint.type)) continue
-    if (row.node && !indexedLifecycleBlocksRegistration(namesByNode.get(normalizeNode(row.node)), now)) continue
-    const primaryName = row.primaryName ?? row.name ?? null
-    if (!primaryName) continue
-    reverseByEndpoint.set(endpointKey(row.endpoint), {
-      ...row,
-      primaryName,
-      name: primaryName,
-    })
   }
 
   const candidateSubnamesByNode = new Map()
@@ -130,6 +121,19 @@ export async function loadSnapshotStore(snapshotFile) {
     const parentNode = normalizeNode(subname.parentNode)
     const normalized = { ...subname, node, parentNode, canonicalName: normalizeName(subname.name) }
     candidateSubnamesByNode.set(node, normalized)
+    nodesByCanonical.set(normalized.canonicalName, node)
+  }
+
+  // Resolve legacy reverse rows before lapsed roots lose their descendants.
+  const namespace = { namesByNode, subnamesByNode: candidateSubnamesByNode }
+  for (const row of reverse) {
+    if (!row?.endpoint?.type || !row?.endpoint?.value) continue
+    if (!PUBLIC_PRIMARY_ENDPOINT_TYPES.has(row.endpoint.type)) continue
+    const primaryName = row.primaryName ?? row.name ?? null
+    if (!primaryName) continue
+    const node = row.node ?? nodesByCanonical.get(normalizeName(primaryName))
+    if (!indexedNamespaceNodeBlocksRegistration(namespace, node, now)) continue
+    reverseByEndpoint.set(endpointKey(row.endpoint), { ...row, primaryName, name: primaryName })
   }
 
   for (const normalized of candidateSubnamesByNode.values()) {
@@ -163,6 +167,12 @@ export async function loadSnapshotStore(snapshotFile) {
     ])
   }
 
+  for (const node of subnamesByNode.keys()) {
+    if (!indexedNamespaceNodeBlocksRegistration(namespace, node, now)) {
+      recordsByNode.delete(node)
+      delete subnamesByNode.get(node).records
+    }
+  }
   recordsByNodeKey = rebuildCurrentRecordIndexes(recordsByNode)
 
   for (const row of Array.isArray(snapshot.recordHistory) ? snapshot.recordHistory : []) {
@@ -255,6 +265,7 @@ export async function loadSnapshotStore(snapshotFile) {
     mode: 'snapshot',
     poolState: { ...emptyPoolState(), ...snapshot.poolState },
     namesByCanonical,
+    namesByAuthority: indexNamesByAuthority(namesByCanonical, controllersByNode),
     namesByNode,
     activityByNode,
     reverseByEndpoint,

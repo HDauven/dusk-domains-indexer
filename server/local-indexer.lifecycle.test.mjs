@@ -215,8 +215,8 @@ describe('local indexer event-log lifecycle cleanup', () => {
       await expect(expectJson(`${baseUrl}/activity?node=${node}`)).resolves.toMatchObject([
         { eventType: 'subname_pruned', target: 'pruned' },
         { eventType: 'subname_created', target: manager },
-        { eventType: 'primary_name', target: `moonlight_address:${moonlight}` },
-        { eventType: 'primary_name', target: `moonlight_address:${moonlight}` },
+        { eventType: 'primary_name_cleared', target: `moonlight_address:${moonlight}` },
+        { eventType: 'primary_name_set', target: `moonlight_address:${moonlight}` },
         { eventType: 'record_update', target: 'website' },
         { eventType: 'record_update', target: 'website' },
         { eventType: 'record_update', target: 'moonlight_address' },

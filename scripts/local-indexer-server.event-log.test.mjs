@@ -86,7 +86,7 @@ describe('local indexer event-log HTTP API', () => {
     }])
     await expect(expectJson(`${baseUrl}/activity?node=${fixture.node}`)).resolves.toMatchObject([
       { eventType: 'subname_created' },
-      { eventType: 'primary_name' },
+      { eventType: 'primary_name_set' },
       { eventType: 'record_update' },
       { eventType: 'transfer' },
       { eventType: 'registration' },

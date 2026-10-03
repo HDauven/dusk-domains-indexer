@@ -101,7 +101,7 @@ describe('local indexer malformed event-log handling', () => {
     const activity = await expectJson(`${baseUrl}/activity?node=${fixture.node}`)
     expect(activity.map((entry) => entry.eventType).slice(0, 3)).toEqual([
       'subname_created',
-      'primary_name',
+      'primary_name_set',
       'record_update',
     ])
   })

@@ -368,7 +368,7 @@ export function createIndexerParityEvents() {
       updatedAtBlockHeight: 42,
     }, { blockHeight: 42, txId: 'marketplace-config-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_fixed_sale_opened',
+      type: 'domain_fixed_sale_opened', saleId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,
@@ -379,7 +379,7 @@ export function createIndexerParityEvents() {
       openedAtBlockHeight: 43,
     }, { blockHeight: 43, txId: 'marketplace-fixed-open-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_fixed_sale_closed',
+      type: 'domain_fixed_sale_closed', saleId: 1,
       node: fixtureNode,
       sellerAuthority: fixtureOwner,
       expired: false,
@@ -387,7 +387,7 @@ export function createIndexerParityEvents() {
       closedAtBlockHeight: 44,
     }, { blockHeight: 44, txId: 'marketplace-fixed-close-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_fixed_sale_opened',
+      type: 'domain_fixed_sale_opened', saleId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,
@@ -398,7 +398,7 @@ export function createIndexerParityEvents() {
       openedAtBlockHeight: 45,
     }, { blockHeight: 45, txId: 'marketplace-private-open-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_fixed_sale_filled',
+      type: 'domain_fixed_sale_filled', saleId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,
@@ -409,7 +409,7 @@ export function createIndexerParityEvents() {
       filledAtBlockHeight: 46,
     }, { blockHeight: 46, txId: 'marketplace-fixed-fill-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_auction_created',
+      type: 'domain_auction_created', auctionId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,
@@ -420,7 +420,7 @@ export function createIndexerParityEvents() {
       createdAtBlockHeight: 47,
     }, { blockHeight: 47, txId: 'marketplace-auction-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_auction_cancelled',
+      type: 'domain_auction_cancelled', auctionId: 1,
       node: fixtureNode,
       sellerAuthority: fixtureOwner,
       expired: false,
@@ -428,7 +428,7 @@ export function createIndexerParityEvents() {
       cancelledAtBlockHeight: 48,
     }, { blockHeight: 48, txId: 'marketplace-cancel-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_auction_created',
+      type: 'domain_auction_created', auctionId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,
@@ -439,7 +439,7 @@ export function createIndexerParityEvents() {
       createdAtBlockHeight: 49,
     }, { blockHeight: 49, txId: 'marketplace-reauction-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_bid_placed',
+      type: 'domain_bid_placed', auctionId: 1,
       node: fixtureNode,
       bidderAuthority: fixtureBuyerAuthority,
       amountLux: 50_000_000_000,
@@ -453,7 +453,7 @@ export function createIndexerParityEvents() {
       placedAtBlockHeight: 50,
     }, { blockHeight: 50, txId: 'marketplace-bid-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_bid_placed',
+      type: 'domain_bid_placed', auctionId: 1,
       node: fixtureNode,
       bidderAuthority: fixtureManager,
       amountLux: 52_500_000_000,
@@ -467,7 +467,7 @@ export function createIndexerParityEvents() {
       placedAtBlockHeight: 8_700,
     }, { blockHeight: 8_700, txId: 'marketplace-outbid-tx', contractKey: 'marketplace' }),
     envelope({
-      type: 'domain_auction_settled',
+      type: 'domain_auction_settled', auctionId: 1,
       node: fixtureNode,
       name: 'aurora.dusk',
       sellerAuthority: fixtureOwner,

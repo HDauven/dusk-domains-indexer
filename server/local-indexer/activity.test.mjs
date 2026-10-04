@@ -23,7 +23,7 @@ it('replays distinct activity IDs and observation times independently of replay 
 
 it('does not relabel legacy polled heights as confirmed event heights', () => {
   const meta = { source: 'w3sper-live-subscription', blockHeight: 95 }
-  expect(confirmedEventBlockHeight({ type: 'domain_bid_placed', placedAtBlockHeight: 100 }, meta)).toBe(100)
+  expect(confirmedEventBlockHeight({ type: 'domain_bid_placed', auctionId: 1, placedAtBlockHeight: 100 }, meta)).toBe(100)
   expect(confirmedEventBlockHeight({ type: 'record_cleared' }, meta)).toBeNull()
   expect(confirmedEventBlockHeight({ type: 'registration_committed' }, meta)).toBe(95)
   expect(confirmedEventBlockHeight({ type: 'record_cleared' }, { blockHeight: 100, txId: 'tx' })).toBe(100)

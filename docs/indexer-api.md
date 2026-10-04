@@ -386,7 +386,10 @@ GET /marketplace/refund?authority=0x...
 Fixed-sale rows include the snapshotted price and fee, optional private buyer,
 expiry and escrow status. Auction rows include the reserve, duration, start
 deadline, first-bid start and end blocks, highest bid, bid count, snapshotted
-fee and escrow status. Offers are keyed by domain node and buyer authority.
+fee and escrow status. Bid count, highest bid and end height describe the current
+auction; they are not write bindings. Clients retain the auction ID and immutable
+terms through review and signing, while the contract checks each chosen bid
+against the current minimum. Offers are keyed by domain node and buyer authority.
 
 Outbid, canceled-offer and failed-settlement funds are aggregated by authority
 in `/marketplace/refund`. A successful `marketplace_refund_claimed` event clears
@@ -668,3 +671,12 @@ from its total `fee_lux`; missing historical premium fields mean zero.
 Quotes are observations. Refresh before signing and warn during the final ten
 minutes before a step. The contract requires the exact total at reveal, so a step
 crossed after quoting requires a retry at the lower price.
+
+### Marketplace placement identity
+
+Auction list and detail responses include `auctionId`; fixed-sale responses
+include `saleId`. These positive safe integers identify a single placement,
+including cancel-and-recreate operations in the same block. The shared event
+projector retains these IDs through bids and replay. Snapshots must contain the
+same IDs and reject missing or inexact values. Clients must retain the reviewed
+ID when preparing marketplace transactions.

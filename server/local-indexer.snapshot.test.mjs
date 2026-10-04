@@ -407,3 +407,28 @@ describe('local indexer snapshot API', () => {
     }
   })
 })
+
+it('serves exact marketplace identities from snapshots', async () => {
+  const node = `0x${'aa'.repeat(32)}`
+  const saleNode = `0x${'cc'.repeat(32)}`
+  const snapshot = {
+    ...createSnapshot({ owner: '0xowner' }),
+    marketplaceAuctions: [{ node, name: 'aurora.dusk', sellerAuthority: '0xowner', auctionId: 42 }],
+    marketplaceFixedSales: [{ node: saleNode, name: 'sale.dusk', sellerAuthority: '0xowner', saleId: 43 }],
+  }
+  const store = await loadSnapshotStore(await writeSnapshot(snapshot))
+  const { baseUrl, close } = await startServer(store)
+  try {
+    expect(await expectJson(`${baseUrl}/marketplace/auctions`)).toMatchObject([{ auctionId: 42 }])
+    expect(await expectJson(`${baseUrl}/marketplace/auction?node=${node}`)).toMatchObject({ auctionId: 42 })
+    expect(await expectJson(`${baseUrl}/marketplace/fixed-sales`)).toMatchObject([{ saleId: 43 }])
+    expect(await expectJson(`${baseUrl}/marketplace/fixed-sale?node=${saleNode}`)).toMatchObject({ saleId: 43 })
+  } finally { await close() }
+})
+
+it.each([undefined, 0, -1, 1.5, '42', Number.MAX_SAFE_INTEGER + 1])('rejects missing or inexact snapshot marketplace identity %s', async id => {
+  for (const [collection, field] of [['marketplaceAuctions', 'auctionId'], ['marketplaceFixedSales', 'saleId']]) {
+    const file = await writeSnapshot({ ...createSnapshot(), [collection]: [{ node: `0x${'aa'.repeat(32)}`, name: 'aurora.dusk', sellerAuthority: '0xowner', [field]: id }] })
+    await expect(loadSnapshotStore(file)).rejects.toThrow()
+  }
+})

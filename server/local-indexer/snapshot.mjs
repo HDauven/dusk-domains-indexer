@@ -189,6 +189,7 @@ export async function loadSnapshotStore(snapshotFile) {
     const node = normalizeNode(sale.node)
     marketplaceFixedSalesByNode.set(node, {
       ...sale,
+      saleId: marketplaceId(sale.saleId),
       node,
       sellerAuthority: normalizeNode(sale.sellerAuthority),
       privateBuyer: sale.privateBuyer ? normalizeNode(sale.privateBuyer) : null,
@@ -209,6 +210,7 @@ export async function loadSnapshotStore(snapshotFile) {
     const node = normalizeNode(auction.node)
     marketplaceAuctionsByNode.set(node, {
       ...auction,
+      auctionId: marketplaceId(auction.auctionId),
       node,
       marketplaceContractId: typeof auction.marketplaceContractId === 'string' ? normalizeNode(auction.marketplaceContractId) : null,
       escrowed: Boolean(auction.escrowed),
@@ -293,4 +295,9 @@ export async function loadSnapshotStore(snapshotFile) {
     ...(cursor ? { cursor } : {}),
     ...(checkpoint ? { checkpoint } : {}),
   }
+}
+
+function marketplaceId(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Marketplace snapshot ID must be a positive safe integer.')
+  return value
 }

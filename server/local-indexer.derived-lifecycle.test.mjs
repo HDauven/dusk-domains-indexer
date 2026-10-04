@@ -87,7 +87,7 @@ it.each([99, 100, 109, 110])('uses indexed height %s for escrow on auction and f
     expiresAtBlockHeight: 100, graceEndsAtBlockHeight: 110,
   }, 1)
   apply(state, {
-    type: 'domain_auction_created', node: root, name: 'acme.dusk', sellerAuthority: owner,
+    type: 'domain_auction_created', auctionId: 1, node: root, name: 'acme.dusk', sellerAuthority: owner,
     reservePriceLux: 1_000_000_000, durationBlocks: 100, startDeadlineBlockHeight: 90,
     feeBps: 250, createdAtBlockHeight: 2,
   }, 2, { contractId: marketplace })

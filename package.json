@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@dusk/w3sper": "npm:@jsr/dusk__w3sper@^1.6.0",
-    "@duskdomains/sdk": "https://github.com/HDauven/dusk-domains-sdk/archive/90579212fa030053ac91716da78054c789ca3255.tar.gz",
+    "@duskdomains/sdk": "https://github.com/HDauven/dusk-domains-sdk/archive/96d5534207c5393fec0f6abf0d51000941b7a58f.tar.gz",
     "@noble/hashes": "^2.2.0",
     "@resvg/resvg-js": "^2.6.2"
   },

@@ -170,7 +170,7 @@ describe('local indexer event-log API', () => {
       },
       {
         event: {
-          type: 'domain_auction_created',
+          type: 'domain_auction_created', auctionId: 1,
           node,
           name: 'aurora.dusk',
           sellerAuthority,
@@ -188,6 +188,7 @@ describe('local indexer event-log API', () => {
 
     try {
       await expect(expectJson(`${baseUrl}/marketplace/auctions`)).resolves.toMatchObject([{
+        auctionId: 1,
         node,
         name: 'aurora.dusk',
         sellerAuthority,
@@ -201,6 +202,7 @@ describe('local indexer event-log API', () => {
         bidCount: 0,
       }])
       await expect(expectJson(`${baseUrl}/marketplace/auction?node=${node}`)).resolves.toMatchObject({
+        auctionId: 1,
         node,
         name: 'aurora.dusk',
         marketplaceContractId,
@@ -274,7 +276,7 @@ describe('local indexer event-log API', () => {
       },
       {
         event: {
-          type: 'domain_auction_created',
+          type: 'domain_auction_created', auctionId: 1,
           node,
           name: 'aurora.dusk',
           sellerAuthority,
@@ -334,7 +336,7 @@ describe('local indexer event-log API', () => {
       },
       {
         event: {
-          type: 'domain_fixed_sale_opened',
+          type: 'domain_fixed_sale_opened', saleId: 1,
           node,
           name: 'market.dusk',
           sellerAuthority,
@@ -398,7 +400,7 @@ describe('local indexer event-log API', () => {
     const sellerAuthority = `0x${'11'.repeat(32)}`
     const created = {
       event: {
-        type: 'domain_auction_created',
+        type: 'domain_auction_created', auctionId: 1,
         node,
         name: 'aurora.dusk',
         sellerAuthority,
@@ -414,7 +416,7 @@ describe('local indexer event-log API', () => {
       created,
       {
         event: {
-          type: 'domain_bid_placed',
+          type: 'domain_bid_placed', auctionId: 1,
           node,
           bidderAuthority: `0x${'22'.repeat(32)}`,
           amountLux: 25_000_000_000,
@@ -431,7 +433,7 @@ describe('local indexer event-log API', () => {
       },
       {
         event: {
-          type: 'domain_auction_settled',
+          type: 'domain_auction_settled', auctionId: 1,
           node,
           name: 'aurora.dusk',
           sellerAuthority,

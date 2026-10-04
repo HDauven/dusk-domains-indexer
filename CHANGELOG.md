@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve auction and fixed-sale IDs through event replay, snapshots and marketplace API responses. Reject snapshots with missing or inexact marketplace IDs.
+
 - Serve crawler HTML previews for active names with safe site defaults. ([#201])
 - Render bounded, cached PNG name cards with bundled Instrument Serif fonts. ([#201])
 

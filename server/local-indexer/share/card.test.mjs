@@ -1,6 +1,6 @@
 import { Resvg } from '@resvg/resvg-js'
 import { afterEach, expect, it, vi } from 'vitest'
-import { renderNameCard } from './card.mjs'
+import { footerSvg, nameCardSvg, renderNameCard } from './card.mjs'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -98,4 +98,12 @@ it('keeps the wordmark small and muted', () => {
   expect(wordmark[0].bottom - wordmark[0].top).toBeLessThan(24)
   expect(wordmark[0].right - wordmark[0].left).toBeLessThan(130)
   expect(textLines(ink, 560, 620)).toHaveLength(0)
+})
+
+it('puts the site mark beside the site address on share cards', () => {
+  const svg = nameCardSvg('aurora.dusk')
+  expect(svg).toMatch(/<svg x="[\d.]+" y="570" width="28" height="28" viewBox="0 0 512 512">[\s\S]*?<\/svg><text x="[\d.]+" y="592" font-size="24" text-anchor="start" fill="#c4b6cb">dusk\.domains<\/text>/)
+  // The mark's ids are its own, so they cannot reuse the card's gradients.
+  expect(svg.match(/\bid="mark-sky"/g)).toHaveLength(1)
+  expect(footerSvg(null)).toBe('<text x="600" y="592" font-size="24" fill="#c4b6cb">dusk.domains</text>')
 })

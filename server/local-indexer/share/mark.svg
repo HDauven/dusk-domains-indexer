@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The mark for 16 and 32 px: a larger sun, a thicker rim and no blur, so it stays crisp. -->
+  <defs>
+    <linearGradient id="mark-sky" x2="0.3" y2="1"><stop stop-color="#171222"/><stop offset="0.6" stop-color="#35223c"/><stop offset="1" stop-color="#58344b"/></linearGradient>
+    <linearGradient id="mark-disc" x2="0.2" y2="1"><stop stop-color="#f2c5ab"/><stop offset="1" stop-color="#d79588"/></linearGradient>
+    <linearGradient id="mark-rim"><stop stop-color="#b173df"/><stop offset="0.55" stop-color="#d4b5eb"/><stop offset="0.8" stop-color="#f2c5ab"/><stop offset="1" stop-color="#d79588"/></linearGradient>
+    <clipPath id="mark-tile"><rect width="512" height="512" rx="116"/></clipPath>
+  </defs>
+  <g clip-path="url(#mark-tile)">
+    <rect width="512" height="512" fill="url(#mark-sky)"/>
+    <circle cx="300" cy="290" r="124" fill="url(#mark-disc)"/>
+    <ellipse cx="256" cy="572" rx="450" ry="210" fill="#201529" stroke="url(#mark-rim)" stroke-width="34"/>
+  </g>
+</svg>

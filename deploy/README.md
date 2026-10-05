@@ -78,3 +78,5 @@ Unknown, expired and invalid names receive the default site HTML preview. Invali
 PNG names return a plain `400` response before rendering; unknown and expired
 names receive a generic card. Images are rendered locally with bundled OFL
 Instrument Serif fonts and retained in an LRU cache of at most 128 cards or 16 MiB.
+The card's footer carries the site's small mark from `share/mark.svg`. The
+frontend repository's brand script writes it from the site's mark sources.

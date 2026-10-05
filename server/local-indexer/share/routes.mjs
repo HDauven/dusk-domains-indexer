@@ -1,18 +1,11 @@
 import { normalizeName } from '../http.mjs'
 import { nameValidationIssue } from '../naming.mjs'
-import { lifecycleClock, lifecycleMomentPassed } from '../read-models/lifecycle.mjs'
+import { lifecycleClock } from '../read-models/lifecycle.mjs'
 import { createCardCache, escapeHtml } from './card.mjs'
+import { activeNode, crawlerPage, namesSitemap } from './crawler.mjs'
 
 const origin = 'https://dusk.domains'
 const defaultDescription = 'Search, register and manage .dusk domains for Dusk wallets, contracts and apps.'
-
-function activeNode(store, node, now, seen = new Set()) {
-  if (seen.has(node)) return false
-  seen.add(node)
-  const lifecycle = store.namesByNode.get(node) ?? store.subnamesByNode?.get(node)
-  if (!lifecycle || lifecycle.status !== 'active' || lifecycleMomentPassed(lifecycle.expiresAtBlockHeight, lifecycle.expiresAt, now)) return false
-  return !lifecycle.parentNode || activeNode(store, lifecycle.parentNode, now, seen)
-}
 
 function previewForName(store, canonical) {
   const name = store.namesByCanonical.get(canonical) ?? store.subnamesByCanonical?.get(canonical)
@@ -50,7 +43,32 @@ ${meta('name', 'twitter:image', image)}
 
 export function createShareHandler() {
   const cards = createCardCache()
+  const resolve = async (storeProvider) => typeof storeProvider === 'function' ? storeProvider() : storeProvider
+  const crawlerHeaders = (headers, contentType) => ({
+    ...headers,
+    'content-type': contentType,
+    'cache-control': 'public, max-age=300',
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  })
   return async (pathname, storeProvider, response, headers) => {
+    if (pathname === '/sitemap/names.xml') {
+      const store = await resolve(storeProvider)
+      response.writeHead(200, crawlerHeaders(headers, 'application/xml; charset=utf-8'))
+      response.end(namesSitemap(store, lifecycleClock(store)))
+      return true
+    }
+    if (pathname.startsWith('/page/name/')) {
+      let input = ''
+      try { input = decodeURIComponent(pathname.slice('/page/name/'.length)) } catch { /* Malformed input gets the plain page. */ }
+      const canonical = normalizeName(input)
+      const valid = !nameValidationIssue(canonical)
+      const store = valid ? await resolve(storeProvider) : null
+      const result = crawlerPage(store, valid ? canonical : null, store ? lifecycleClock(store) : null, defaultDescription)
+      response.writeHead(result.status, crawlerHeaders(headers, 'text/html; charset=utf-8'))
+      response.end(result.html)
+      return true
+    }
     if (!pathname.startsWith('/share/name/')) return false
     let input = ''
     try { input = decodeURIComponent(pathname.slice('/share/name/'.length)) } catch { /* Malformed input gets the default preview. */ }

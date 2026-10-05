@@ -37,9 +37,18 @@ proxy trust disabled unless explicitly configured.
 
 ## App and link previews on dusk.domains
 
-When the static app and API share a host, route preview crawlers to the indexer's
-share HTML before the SPA fallback. Normal browsers keep `/name/<name>` and receive
-`index.html`. The `/api` prefix is stripped before proxying to the API:
+When the static app and API share a host, Caddy routes two kinds of crawlers on
+`/name/<name>` before the SPA fallback:
+
+- Link-preview bots (X, Discord, Telegram and others) get the share HTML with the
+  name's card.
+- AI crawlers that do not run scripts get the crawler page: the name page's facts
+  as plain HTML, served at the name's own URL.
+
+Browsers, Googlebot and Bingbot keep the app; the search engines render it. The
+names sitemap is served at the site root, because a sitemap may only list URLs
+at or below its own location. The `/api` prefix is stripped before proxying to
+the API:
 
 ```caddyfile
 dusk.domains {
@@ -54,6 +63,12 @@ dusk.domains {
             header_regexp User-Agent (?i)(facebookexternalhit|facebot|twitterbot|slackbot|discordbot|linkedinbot|telegrambot|whatsapp|applebot|embedly|pinterestbot|skypeuripreview|google-inspectiontool)
         }
         rewrite @preview /api/share/name/{re.shareName.1}
+        @crawler {
+            path_regexp crawlName ^/name/(.+)$
+            header_regexp User-Agent (?i)(gptbot|oai-searchbot|chatgpt-user|claudebot|claude-searchbot|perplexitybot|ccbot)
+        }
+        rewrite @crawler /api/page/name/{re.crawlName.1}
+        rewrite /sitemap-names.xml /api/sitemap/names.xml
         handle_path /api/* {
             reverse_proxy 127.0.0.1:8787
         }
@@ -72,9 +87,21 @@ HTML and PNGs use a five-minute public cache lifetime and the API's normal rate
 limit. Canonical URLs use `https://dusk.domains/name/<name>.dusk` without referral
 parameters; humans who open share HTML are redirected to that app URL.
 
-The API serves `GET /share/name/<name>` and `GET /share/name/<name>.png` internally
-(publicly under `/api`). Active names use their public `text.description` record.
+The API serves `GET /share/name/<name>`, `GET /share/name/<name>.png`,
+`GET /page/name/<name>` and `GET /sitemap/names.xml` internally (publicly under
+`/api`). The crawler page shows the owner's Dusk address only when a known address
+derives to the owner's authority, and otherwise the owner ID. Names that are not
+active get a plain page marked `noindex` that says why: not registered, expired
+and renewable until the end of grace, expired and open to registration, or under
+an expired parent. The names sitemap lists every active name and subname that the
+page accepts, with the time of its latest activity; it is rebuilt only when the read
+model or the chain height changes. The site's `sitemap.xml` is an index of
+`sitemap-pages.xml` and `sitemap-names.xml`.
+
+Active names use their public `text.description` record.
 Unknown, expired and invalid names receive the default site HTML preview. Invalid
 PNG names return a plain `400` response before rendering; unknown and expired
 names receive a generic card. Images are rendered locally with bundled OFL
 Instrument Serif fonts and retained in an LRU cache of at most 128 cards or 16 MiB.
+The card's footer carries the site's small mark from `share/mark.svg`. The
+frontend repository's brand script writes it from the site's mark sources.

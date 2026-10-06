@@ -42,8 +42,8 @@ it('configures separate data, ports, origins and nodes for both instances', asyn
 
 it('routes each site to its own assets and API while retaining crawler and preview routes', async () => {
   const caddy = await read('deploy/Caddyfile.example')
-  expect(caddy).toContain('root * {args[0]}')
-  expect(caddy).toContain('reverse_proxy {args[1]}')
+  expect(caddy).toContain('root * {args.0}')
+  expect(caddy).toContain('reverse_proxy {args.1}')
   expect(caddy).toContain('import dusk_domains_site /srv/dusk-domains/dist 127.0.0.1:8787')
   expect(caddy).toContain('import dusk_domains_site /srv/dusk-domains-testnet/dist 127.0.0.1:8788')
   expect(caddy).toMatch(/testnet\.dusk\.domains \{\s+header \{\s+X-Robots-Tag "noindex, nofollow"\s+defer/)
@@ -59,7 +59,7 @@ it('exposes IndexNow keys at the site root without rewriting static text files',
   const caddy = await read('deploy/Caddyfile.example')
   const matcher = caddy.match(/\t\t@indexNow \{([\s\S]*?)\n\t\t\}/)?.[1]
   expect(matcher).toBeDefined()
-  expect(matcher).toMatch(/not file \{\s+root \{args\[0\]\}\s+try_files \{path\}\s+\}/)
+  expect(matcher).toMatch(/not file \{\s+root \{args\.0\}\s+try_files \{path\}\s+\}/)
   expect(matcher).not.toContain('not path')
   const pattern = matcher.match(/path_regexp indexNowKey (.+)/)?.[1]
   expect(pattern).toBe(String.raw`^/([A-Za-z0-9-]{8,128})\.txt$`)

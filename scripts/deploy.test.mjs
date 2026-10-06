@@ -51,6 +51,8 @@ it('routes each site to its own assets and API while retaining crawler and previ
   expect(caddy).toContain('rewrite @crawler /api/page/name/{re.crawlName.1}')
   expect(caddy).toContain('rewrite /sitemap-names.xml /api/sitemap/names.xml')
   expect(caddy).toMatch(/api\.dusk\.domains \{[\s\S]*?reverse_proxy 127\.0\.0\.1:8787/)
+  expect(caddy).toMatch(/www\.dusk\.domains \{\s+redir https:\/\/dusk\.domains\{uri\} permanent/)
+  expect(caddy).toContain('Cache-Control "public, max-age=31536000, immutable"')
 })
 
 async function fixture() {

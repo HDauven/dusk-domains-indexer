@@ -170,8 +170,9 @@ Perform these steps in order before bringing up mainnet on port 8787.
    catch up. Check health, source commit, deployment identity and archive coverage
    against the deployment proof before exposing it.
 4. Install the mainnet frontend at `/srv/dusk-domains/dist`. Switch `dusk.domains`
-   and `www.dusk.domains` to that root and upstream 8787. `api.dusk.domains` also
-   uses 8787. Validate and reload Caddy; verify testnet still uses 8788.
+   to that root and upstream 8787; `www.dusk.domains` redirects to it, and
+   `api.dusk.domains` also uses 8787. Validate and reload Caddy; verify testnet
+   still uses 8788.
 5. Check canonical URLs, preview cards and the names sitemap on mainnet. Configure
    separate monitoring and backups using each instance's env.
 

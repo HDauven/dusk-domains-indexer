@@ -204,7 +204,7 @@ it('does not call live-only, stale, stopped, lagging or damaged archive state he
 })
 
 it('rejects failed HTTP/GraphQL archive responses instead of interpreting them as empty blocks', async () => {
-  await assert.rejects(queryArchive('http://node/', '{}', async () => ({ ok: false, status: 503 })), /503/)
+  await assert.rejects(queryArchive('http://node/', '{}', async () => ({ ok: false, status: 503 }), { wait: async () => {} }), /503/)
   await assert.rejects(queryArchive('http://node/', '{}', async () => ({ ok: true, json: async () => ({ errors: ['unavailable'] }) })), /unavailable/)
 })
 
@@ -323,5 +323,87 @@ it('collects the real driver large-total treasury event, continues with later ev
     assert.equal(response.status, 200)
     assert.deepEqual([response.body.totalReceivedLux, response.body.availableLux, response.body.registrationReceivedLux],
       ['9999995231628421', '9999995231628419', '9999995231628417'])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+it('backs off on 429 and 5xx and retries the exact archive query', async () => {
+  const delays = []
+  const bodies = []
+  const statuses = [429, 500, 502, 503, 504, 503, 200]
+  const result = await queryArchive('http://node/', '{lastBlockPair{json}}', async (_url, { body }) => {
+    bodies.push(body)
+    const status = statuses.shift()
+    return { ok: status === 200, status, headers: new Headers(status === 429 ? { 'retry-after': '3' } : {}),
+      json: async () => ({ data: { result: 'complete' } }) }
+  }, { wait: async ms => delays.push(ms) })
+  assert.deepEqual(result, { result: 'complete' })
+  assert.deepEqual(delays, [3000, 2000, 4000, 8000, 16000, 30000])
+  assert.deepEqual(bodies, Array(7).fill('{lastBlockPair{json}}'))
+})
+
+it('honours Retry-After dates, bounds retry attempts and cancels backoff', async () => {
+  const waits = []
+  const date = new Date(Date.now() + 60_000).toUTCString()
+  const retry = async () => ({ ok: false, status: 503, headers: new Headers({ 'retry-after': date }) })
+  await assert.rejects(queryArchive('http://node/', '{}', retry, { wait: async ms => waits.push(ms) }), /503/)
+  assert.equal(waits.length, 6)
+  assert(waits.every(ms => ms > 58_000 && ms <= 60_000))
+  const controller = new AbortController()
+  const fetcher = async () => { controller.abort(); return { ok: false, status: 429 } }
+  await assert.rejects(queryArchive('http://node/', '{}', fetcher, { signal: controller.signal }), { name: 'AbortError' })
+})
+
+it('keeps the cursor and journal unchanged through public archive retries at every query stage', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'archive-retry-'))
+  const hash = n => n.toString(16).padStart(64, '0')
+  const header = height => ({ height, hash: hash(height), prevBlockHash: hash(height - 1), timestamp: 1_780_000_000 + height })
+  const source = hash(900)
+  const config = { fromBlock: 1, nodeUrl: 'http://node/', publicDir: dir,
+    eventLog: join(dir, 'events.jsonl'), cursorFile: join(dir, 'cursor.json'),
+    contracts: [{ key: 'core', contractId: source, driverFile: 'driver.wasm', events: ['record_cleared'] }] }
+  const raw = { source, origin: hash(901), reverted: false, topic: 'record_cleared',
+    data: Buffer.from(JSON.stringify({ node: Array(32).fill(1), controller: Array(32).fill(2), key: 'website' })).toString('hex') }
+  const attempts = new Map()
+  const delays = []
+  const controller = new AbortController()
+  const fetcher = async (_url, { body }) => {
+    const count = (attempts.get(body) ?? 0) + 1
+    attempts.set(body, count)
+    if (count < 3) return { ok: false, status: count === 1 ? 429 : 503 }
+    let result
+    if (body.includes('block(height:')) result = { block: { header: header(0) } }
+    else if (body.includes('__type')) result = { __type: { fields: [{ name: 'contractEvents' }] } }
+    else if (body.includes('lastBlockPair')) result = { lastBlockPair: { json: { last_block: [2, hash(2)], last_finalized_block: [2, hash(2)] } } }
+    else if (body.includes('blocks(range:')) {
+      assert(body.includes('range:[1,2]'))
+      result = { blocks: [1, 2].map(height => ({ header: header(height), transactions: [{ id: raw.origin }] })) }
+    } else if (body.includes('checkBlock')) result = { b0: true, b1: true }
+    else {
+      controller.abort()
+      result = { b0: { json: [raw] }, b1: { json: [raw] } }
+    }
+    return { ok: true, json: async () => result }
+  }
+  const wait = async ms => {
+    if (controller.signal.aborted) return
+    delays.push(ms)
+    assert.equal(await readFile(config.eventLog, 'utf8'), '')
+    try {
+      const cursor = JSON.parse(await readFile(config.cursorFile, 'utf8'))
+      assert.equal(cursor.scannedBlockHeight, 0)
+      assert.equal(cursor.eventCount, 0)
+    } catch (error) { if (error.code !== 'ENOENT') throw error }
+  }
+  try {
+    await writeFile(join(dir, 'driver.wasm'), '')
+    await collectArchive(config, { fetcher, signal: controller.signal, wait })
+    const cursor = JSON.parse(await readFile(config.cursorFile, 'utf8'))
+    assert.equal(cursor.scannedBlockHeight, 2)
+    assert.equal(cursor.eventCount, 2)
+    const rows = (await readFile(config.eventLog, 'utf8')).trim().split('\n').map(JSON.parse)
+    assert.deepEqual(rows.map(row => row.meta.blockHeight), [1, 2])
+    assert.equal(attempts.size, 6)
+    assert([...attempts.values()].every(count => count === 3))
+    assert.deepEqual(delays, Array.from({ length: 6 }, () => [1000, 2000]).flat())
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

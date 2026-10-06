@@ -41,10 +41,11 @@ const optionalContracts = [
   },
 ]
 
-export async function loadCollectorConfig(options = {}) {
+export async function loadCollectorConfig(options = {}, runtimeEnv = process.env) {
   const envFile = resolve(rootDir, options.envFile ?? '.env.local')
   const env = existsSync(envFile) ? parseEnvFile(await readFile(envFile, 'utf8')) : {}
   const nodeUrl = options.nodeUrl
+    ?? runtimeEnv.DUSK_DOMAINS_COLLECTOR_NODE_URL
     ?? env.VITE_DUSK_DOMAINS_NODE_URL
     ?? 'http://127.0.0.1:18180/'
   const eventLog = resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl')

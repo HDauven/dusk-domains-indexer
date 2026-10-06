@@ -42,7 +42,9 @@ and paths, and page warnings. The local health/replay helpers retain full detail
 
 ## Server Layout
 
-Recommended paths:
+For mainnet and testnet on one server, use the [instance templates and migration checklist](../deploy/README.md). The following layout describes the original single-instance units.
+
+Single-instance paths:
 
 ```text
 /opt/dusk-domains-indexer          repository checkout
@@ -68,7 +70,7 @@ cd /opt/dusk-domains-indexer
 npm ci
 ```
 
-The current package depends on the Dusk Domains SDK GitHub repo. Use an exact SDK commit and make sure the runtime has read access before running `npm ci`.
+The SDK is pinned to JSR 0.2.0 through the npm alias `npm:@jsr/duskdomains__sdk@0.2.0`. The checked-in `.npmrc` selects the JSR registry; `npm ci` uses the exact lockfile.
 
 Copy the environment template and edit values:
 

@@ -1,4 +1,4 @@
-import { validateBitcoinAddress, validateEthereumAddress, validateSolanaAddress } from '@duskdomains/sdk/chain-addresses'
+import { getRecordDefinition } from '@duskdomains/sdk'
 import {
   HIGH_RISK_RECORD_KEYS,
   RECENT_CHANGE_WARNING_WINDOW_SECONDS,
@@ -119,10 +119,10 @@ function recordDefinition(key) {
     dusk_contract: { maxBytes: 66, validate: validateDuskContract },
     dusk_asset: { maxBytes: 128, validate: validateOpaqueIdentifier },
     evm_address: { maxBytes: 42, validate: validateEvmAddress },
-    'address.btc': { maxBytes: 90, validate: validateBitcoinAddress },
-    'address.eth': { maxBytes: 42, validate: validateEthereumAddress },
-    'address.sol': { maxBytes: 44, validate: validateSolanaAddress },
-    'address.evm': { maxBytes: 42, validate: validateEthereumAddress },
+    'address.btc': getRecordDefinition('address.btc'),
+    'address.eth': getRecordDefinition('address.eth'),
+    'address.sol': getRecordDefinition('address.sol'),
+    'address.evm': getRecordDefinition('address.evm'),
     website: { maxBytes: 2048, validate: validateHttpsUrl },
     avatar: { maxBytes: 2048, validate: validateDisplayUri },
     content_pointer: { maxBytes: 2048, validate: validateContentPointer },

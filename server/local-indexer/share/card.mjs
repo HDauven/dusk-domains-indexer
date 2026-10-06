@@ -1,6 +1,7 @@
 import { Resvg } from '@resvg/resvg-js'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { siteConfig } from './site.mjs'
 
 const font = {
   loadSystemFonts: false,
@@ -49,23 +50,24 @@ function nameLayout(name) {
 // The site's small mark, written by the frontend's `npm run brand` with its ids prefixed.
 const markFile = new URL('./mark.svg', import.meta.url)
 const siteMark = existsSync(markFile) ? readFileSync(markFile, 'utf8').replace(/^[\s\S]*?<svg\b[^>]*>/, '').replace(/<\/svg>\s*$/, '') : null
-const footer = { text: 'dusk.domains', size: 24, baseline: 592, mark: 28, gap: 10 }
-let footerTextWidth = null
+const footer = { size: 24, baseline: 592, mark: 28, gap: 10 }
+let footerMeasurement = null
 
 // The mark and the site address, centred together under the name.
-export function footerSvg(mark = siteMark) {
-  if (!mark) return `<text x="600" y="${footer.baseline}" font-size="${footer.size}" fill="#c4b6cb">${footer.text}</text>`
-  footerTextWidth ??= new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200"><text y="120" font-family="Instrument Serif" font-size="${footer.size}">${footer.text}</text></svg>`, { font }).getBBox()?.width || 0
-  const left = 600 - (footer.mark + footer.gap + footerTextWidth) / 2
+export function footerSvg(mark = siteMark, host = siteConfig().host) {
+  const text = escapeHtml(host)
+  if (!mark) return `<text x="600" y="${footer.baseline}" font-size="${footer.size}" fill="#c4b6cb">${text}</text>`
+  if (footerMeasurement?.text !== text) footerMeasurement = { text, width: new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200"><text y="120" font-family="Instrument Serif" font-size="${footer.size}">${text}</text></svg>`, { font }).getBBox()?.width || 0 }
+  const left = 600 - (footer.mark + footer.gap + footerMeasurement.width) / 2
   return `<svg x="${left}" y="${footer.baseline - 22}" width="${footer.mark}" height="${footer.mark}" viewBox="0 0 512 512">${mark}</svg>`
-    + `<text x="${left + footer.mark + footer.gap}" y="${footer.baseline}" font-size="${footer.size}" text-anchor="start" fill="#c4b6cb">${footer.text}</text>`
+    + `<text x="${left + footer.mark + footer.gap}" y="${footer.baseline}" font-size="${footer.size}" text-anchor="start" fill="#c4b6cb">${text}</text>`
 }
 
-export function renderNameCard(name) {
-  return new Resvg(nameCardSvg(name), { font }).render().asPng()
+export function renderNameCard(name, host = siteConfig().host) {
+  return new Resvg(nameCardSvg(name, host), { font }).render().asPng()
 }
 
-export function nameCardSvg(name) {
+export function nameCardSvg(name, host = siteConfig().host) {
   const { size, lines } = nameLayout(name)
   const lineHeight = size * 1.15
   const baseline = 260 - (lines.length - 1) * lineHeight / 2
@@ -91,7 +93,7 @@ export function nameCardSvg(name) {
     <ellipse cx="600" cy="870" rx="900" ry="400" fill="#201529" stroke="url(#rim)" stroke-width="3"/>
     <g font-family="Instrument Serif" text-anchor="middle" fill="#fff5ee">
       ${lines.map((line, index) => `<text x="600" y="${baseline + index * lineHeight}" font-size="${size}">${line}</text>`).join('')}
-      ${footerSvg()}
+      ${footerSvg(siteMark, host)}
     </g>
   </svg>`
   return svg

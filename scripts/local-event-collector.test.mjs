@@ -49,6 +49,14 @@ describe('local event collector config', () => {
     })
   })
 
+  it('uses the instance node URL ahead of the deployment file and below the CLI override', async () => {
+    const fixture = await createCollectorFixture()
+    const options = { envFile: fixture.envFile, publicDir: fixture.publicDir }
+    const env = { DUSK_DOMAINS_COLLECTOR_NODE_URL: 'https://archive.example/' }
+    expect((await loadCollectorConfig(options, env)).nodeUrl).toBe(env.DUSK_DOMAINS_COLLECTOR_NODE_URL)
+    expect((await loadCollectorConfig({ ...options, nodeUrl: 'http://override.example/' }, env)).nodeUrl).toBe('http://override.example/')
+  })
+
   it('keeps collector usage with the config surface', () => {
     expect(usage()).toContain('npm run indexer:collect')
     expect(usage()).toContain('--duration-ms')

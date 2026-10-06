@@ -1,0 +1,25 @@
+[Unit]
+Description=Dusk Domains event collector (%i)
+Documentation=https://github.com/HDauven/dusk-domains-indexer/blob/main/docs/production-runbook.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=duskdomains
+Group=duskdomains
+WorkingDirectory=/opt/dusk-domains-indexer-%i
+EnvironmentFile=/etc/dusk-domains/%i.env
+# Follows the finalized archive from the deployment height. The journal and cursor are the
+# API's inputs; the collector is their only writer.
+ExecStart=/usr/bin/env node /opt/dusk-domains-indexer-%i/scripts/local-event-collector.mjs --env-file ${DUSK_DOMAINS_DEPLOYMENT_ENV_FILE} --public-dir ${DUSK_DOMAINS_COLLECTOR_DRIVER_DIR} --event-log ${DUSK_DOMAINS_INDEXER_EVENT_LOG} --cursor-file ${DUSK_DOMAINS_INDEXER_CURSOR} --from-block ${DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dusk-domains /var/log/dusk-domains
+
+[Install]
+WantedBy=multi-user.target

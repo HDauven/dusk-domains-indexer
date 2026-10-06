@@ -38,7 +38,7 @@ function request(handler, url, { ip = '127.0.0.1', headers = {} } = {}) {
   })
 }
 
-it.each(['.env.example', 'deploy/systemd/dusk-domains-indexer.service'])('keeps forwarded client rate-limit budgets separate with %s', async (file) => {
+it.each(['.env.example', 'deploy/systemd/dusk-domains-indexer.service', 'deploy/systemd/dusk-domains-indexer@.service', 'deploy/mainnet.env.example', 'deploy/testnet.env.example'])('keeps forwarded client rate-limit budgets separate with %s', async (file) => {
   const contents = await readFile(new URL(`../${file}`, import.meta.url), 'utf8')
   const env = Object.fromEntries(contents.split('\n').map((line) => line.replace(/^Environment=/, '')).filter((line) => /^[A-Z_]+=/.test(line)).map((line) => line.split('=')))
   const options = securityOptionsFromEnv(env)

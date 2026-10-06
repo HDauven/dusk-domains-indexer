@@ -12,20 +12,31 @@ export const archiveSource = 'rusk-finalized-archive'
 const pollMs = 5_000
 const batchSize = 100
 
-export async function queryArchive(nodeUrl, query, fetcher = fetch) {
-  const response = await fetcher(new URL('on/graphql/query', nodeUrl.endsWith('/') ? nodeUrl : nodeUrl + '/'), {
-    method: 'POST', body: query, signal: AbortSignal.timeout(20_000),
-  })
-  assert(response.ok, `Archive HTTP ${response.status}`)
-  const body = await response.json()
-  assert(!body.errors, `Archive query failed: ${JSON.stringify(body.errors)}`)
-  return body.data ?? body
+export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wait = sleep } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    const timeout = AbortSignal.timeout(20_000)
+    const response = await fetcher(new URL('on/graphql/query', nodeUrl.endsWith('/') ? nodeUrl : nodeUrl + '/'), {
+      method: 'POST', body: query, signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    if ((response.status === 429 || response.status >= 500 && response.status <= 599) && attempt < 6) {
+      const retryAfter = response.headers?.get('retry-after')
+      const retryMs = retryAfter && /^\d+$/.test(retryAfter)
+        ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now()) || 0
+      await response.body?.cancel()
+      await wait(Math.max(Math.min(1000 * 2 ** attempt, 30_000), retryMs), undefined, { signal })
+      continue
+    }
+    assert(response.ok, `Archive HTTP ${response.status}`)
+    const body = await response.json()
+    assert(!body.errors, `Archive query failed: ${JSON.stringify(body.errors)}`)
+    return body.data ?? body
+  }
 }
 
-export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
+export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep } = {}) {
   integer(config.fromBlock)
   assert(config.fromBlock > 0, '--from-block must be positive')
-  const query = text => queryArchive(config.nodeUrl, text, fetcher)
+  const query = text => queryArchive(config.nodeUrl, text, fetcher, { signal, wait })
   const contracts = new Map()
   for (const contract of config.contracts) {
     const driver = await dataDrivers.load(await readFile(resolve(config.publicDir, contract.driverFile)))
@@ -160,7 +171,7 @@ export async function collectArchive(config, { signal, fetcher = fetch } = {}) {
         await persist({ ...cursor, status: 'blocked', reason: error.message })
         console.error(error.message)
       }
-      try { await sleep(pollMs, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
+      try { await wait(pollMs, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
     }
     await persist({ ...cursor, status: 'stopped' })
   } finally {

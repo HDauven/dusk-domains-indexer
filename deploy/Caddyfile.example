@@ -1,0 +1,73 @@
+(dusk_domains_site) {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	@webmanifest path /site.webmanifest
+	header @webmanifest Content-Type "application/manifest+json"
+
+	@staticAssets path /assets/* /contracts/*
+
+	route {
+		# Link-preview crawlers get the indexer's share card for a name page; browsers get the app.
+		@namePage path /name/*
+		header @namePage {
+			+Vary User-Agent
+			defer
+		}
+		@preview {
+			path_regexp shareName ^/name/(.+)$
+			header_regexp User-Agent (?i)(facebookexternalhit|facebot|twitterbot|slackbot|discordbot|linkedinbot|telegrambot|whatsapp|applebot|embedly|pinterestbot|skypeuripreview|google-inspectiontool)
+		}
+		rewrite @preview /api/share/name/{re.shareName.1}
+
+		# AI crawlers do not run JavaScript; they get the indexer's plain page for the name.
+		@crawler {
+			path_regexp crawlName ^/name/(.+)$
+			header_regexp User-Agent (?i)(gptbot|oai-searchbot|chatgpt-user|claudebot|claude-searchbot|perplexitybot|ccbot)
+		}
+		rewrite @crawler /api/page/name/{re.crawlName.1}
+		rewrite /sitemap-names.xml /api/sitemap/names.xml
+
+		handle_path /api/* {
+			reverse_proxy {args[1]}
+		}
+
+		handle @staticAssets {
+			root * {args[0]}
+			file_server
+		}
+
+		handle {
+			root * {args[0]}
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}
+
+dusk.domains, www.dusk.domains {
+	import dusk_domains_site /srv/dusk-domains/dist 127.0.0.1:8787
+}
+
+api.dusk.domains {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	reverse_proxy 127.0.0.1:8787
+}
+
+testnet.dusk.domains {
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		defer
+	}
+	import dusk_domains_site /srv/dusk-domains-testnet/dist 127.0.0.1:8788
+}

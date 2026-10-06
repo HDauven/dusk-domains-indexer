@@ -48,4 +48,6 @@ Snapshot mode is an explicit fixture/offline source, not finalized archive cover
 units. Event normalization, projection and reserved-name policy come from
 `@duskdomains/sdk/projection`; subscriptions use `@duskdomains/sdk/event-catalog`.
 
+For separate mainnet and testnet releases, see [the two-instance deployment guide](deploy/README.md).
+
 Licensed under [MIT](LICENSE).

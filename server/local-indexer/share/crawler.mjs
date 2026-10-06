@@ -4,8 +4,8 @@ import { normalizeName } from '../http.mjs'
 import { nameValidationIssue } from '../naming.mjs'
 import { indexedSubnameBlocksRegistration, lifecycleMomentPassed } from '../read-models/lifecycle.mjs'
 import { escapeHtml } from './card.mjs'
+import { siteConfig } from './site.mjs'
 
-const origin = 'https://dusk.domains'
 const sitemapLimit = 50_000
 const authorityDomain = utf8ToBytes('dusk-domains:runtime-authority:v1')
 const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
@@ -124,7 +124,7 @@ export function activeNode(store, node, now, seen = new Set()) {
   return !lifecycle.parentNode || activeNode(store, lifecycle.parentNode, now, seen)
 }
 
-function nameUrl(name) {
+function nameUrl(name, origin) {
   return `${origin}/name/${encodeURIComponent(name)}`
 }
 
@@ -178,16 +178,16 @@ function clockKey(now) {
  * activity first. The XML is rebuilt only when events arrive, the chain height changes or a
  * minute passes.
  */
-export function namesSitemap(store, now) {
+export function namesSitemap(store, now, { origin } = siteConfig()) {
   const view = sitemapCandidates(store)
-  const key = clockKey(now)
+  const key = `${origin}:${clockKey(now)}`
   if (view.xml !== null && view.clockKey === key) return view.xml
   const urls = []
   for (const { canonical, node, lastmod } of view.candidates) {
     if (urls.length === sitemapLimit) break
     if (!activeNode(store, node, now)) continue
     urls.push(`  <url>
-    <loc>${xmlEscape(nameUrl(canonical))}</loc>${lastmod === null ? '' : `
+    <loc>${xmlEscape(nameUrl(canonical, origin))}</loc>${lastmod === null ? '' : `
     <lastmod>${new Date(lastmod).toISOString()}</lastmod>`}
   </url>`)
   }
@@ -215,13 +215,13 @@ function recordValueHtml(record) {
   return `<code>${escapeHtml(value)}</code>`
 }
 
-function page({ title, description, canonical, image, index, body }) {
+function page({ title, description, canonical, image, index, noindex, body }) {
   const meta = (attribute, key, value) => `<meta ${attribute}="${key}" content="${escapeHtml(value)}">`
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 ${meta('name', 'description', description)}
-${meta('name', 'robots', index ? 'index,follow' : 'noindex,follow')}
+${meta('name', 'robots', noindex ? 'noindex' : index ? 'index,follow' : 'noindex,follow')}
 ${meta('property', 'og:site_name', 'Dusk Domains')}
 ${meta('property', 'og:type', 'website')}
 ${meta('property', 'og:title', title)}
@@ -298,7 +298,7 @@ function inactiveNotice(store, name, canonical, now) {
  * The name page as plain HTML, for crawlers that do not run scripts. It is served at the
  * name's own URL, so it shows the facts the app shows and does not redirect.
  */
-export function crawlerPage(store, canonical, now, defaultDescription) {
+export function crawlerPage(store, canonical, now, defaultDescription, { origin, noindex } = siteConfig()) {
   // A root past its grace period leaves the active maps but keeps its lifecycle.
   const name = canonical
     ? store.namesByCanonical.get(canonical) ?? store.subnamesByCanonical?.get(canonical) ?? store.lifecyclesByCanonical?.get(canonical)
@@ -313,13 +313,14 @@ export function crawlerPage(store, canonical, now, defaultDescription) {
       html: page({
         title: canonical ? `${canonical} · Dusk Domains` : 'Dusk Domains',
         description: defaultDescription,
-        canonical: canonical ? nameUrl(canonical) : `${origin}/`,
+        canonical: canonical ? nameUrl(canonical, origin) : `${origin}/`,
         image: `${origin}/og-image.png`,
         index: false,
+        noindex,
         body: `<main>
 <h1>${escapeHtml(shown)}</h1>
 <p>${escapeHtml(notice)}</p>
-<p><a href="${escapeHtml(canonical ? nameUrl(canonical) : `${origin}/`)}">Search Dusk Domains</a></p>
+<p><a href="${escapeHtml(canonical ? nameUrl(canonical, origin) : `${origin}/`)}">Search Dusk Domains</a></p>
 </main>`,
       }),
     }
@@ -346,18 +347,19 @@ ${listed.map((record) => `<dt>${escapeHtml(recordLabel(record.key))}</dt><dd>${r
 </dl>` : '<p>No public records.</p>'}
 ${subnames.length ? `<h2>Subnames</h2>
 <ul>
-${subnames.map((subname) => `<li><a href="${escapeHtml(nameUrl(subname))}">${escapeHtml(subname)}</a></li>`).join('\n')}
+${subnames.map((subname) => `<li><a href="${escapeHtml(nameUrl(subname, origin))}">${escapeHtml(subname)}</a></li>`).join('\n')}
 </ul>
-` : ''}<p><a href="${escapeHtml(nameUrl(canonical))}">Open ${escapeHtml(canonical)} in Dusk Domains</a></p>
+` : ''}<p><a href="${escapeHtml(nameUrl(canonical, origin))}">Open ${escapeHtml(canonical)} in Dusk Domains</a></p>
 </main>`
   return {
     status: 200,
     html: page({
       title: `${canonical} · Dusk Domains`,
       description: description || defaultDescription,
-      canonical: nameUrl(canonical),
+      canonical: nameUrl(canonical, origin),
       image: `${origin}/api/share/name/${encodeURIComponent(canonical)}.png`,
       index: true,
+      noindex,
       body,
     }),
   }

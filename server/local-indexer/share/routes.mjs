@@ -1,10 +1,10 @@
 import { normalizeName } from '../http.mjs'
 import { nameValidationIssue } from '../naming.mjs'
 import { lifecycleClock } from '../read-models/lifecycle.mjs'
-import { createCardCache, escapeHtml } from './card.mjs'
+import { createCardCache, escapeHtml, renderNameCard } from './card.mjs'
 import { activeNode, crawlerPage, namesSitemap } from './crawler.mjs'
+import { siteConfig } from './site.mjs'
 
-const origin = 'https://dusk.domains'
 const defaultDescription = 'Search, register and manage .dusk domains for Dusk wallets, contracts and apps.'
 
 function previewForName(store, canonical) {
@@ -14,7 +14,7 @@ function previewForName(store, canonical) {
   return { name: canonical, description: description?.trim() || defaultDescription }
 }
 
-function previewHtml(preview) {
+function previewHtml(preview, { origin, noindex }) {
   const name = preview?.name
   const title = name ? `${name} · Dusk Domains` : 'Dusk Domains'
   const description = preview?.description ?? defaultDescription
@@ -24,6 +24,7 @@ function previewHtml(preview) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
 ${meta('name', 'description', description)}
+${noindex ? meta('name', 'robots', 'noindex') : ''}
 ${meta('property', 'og:site_name', 'Dusk Domains')}
 ${meta('property', 'og:type', 'website')}
 ${meta('property', 'og:title', title)}
@@ -42,10 +43,12 @@ ${meta('name', 'twitter:image', image)}
 }
 
 export function createShareHandler() {
-  const cards = createCardCache()
+  const site = siteConfig()
+  const cards = createCardCache({ render: name => renderNameCard(name, site.host) })
   const resolve = async (storeProvider) => typeof storeProvider === 'function' ? storeProvider() : storeProvider
   const crawlerHeaders = (headers, contentType) => ({
     ...headers,
+    ...(site.noindex ? { 'x-robots-tag': 'noindex' } : {}),
     'content-type': contentType,
     'cache-control': 'public, max-age=300',
     'x-content-type-options': 'nosniff',
@@ -53,9 +56,14 @@ export function createShareHandler() {
   })
   return async (pathname, storeProvider, response, headers) => {
     if (pathname === '/sitemap/names.xml') {
+      if (site.noindex) {
+        response.writeHead(404, crawlerHeaders(headers, 'text/plain; charset=utf-8'))
+        response.end('Not found')
+        return true
+      }
       const store = await resolve(storeProvider)
       response.writeHead(200, crawlerHeaders(headers, 'application/xml; charset=utf-8'))
-      response.end(namesSitemap(store, lifecycleClock(store)))
+      response.end(namesSitemap(store, lifecycleClock(store), site))
       return true
     }
     if (pathname.startsWith('/page/name/')) {
@@ -64,7 +72,7 @@ export function createShareHandler() {
       const canonical = normalizeName(input)
       const valid = !nameValidationIssue(canonical)
       const store = valid ? await resolve(storeProvider) : null
-      const result = crawlerPage(store, valid ? canonical : null, store ? lifecycleClock(store) : null, defaultDescription)
+      const result = crawlerPage(store, valid ? canonical : null, store ? lifecycleClock(store) : null, defaultDescription, site)
       response.writeHead(result.status, crawlerHeaders(headers, 'text/html; charset=utf-8'))
       response.end(result.html)
       return true
@@ -82,12 +90,13 @@ export function createShareHandler() {
     }
     const store = valid ? await (typeof storeProvider === 'function' ? storeProvider() : storeProvider) : null
     const preview = valid ? previewForName(store, canonical) : null
-    const body = png ? cards.get(preview?.name ?? '') : previewHtml(preview)
+    const body = png ? cards.get(preview?.name ?? '') : previewHtml(preview, site)
     response.writeHead(200, {
       ...headers,
       'content-type': png ? 'image/png' : 'text/html; charset=utf-8',
       'cache-control': 'public, max-age=300',
       'x-content-type-options': 'nosniff',
+      ...(!png && site.noindex ? { 'x-robots-tag': 'noindex' } : {}),
       ...(png ? {} : { 'content-security-policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'" }),
     })
     response.end(body)

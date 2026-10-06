@@ -1,3 +1,5 @@
+# Written for the Caddy 2.6 in Ubuntu 24.04, whose snippets take {args.N}; Caddy 2.7 and
+# later spell them {args[N]}.
 (dusk_domains_site) {
 	encode zstd gzip
 
@@ -21,6 +23,16 @@
 	@staticAssets path /assets/* /contracts/*
 
 	route {
+		# IndexNow ownership keys must be reachable at the site root.
+		@indexNow {
+			path_regexp indexNowKey ^/([A-Za-z0-9-]{8,128})\.txt$
+			not file {
+				root {args.0}
+				try_files {path}
+			}
+		}
+		rewrite @indexNow /api/indexnow/{re.indexNowKey.1}.txt
+
 		# Link-preview crawlers get the indexer's share card for a name page; browsers get the app.
 		@namePage path /name/*
 		header @namePage {
@@ -42,16 +54,16 @@
 		rewrite /sitemap-names.xml /api/sitemap/names.xml
 
 		handle_path /api/* {
-			reverse_proxy {args[1]}
+			reverse_proxy {args.1}
 		}
 
 		handle @staticAssets {
-			root * {args[0]}
+			root * {args.0}
 			file_server
 		}
 
 		handle {
-			root * {args[0]}
+			root * {args.0}
 			try_files {path} /index.html
 			file_server
 		}

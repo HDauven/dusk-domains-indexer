@@ -42,8 +42,8 @@ it('configures separate data, ports, origins and nodes for both instances', asyn
 
 it('routes each site to its own assets and API while retaining crawler and preview routes', async () => {
   const caddy = await read('deploy/Caddyfile.example')
-  expect(caddy).toContain('root * {args[0]}')
-  expect(caddy).toContain('reverse_proxy {args[1]}')
+  expect(caddy).toContain('root * {args.0}')
+  expect(caddy).toContain('reverse_proxy {args.1}')
   expect(caddy).toContain('import dusk_domains_site /srv/dusk-domains/dist 127.0.0.1:8787')
   expect(caddy).toContain('import dusk_domains_site /srv/dusk-domains-testnet/dist 127.0.0.1:8788')
   expect(caddy).toMatch(/testnet\.dusk\.domains \{\s+header \{\s+X-Robots-Tag "noindex, nofollow"\s+defer/)
@@ -53,6 +53,29 @@ it('routes each site to its own assets and API while retaining crawler and previ
   expect(caddy).toMatch(/api\.dusk\.domains \{[\s\S]*?reverse_proxy 127\.0\.0\.1:8787/)
   expect(caddy).toMatch(/www\.dusk\.domains \{\s+redir https:\/\/dusk\.domains\{uri\} permanent/)
   expect(caddy).toContain('Cache-Control "public, max-age=31536000, immutable"')
+})
+
+it('exposes IndexNow keys at the site root without rewriting static text files', async () => {
+  const caddy = await read('deploy/Caddyfile.example')
+  const matcher = caddy.match(/\t\t@indexNow \{([\s\S]*?)\n\t\t\}/)?.[1]
+  expect(matcher).toBeDefined()
+  expect(matcher).toMatch(/not file \{\s+root \{args\.0\}\s+try_files \{path\}\s+\}/)
+  expect(matcher).not.toContain('not path')
+  const pattern = matcher.match(/path_regexp indexNowKey (.+)/)?.[1]
+  expect(pattern).toBe(String.raw`^/([A-Za-z0-9-]{8,128})\.txt$`)
+  const regexp = new RegExp(pattern)
+  expect('/01234567-abc.txt'.match(regexp)?.[1]).toBe('01234567-abc')
+  // These names also match the key pattern, so the file matcher must preserve them.
+  for (const path of ['/llms-full.txt', '/security.txt']) expect(regexp.test(path)).toBe(true)
+  for (const path of ['/robots.txt', '/llms.txt', '/short.txt', '/nested/0123456789.txt', '/0123456789.json']) expect(regexp.test(path)).toBe(false)
+  const rewrite = 'rewrite @indexNow /api/indexnow/{re.indexNowKey.1}.txt'
+  expect(caddy).toContain(rewrite)
+  expect(caddy.indexOf(rewrite)).toBeGreaterThan(caddy.indexOf('route {'))
+  expect(caddy.indexOf(rewrite)).toBeLessThan(caddy.indexOf('handle_path /api/*'))
+  const mainnet = await read('deploy/mainnet.env.example')
+  expect(mainnet).toContain('openssl rand -hex 16')
+  expect(parseEnv(mainnet).DUSK_DOMAINS_INDEXNOW_KEY).toBe('')
+  expect(parseEnv(await read('deploy/testnet.env.example')).DUSK_DOMAINS_INDEXNOW_KEY).toBeUndefined()
 })
 
 async function fixture() {

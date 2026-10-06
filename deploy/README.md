@@ -195,6 +195,31 @@ and Bingbot receive the SPA. Preserve `Vary: User-Agent` in any upstream cache.
 PNG previews have a five-minute public cache lifetime. Images render locally
 with bundled Instrument Serif fonts and the site mark, with a bounded LRU cache.
 
+Enable IndexNow only on mainnet by setting `DUSK_DOMAINS_INDEXNOW_KEY` to a key
+generated with `openssl rand -hex 16`. Keys must contain 8–128 ASCII letters,
+digits or hyphens; an invalid key prevents startup. An unset key or
+`DUSK_DOMAINS_NOINDEX=true` disables submissions and the key route.
+
+The Caddy snippet rewrites `/<key>.txt` to `/api/indexnow/<key>.txt`, leaving
+`robots.txt` and `llms.txt` on the static site. Keep this root route: submissions
+use `keyLocation=<site>/<key>.txt` so the key covers every site URL.
+
+The background worker submits the home page and `/market` once per site/key,
+then new or changed name pages using the sitemap candidates' `lastmod`, and
+previously submitted names once when they expire or leave the sitemap. It includes
+active candidates beyond the XML sitemap's size limit. It requires healthy archive
+coverage and lag within `--max-lag-blocks` (default 12), sends at most 10,000 URLs
+every ten minutes, and backs off on throttling, server errors or network failures
+(up to six hours). Only HTTP 200
+and 202 record URLs as submitted; failures are logged without failing API requests.
+
+Submission history and retry timing are written atomically to
+`<DUSK_DOMAINS_INDEXER_DATA_DIR>/indexnow.json`; without that setting, the source
+file's directory is used. Override the path with `DUSK_DOMAINS_INDEXNOW_STATE`.
+Keep this file across restarts to avoid repeat submissions. Changing the site or
+key starts a new history. Requests go to `https://api.indexnow.org/indexnow`;
+`DUSK_DOMAINS_INDEXNOW_ENDPOINT` overrides the endpoint for testing.
+
 Keep API listeners on loopback. Caddy's forwarding headers give clients separate
 rate-limit budgets with `DUSK_DOMAINS_INDEXER_TRUST_PROXY=true`. Leave
 `DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST=false` on this layout. The default

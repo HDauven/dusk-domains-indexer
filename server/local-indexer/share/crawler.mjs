@@ -1,5 +1,6 @@
 import { blake2b } from '@noble/hashes/blake2.js'
 import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js'
+import { setImmediate } from 'node:timers/promises'
 import { normalizeName } from '../http.mjs'
 import { nameValidationIssue } from '../naming.mjs'
 import { indexedSubnameBlocksRegistration, lifecycleMomentPassed } from '../read-models/lifecycle.mjs'
@@ -136,8 +137,35 @@ const sitemapViews = new WeakMap()
 
 // The read model's event count changes with every applied event. An incremental replay can
 // keep the same maps, so the cache follows the count as well as the maps.
-function storeRevision(store) {
+export function storeRevision(store) {
   return store.checkpoint?.eventCount ?? store.cursor?.eventCount ?? null
+}
+
+// Empty batches let background consumers yield while scanning activity or invalid names too.
+function* sitemapCandidateBatches(store) {
+  let count = 0
+  const latest = new Map()
+  for (const [node, entries] of store.activityByNode ?? []) {
+    for (const entry of entries) {
+      const time = Date.parse(entry.timestamp ?? '')
+      if (Number.isFinite(time) && time > (latest.get(node) ?? -Infinity)) latest.set(node, time)
+      if (++count % 1000 === 0) yield []
+    }
+  }
+  let candidates = []
+  for (const map of [store.namesByCanonical, store.subnamesByCanonical]) {
+    for (const [name, entry] of map ?? []) {
+      const canonical = normalizeName(name)
+      if (canonical === name && !nameValidationIssue(canonical)) {
+        candidates.push({ canonical, node: entry.node, lastmod: latest.get(entry.node) ?? null })
+      }
+      if (++count % 1000 === 0) {
+        yield candidates
+        candidates = []
+      }
+    }
+  }
+  if (candidates.length) yield candidates
 }
 
 // The newest activity time of every node, and every name the name page accepts, newest first.
@@ -146,21 +174,8 @@ function sitemapCandidates(store) {
   const revision = storeRevision(store)
   const cached = sitemapViews.get(store.namesByNode)
   if (cached && cached.revision === revision) return cached
-  const latest = new Map()
-  for (const [node, entries] of store.activityByNode ?? []) {
-    for (const entry of entries) {
-      const time = Date.parse(entry.timestamp ?? '')
-      if (Number.isFinite(time) && time > (latest.get(node) ?? -Infinity)) latest.set(node, time)
-    }
-  }
   const candidates = []
-  for (const map of [store.namesByCanonical, store.subnamesByCanonical]) {
-    for (const [name, entry] of map ?? []) {
-      const canonical = normalizeName(name)
-      if (canonical !== name || nameValidationIssue(canonical)) continue
-      candidates.push({ canonical, node: entry.node, lastmod: latest.get(entry.node) ?? null })
-    }
-  }
+  for (const batch of sitemapCandidateBatches(store)) candidates.push(...batch)
   candidates.sort((a, b) => (b.lastmod ?? 0) - (a.lastmod ?? 0) || a.canonical.localeCompare(b.canonical))
   const view = { candidates, revision, xml: null, clockKey: null }
   sitemapViews.set(store.namesByNode, view)
@@ -173,6 +188,25 @@ function clockKey(now) {
   return `${now?.blockHeight ?? '-'}:${Math.floor(date.getTime() / 60_000)}`
 }
 
+/** Active sitemap candidates, without the XML sitemap's 50,000 URL limit. */
+export function* namesSitemapEntries(store, now, { origin } = siteConfig()) {
+  for (const { canonical, node, lastmod } of sitemapCandidates(store).candidates) {
+    if (!activeNode(store, node, now)) continue
+    yield { url: nameUrl(canonical, origin), lastmod: lastmod === null ? null : new Date(lastmod).toISOString() }
+  }
+}
+
+/** Unsorted active candidates, yielding to the event loop after at most 1,000 entries. */
+export async function* namesSitemapEntriesAsync(store, now, { origin } = siteConfig()) {
+  for (const batch of sitemapCandidateBatches(store)) {
+    for (const { canonical, node, lastmod } of batch) {
+      if (!activeNode(store, node, now)) continue
+      yield { url: nameUrl(canonical, origin), lastmod: lastmod === null ? null : new Date(lastmod).toISOString() }
+    }
+    await setImmediate()
+  }
+}
+
 /**
  * Every registered, unexpired root name and subname that the name page serves, newest
  * activity first. The XML is rebuilt only when events arrive, the chain height changes or a
@@ -183,12 +217,11 @@ export function namesSitemap(store, now, { origin } = siteConfig()) {
   const key = `${origin}:${clockKey(now)}`
   if (view.xml !== null && view.clockKey === key) return view.xml
   const urls = []
-  for (const { canonical, node, lastmod } of view.candidates) {
+  for (const { url, lastmod } of namesSitemapEntries(store, now, { origin })) {
     if (urls.length === sitemapLimit) break
-    if (!activeNode(store, node, now)) continue
     urls.push(`  <url>
-    <loc>${xmlEscape(nameUrl(canonical, origin))}</loc>${lastmod === null ? '' : `
-    <lastmod>${new Date(lastmod).toISOString()}</lastmod>`}
+    <loc>${xmlEscape(url)}</loc>${lastmod === null ? '' : `
+    <lastmod>${lastmod}</lastmod>`}
   </url>`)
   }
   view.xml = `<?xml version="1.0" encoding="UTF-8"?>

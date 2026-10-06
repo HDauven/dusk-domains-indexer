@@ -4,10 +4,19 @@
 	header {
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000"
 	}
 
 	@webmanifest path /site.webmanifest
 	header @webmanifest Content-Type "application/manifest+json"
+
+	# Hashed bundles and versioned data drivers never change; pages and manifests revalidate.
+	@hashed path /assets/* /contracts/deployments/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@media path /fonts/* *.png *.svg *.ico
+	header @media Cache-Control "public, max-age=86400"
+	@pages not path /assets/* /contracts/deployments/* /fonts/* *.png *.svg *.ico /api/*
+	header @pages Cache-Control "no-cache"
 
 	@staticAssets path /assets/* /contracts/*
 
@@ -27,7 +36,7 @@
 		# AI crawlers do not run JavaScript; they get the indexer's plain page for the name.
 		@crawler {
 			path_regexp crawlName ^/name/(.+)$
-			header_regexp User-Agent (?i)(gptbot|oai-searchbot|chatgpt-user|claudebot|claude-searchbot|perplexitybot|ccbot)
+			header_regexp User-Agent (?i)(gptbot|oai-searchbot|chatgpt-user|claudebot|claude-searchbot|claude-user|anthropic-ai|perplexitybot|perplexity-user|ccbot|meta-externalagent|amazonbot|duckassistbot|mistralai-user|youbot|cohere-ai)
 		}
 		rewrite @crawler /api/page/name/{re.crawlName.1}
 		rewrite /sitemap-names.xml /api/sitemap/names.xml
@@ -49,7 +58,12 @@
 	}
 }
 
-dusk.domains, www.dusk.domains {
+# One canonical host: www redirects instead of serving a duplicate site.
+www.dusk.domains {
+	redir https://dusk.domains{uri} permanent
+}
+
+dusk.domains {
 	import dusk_domains_site /srv/dusk-domains/dist 127.0.0.1:8787
 }
 

@@ -1,6 +1,7 @@
 import { premiumForName } from './read-models/premium.mjs'
 import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
 import { createShareHandler } from './share/routes.mjs'
+import { indexNowConfig } from './indexnow.mjs'
 import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
 import { namesPage } from './name-authority-index.mjs'
@@ -42,8 +43,9 @@ import {
 export function createLocalIndexerHandler(storeProvider, options = {}) {
   const rateLimit = createRateLimiter(options)
   const share = createShareHandler()
+  const indexNow = options.indexNow ?? indexNowConfig()
   return (request, response) => {
-    void handleRequest(storeProvider, request, response, { ...options, rateLimit, share })
+    void handleRequest(storeProvider, request, response, { ...options, rateLimit, share, indexNow })
   }
 }
 
@@ -78,6 +80,19 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
+
+    if (pathname.startsWith('/indexnow/')) {
+      const { enabled, key } = options.indexNow
+      if (enabled && url.pathname === `/indexnow/${key}.txt`) {
+        response.writeHead(200, {
+          ...corsHeaders(options, request), 'x-request-id': requestId,
+          'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        })
+        response.end(key)
+      } else reply(404, { error: 'not_found', message: 'Route not found.' })
+      return
+    }
 
     if (await options.share(pathname, storeProvider, response, { ...corsHeaders(options, request), 'x-request-id': requestId })) return
 

@@ -62,6 +62,11 @@ GET routes:
 | `/marketplace/refund` | Single refund balance or null. |
 | `/share/name/<name>` | HTML link preview with canonical app URL; default site preview for unknown, invalid or expired names. |
 | `/share/name/<name>.png` | 1200×630 PNG card; invalid names return `400`, unknown or expired names get a generic card. |
+| `/indexnow/<key>.txt` | IndexNow ownership key as `text/plain; charset=utf-8`, body exactly the configured key. `404` for another key, an unset key, or `DUSK_DOMAINS_NOINDEX=true`. No store read or pagination. |
+
+The IndexNow key route uses the common request limiter and `Cache-Control: no-store`.
+Caddy exposes it at `/<key>.txt` on `DUSK_DOMAINS_SITE_URL`, so the key covers the
+whole site. Enable it only on mainnet; see [IndexNow deployment settings](../deploy/README.md#site-origins-previews-and-indexing).
 
 Share responses use `Cache-Control: public, max-age=300` and the same request
 limiter as JSON reads. Preview descriptions use only public `text.description`

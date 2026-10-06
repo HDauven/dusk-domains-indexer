@@ -21,6 +21,16 @@
 	@staticAssets path /assets/* /contracts/*
 
 	route {
+		# IndexNow ownership keys must be reachable at the site root.
+		@indexNow {
+			path_regexp indexNowKey ^/([A-Za-z0-9-]{8,128})\.txt$
+			not file {
+				root {args[0]}
+				try_files {path}
+			}
+		}
+		rewrite @indexNow /api/indexnow/{re.indexNowKey.1}.txt
+
 		# Link-preview crawlers get the indexer's share card for a name page; browsers get the app.
 		@namePage path /name/*
 		header @namePage {

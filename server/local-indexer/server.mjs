@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { createIndexNowWorker, indexNowConfig } from './indexnow.mjs'
 import { createIncrementalSqliteStore } from './incremental-sqlite-store.mjs'
 import { createLocalIndexerHandler } from './routes.mjs'
 import { validateProxyListener } from './security.mjs'
@@ -14,14 +15,18 @@ export async function serveLocalIndexer(args) {
     console.warn('Production CORS allowlist is empty; cross-origin browser access is disabled.')
   }
   const source = sourceFromArgs(args)
+  const indexNow = indexNowConfig(process.env, dirname(source.file))
   const storeProvider = !args.watch
     ? await createStaticLocalIndexerStore(source)
     : source.mode === 'sqlite' && source.eventLogFile
       ? await createIncrementalSqliteStore(source)
       : await createReloadingLocalIndexerStore(source)
-  const server = createServer(createLocalIndexerHandler(storeProvider, args))
+  const server = createServer(createLocalIndexerHandler(storeProvider, { ...args, indexNow }))
+  const indexNowWorker = createIndexNowWorker(storeProvider, { config: indexNow, maxLagBlocks: args.maxLagBlocks })
+  server.once('close', () => indexNowWorker.stop())
 
   server.listen(args.port, args.host, () => {
+    indexNowWorker.start()
     console.log(`Dusk Domains local indexer listening on http://${args.host}:${args.port}`)
     console.log(`${sourceLabel(source)}: ${source.file}${args.watch ? ' (watching)' : ''}`)
     if (source.mode === 'sqlite' && source.eventLogFile) {

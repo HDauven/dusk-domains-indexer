@@ -41,7 +41,6 @@ Snapshot mode is an explicit fixture/offline source, not finalized archive cover
 - [Caddy deployment and proxy trust](deploy/README.md)
 - [Legacy journal migration](docs/archive-migration.md)
 - [Shared SDK event schema](https://github.com/HDauven/dusk-domains-sdk/blob/main/docs/indexer-events.md)
-- [Contract storage bounds](https://github.com/HDauven/dusk-domains-protocol/blob/main/docs/storage-budget.md)
 
 `server/local-indexer` owns persistence, health, HTTP and chain-height read views.
 `scripts` owns collection and operator utilities; `deploy/systemd` supplies service

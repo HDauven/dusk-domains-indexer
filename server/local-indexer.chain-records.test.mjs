@@ -1,3 +1,6 @@
+import { commitJournal } from '../scripts/test-fixtures/committed-cursor.mjs'
+import { createEventLog, rootNode, envelope, receipt, rootName, ref, bytes } from '../scripts/test-fixtures/frozen-events.mjs'
+import { recordsDigest } from '@duskdomains/sdk/projection'
 import { expect, it } from 'vitest'
 import { loadEventLogStore } from './local-indexer.mjs'
 import { createRecentChangeWarnings, validateResolverRecords } from './local-indexer/records.mjs'
@@ -11,25 +14,28 @@ const addresses = [
 ]
 
 it('serves cross-chain records from the event log through record, history and resolution APIs', async () => {
-  const node = `0x${'ab'.repeat(32)}`
+  const node = rootNode
   const now = new Date().toISOString()
   const records = addresses.map(([key, value]) => ({ key, value, visibility: 'public', ttlSeconds: 300, updatedAt: now }))
-  const events = [{ event: { type: 'name_registered', node, label: 'aurora', actor: 'owner', owner: 'owner',
-    expiresAt: '2099-01-01T00:00:00.000Z', graceEndsAt: '2099-02-01T00:00:00.000Z' } },
-  { event: { type: 'resolver_changed', node, actor: 'owner', resolver: 'registry' } },
-  ...records.map(record => ({ event: { type: 'record_changed', node, controller: 'owner', record } }))]
-  const store = await loadEventLogStore(await writeEventLog(events))
+  const rawRecords = records.map(r => ({ key: r.key, value: [...new TextEncoder().encode(r.value)], ttl_seconds: 300n, updated_at: 15n }))
+  const digest = recordsDigest(rawRecords)
+  const update = envelope(receipt(15, [[5, 'resolver_slot_written', { slot: { registry: bytes(4), node: rootName().key.node, epoch: 1n }, snapshot: { records: rawRecords, count: 4, digest } }],
+    [4, 'slot_changed', { name: ref(rootName()), previous: rootName().records, current: { resolver: bytes(5), epoch: 1n, count: 4, digest }, reason: 'Mutation' }]]))
+  update.meta.observedAt = now
+  const events = [...createEventLog(), update]
+  const file = await writeEventLog(events)
+  const store = await loadEventLogStore(file, await commitJournal(file))
   const { baseUrl, close } = await startServer(store)
   try {
-    expect(await expectJson(`${baseUrl}/records?node=${node}`)).toEqual([...records].sort((a, b) => a.key.localeCompare(b.key)))
+    expect(await expectJson(`${baseUrl}/records?node=${node}`)).toMatchObject([...records].sort((a, b) => a.key.localeCompare(b.key)))
     const resolved = await expectJson(`${baseUrl}/resolve?name=aurora.dusk`)
     expect(resolved).toMatchObject({ verificationStatus: 'forward_resolved', resolver: { health: 'ok' }, errors: [] })
-    expect(resolved.records).toEqual(expect.arrayContaining(records))
-    expect(resolved.warnings.filter(warning => warning.code === 'recent_high_risk_record_change')).toHaveLength(4)
+    expect(resolved.records).toMatchObject(records)
+    expect(resolved.warnings.filter(warning => warning.code === 'recent_high_risk_record_change' && warning.target.startsWith('address.'))).toHaveLength(4)
     for (const record of records) {
-      expect(await expectJson(`${baseUrl}/record?node=${node}&key=${record.key}`)).toEqual(record)
+      expect(await expectJson(`${baseUrl}/record?node=${node}&key=${record.key}`)).toMatchObject(record)
       expect(await expectJson(`${baseUrl}/record-history?node=${node}&key=${record.key}`)).toMatchObject([
-        { key: record.key, action: 'set', record },
+        { key: record.key, action: 'set', value: record.value },
       ])
     }
   } finally {

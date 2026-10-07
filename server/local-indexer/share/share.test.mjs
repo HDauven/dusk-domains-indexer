@@ -118,7 +118,7 @@ it('checks current liveness before returning a cached name image', async () => {
   expect(expired).toEqual(await readPng('unknown.dusk'))
 })
 
-it.each(['<svg>.dusk', '-bad.dusk', 'ab.dusk', `${'a'.repeat(64)}.dusk`, 'abc/def.dusk', '%E0%A4%A'])('rejects invalid PNG names before reading the store or rendering: %s', async (name) => {
+it.each(['<svg>.dusk', '-bad.dusk', 'a..b.dusk', `${'a'.repeat(64)}.dusk`, 'abc/def.dusk', '%E0%A4%A'])('rejects invalid PNG names before reading the store or rendering: %s', async (name) => {
   const store = vi.fn(() => { throw new Error('Must not read') })
   const render = vi.fn(() => { throw new Error('Must not render') })
   vi.spyOn(card, 'createCardCache').mockReturnValue({ get: render })

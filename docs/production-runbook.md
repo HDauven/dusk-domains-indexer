@@ -70,7 +70,11 @@ cd /opt/dusk-domains-indexer
 npm ci
 ```
 
-The SDK is pinned to JSR 0.2.0 through the npm alias `npm:@jsr/duskdomains__sdk@0.2.0`. The checked-in `.npmrc` selects the JSR registry; `npm ci` uses the exact lockfile.
+The SDK is pinned to `npm:@jsr/duskdomains__sdk@0.3.0`. Run `npm ci` with the committed lockfile and `.npmrc` to install the published JSR package.
+
+Replay retains the SDK effect log to build history from exactly the accepted projection effects, including emitters admitted within a receipt. Effects, receipt membership and indexer activity/history accumulate for the process lifetime. Plan memory for retained history; restarting replays it rather than pruning it. History ingestion appends in receipt order; publication copies histories into newest-first order, avoiding repeated shifts for concentrated edits. No full projection snapshot is taken per receipt.
+
+Blocked live rebuilds preserve the prior publication and its finalized clock. After restart there is no retained publication: an incomplete reconstruction returns HTTP 503 on data/share routes while `/health` reports degraded status. Repair and atomically replace the journal before resuming; malformed rows block publication just like rejected receipts. Benchmark broad state with `npm run bench:incremental -- --population 1000 5000 10000` and concentrated record histories with `npm run bench:incremental -- --concentrated 1000 5000 10000`.
 
 Copy the environment template and edit values:
 
@@ -87,7 +91,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now dusk-domains-collector dusk-domains-indexer
 ```
 
-The collector needs `DUSK_DOMAINS_DEPLOYMENT_ENV_FILE` (node URL and contract IDs), `DUSK_DOMAINS_COLLECTOR_DRIVER_DIR` (the contracts' data-driver WASM) and `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT` set in `indexer.env`. It refuses to start with an empty start height rather than replaying from block 1.
+The collector needs `DUSK_DOMAINS_DEPLOYMENT_ENV_FILE` pointing at the release bundle's `indexer.env`, and `DUSK_DOMAINS_COLLECTOR_DRIVER_DIR` pointing at its `contracts/` directory. The release file supplies `DUSK_DOMAINS_FROM_BLOCK` and `DUSK_DOMAINS_EVENT_SCHEMA_VERSION=1`. Missing or invalid heights/schema versions and driver hash mismatches refuse startup. The service uses this first block without a command-line override.
 
 ## Run Locally
 

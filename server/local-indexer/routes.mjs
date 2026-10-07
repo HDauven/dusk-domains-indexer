@@ -14,7 +14,7 @@ import {
   emptyMarketplaceConfig,
   marketplaceOfferKey,
   marketplaceOrderIsEscrowed,
-} from '@duskdomains/sdk/projection'
+} from './view-utils.mjs'
 import { createRecentChangeWarnings } from './records.mjs'
 import { healthResponseForStore } from './health.mjs'
 import { indexedLifecycleBlocksRegistration, indexedNamespaceNodeBlocksRegistration, indexedSubnameBlocksRegistration, lifecycleClock } from './read-models/lifecycle.mjs'
@@ -94,7 +94,7 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
-    if (await options.share(pathname, storeProvider, response, { ...corsHeaders(options, request), 'x-request-id': requestId })) return
+    if (await options.share(pathname, () => resolveStore(storeProvider), response, { ...corsHeaders(options, request), 'x-request-id': requestId })) return
 
     if (!LOCAL_INDEXER_ROUTES.has(pathname)) {
       reply(404, { error: 'not_found', message: 'Route not found.' })
@@ -116,7 +116,32 @@ async function handleRequest(storeProvider, request, response, options) {
       const result = paginate(rows, page, (item) => listKey(pathname, item))
       reply(200, { [LIST_FIELDS[pathname]]: result.items.map(map), nextCursor: result.nextCursor })
     }
-    const store = await resolveStore(storeProvider)
+    let store = await resolveStore(storeProvider, pathname === '/health')
+    const market = url.searchParams.get('marketplace')
+    if (market && pathname.startsWith('/marketplace/')) {
+      const id = normalizeNode(market)
+      if (!/^0x[0-9a-f]{64}$/.test(id)) { reply(400, { error: 'invalid_marketplace' }); return }
+      const orders = (store.marketplaceOrders ?? []).filter(o => o.marketplaceContractId === id)
+      store = { ...store,
+        marketplaceConfig: store.marketplaceConfigs?.[id] ?? { initialized: false, marketplaceContractId: id, tradingPaused: true, orderApiVersion: 1 },
+        marketplaceFixedSalesByNode: new Map(orders.filter(o => o.kind === 'Fixed').map(o => [o.node, o])),
+        marketplaceAuctionsByNode: new Map(orders.filter(o => o.kind === 'Auction').map(o => [o.node, o])),
+        marketplaceOffersByKey: new Map(orders.filter(o => o.kind === 'Offer').map(o => [marketplaceOfferKey(o.node, o.buyerAuthority), o])),
+        marketplaceRefundsByAuthority: new Map((store.marketplaceRefunds ?? []).filter(r => r.marketplaceContractId === id).map(r => [r.authority, r])),
+      }
+    }
+
+    const orderId = url.searchParams.get('orderId')
+    if (pathname.startsWith('/marketplace/') && orderId !== null
+      && (!/^[0-9]{1,20}$/.test(orderId) || BigInt(orderId) > 18446744073709551615n || url.searchParams.getAll('orderId').length > 1)) {
+      reply(400, { error: 'invalid_order_id' }); return
+    }
+    const marketOrders = (kind, fallback) => store.frozen
+      ? filterRows(store.marketplaceOrders ?? [], o => o.kind === kind && o.marketplaceContractId === store.marketplaceConfig?.marketplaceContractId)
+      : fallback?.values() ?? []
+    const singularOrder = (kind, fallback) => orderId === null ? fallback : [...marketOrders(kind)].find(o =>
+      o.node === routeParams.node && o.orderId === BigInt(orderId).toString()
+      && (!routeParams.buyerAuthority || o.buyerAuthority === routeParams.buyerAuthority)) ?? null
 
     if (pathname === '/health') {
       reply(200, publicHealth(store, page, logger, requestId))
@@ -228,27 +253,27 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/fixed-sales') {
-      replyPage(store.marketplaceFixedSalesByNode?.values() ?? [], (sale) => marketplaceOrderForResponse(store, sale))
+      replyPage(marketOrders('Fixed', store.marketplaceFixedSalesByNode), (sale) => marketplaceOrderForResponse(store, sale))
       return
     }
 
     if (pathname === '/marketplace/fixed-sale') {
-      reply(200, marketplaceOrderForResponse(store, store.marketplaceFixedSalesByNode?.get(routeParams.node) ?? null))
+      reply(200, marketplaceOrderForResponse(store, singularOrder('Fixed', store.marketplaceFixedSalesByNode?.get(routeParams.node) ?? null)))
       return
     }
 
     if (pathname === '/marketplace/auctions') {
-      replyPage(store.marketplaceAuctionsByNode?.values() ?? [], (auction) => marketplaceOrderForResponse(store, auction))
+      replyPage(marketOrders('Auction', store.marketplaceAuctionsByNode), (auction) => marketplaceOrderForResponse(store, auction))
       return
     }
 
     if (pathname === '/marketplace/auction') {
-      reply(200, marketplaceOrderForResponse(store, store.marketplaceAuctionsByNode?.get(routeParams.node) ?? null))
+      reply(200, marketplaceOrderForResponse(store, singularOrder('Auction', store.marketplaceAuctionsByNode?.get(routeParams.node) ?? null)))
       return
     }
 
     if (pathname === '/marketplace/offers') {
-      const offers = filterRows(store.marketplaceOffersByKey?.values() ?? [], (offer) => (
+      const offers = filterRows(marketOrders('Offer', store.marketplaceOffersByKey), (offer) => (
         (!routeParams.node || offer.node === routeParams.node)
         && (!routeParams.buyerAuthority || offer.buyerAuthority === routeParams.buyerAuthority)
       ))
@@ -257,7 +282,7 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/offer') {
-      reply(200, store.marketplaceOffersByKey?.get(marketplaceOfferKey(routeParams.node, routeParams.buyerAuthority)) ?? null)
+      reply(200, singularOrder('Offer', store.marketplaceOffersByKey?.get(marketplaceOfferKey(routeParams.node, routeParams.buyerAuthority)) ?? null))
       return
     }
 
@@ -268,14 +293,21 @@ async function handleRequest(storeProvider, request, response, options) {
 
     reply(404, { error: 'not_found', message: 'Route not found.' })
   } catch (error) {
+    if (error instanceof IncompleteReplayError) {
+      reply(503, { error: 'incomplete_replay', message: 'No complete index publication is available; repair the event history.' })
+      return
+    }
     logger.error({ requestId, error })
     reply(500, { error: 'internal_error', requestId })
   }
 }
 
-async function resolveStore(storeProvider) {
-  if (typeof storeProvider === 'function') return storeProvider()
-  return storeProvider
+class IncompleteReplayError extends Error {}
+
+async function resolveStore(storeProvider, allowUnavailable = false) {
+  const store = typeof storeProvider === 'function' ? await storeProvider() : storeProvider
+  if (store.unavailable && !allowUnavailable) throw new IncompleteReplayError()
+  return store
 }
 
 function marketplaceOrderForResponse(store, order) {
@@ -287,7 +319,9 @@ function marketplaceOrderForResponse(store, order) {
     node,
     marketplaceContractId,
     namespace: namespaceSummary(store, node, order.sellerAuthority),
-    escrowed: indexedLifecycleBlocksRegistration(store.namesByNode?.get(node), lifecycleClock(store))
+    escrowed: (store.frozen ? order.escrowed && store.namesByNode?.get(node)?.custody?.nonce === order.custodyNonce
+      && store.namesByNode?.get(node)?.generation === order.generation && store.namesByNode?.get(node)?.serial === order.serial
+      && store.namesByNode?.get(node)?.homeShard === order.homeShard : true) && indexedLifecycleBlocksRegistration(store.namesByNode?.get(node), lifecycleClock(store))
       && marketplaceOrderIsEscrowed(store.namesByNode?.get(node), marketplaceContractId),
   }
 }
@@ -317,7 +351,7 @@ function publicHealth(store, page, logger, requestId) {
     logger.warn({ requestId, warnings: warnings.items, degradedReason: health.degradedReason, cursor: health.cursor, durability: health.durability })
   }
   if (health.sqlite) health.sqlite = { ...health.sqlite, dbFile: undefined }
-  if (health.degradedReason) health.degradedReason = { code: health.degradedReason.code, message: 'Indexer health is degraded; consult server logs.' }
+  if (health.degradedReason) health.degradedReason = { code: health.degradedReason.code, step: health.degradedReason.step, error: health.degradedReason.error, message: 'Indexer health is degraded; consult server logs.' }
   if (health.cursor) health.cursor = {
     ...health.cursor,
     reason: health.cursor.reason ? 'Collector is not ready; consult server logs.' : null,
@@ -335,7 +369,7 @@ function publicHealth(store, page, logger, requestId) {
   return {
     ...health,
     warnings: warnings.items.map((warning) => ({
-      code: warning.code, line: warning.line, type: warning.type, message: 'Indexer warning; consult server logs.',
+      code: warning.code, step: warning.step, error: warning.error, line: warning.line, type: warning.type, message: 'Indexer warning; consult server logs.',
     })),
     nextCursor: warnings.nextCursor,
   }
@@ -363,7 +397,8 @@ function publicForward(store, name, page) {
 
 function* recentWarnings(activity, now) {
   for (const entry of activity) {
-    const warning = createRecentChangeWarnings([entry], now)[0]
-    if (warning) yield { entry, warning }
+    for (const warning of createRecentChangeWarnings([entry], now)) {
+      yield { entry: { ...entry, id: `${entry.id}:${warning.target ?? warning.code}` }, warning }
+    }
   }
 }

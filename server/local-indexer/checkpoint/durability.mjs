@@ -54,8 +54,8 @@ export function indexerDurabilityState({
       : `Collector cursor event count ${cursor.eventCount ?? 0} is behind replayed event count ${checkpoint.eventCount}.`)
 
     const currentBlockHeight = numberOrNull(cursor.currentBlockHeight)
-    const scannedBlockHeight = numberOrNull(cursor.scannedBlockHeight ?? cursor.currentBlockHeight)
-    const replayBlockHeight = numberOrNull(checkpoint.lastBlockHeight ?? cursor.lastBlockHeight)
+    const scannedBlockHeight = numberOrNull(cursor.scannedBlockHeight)
+    const replayBlockHeight = numberOrNull(checkpoint.lastBlockHeight)
     const coveredBlockHeight = maxNumberOrNull(scannedBlockHeight, replayBlockHeight)
     const lagBlocks = currentBlockHeight !== null && coveredBlockHeight !== null
       ? Math.max(0, currentBlockHeight - coveredBlockHeight)

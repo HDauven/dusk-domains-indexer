@@ -50,6 +50,9 @@ export function resolveForward(store, rawName) {
     expired: lifecycleMomentPassed(indexed.expiresAtBlockHeight, indexed.expiresAt, clock),
     activity: indexed.activity,
     now,
+    frozen: indexed.homeShard ? { homeShard: indexed.homeShard, forwarding: indexed.forwarding,
+      generation: indexed.generation, serial: indexed.serial, custody: indexed.custody,
+      moveStatus: indexed.moveStatus, nameRef: indexed.nameRef } : {},
   })
 }
 
@@ -61,7 +64,7 @@ function indexedSubnameAsName(store, canonicalName, clock) {
 
   return {
     ...lifecycle,
-    resolverHealth: subname.resolver ? 'ok' : 'missing',
+    resolverHealth: subname.resolverHealth ?? (subname.resolver ? 'ok' : 'missing'),
     records: store.recordsByNode?.get(node) ?? [],
     activity: store.activityByNode.get(node) ?? [],
     lifecycle,
@@ -79,6 +82,9 @@ function createForwardResponse(input) {
   if (!input.resolverId) {
     errors.push({ code: 'missing_resolver', message: `${input.canonicalName} does not define a resolver.` })
   }
+  if (input.resolverId && input.resolverHealth === 'missing') {
+    errors.push({ code: 'missing_resolver_data', message: `${input.canonicalName} resolver snapshot is unavailable.` })
+  }
   if (input.resolverId && input.resolverHealth === 'invalid') {
     errors.push({ code: 'invalid_resolver', message: `${input.canonicalName} resolver is invalid.` })
   }
@@ -92,6 +98,7 @@ function createForwardResponse(input) {
       : input.resolverHealth ?? 'ok'
 
   return {
+    ...input.frozen,
     canonicalName: input.canonicalName,
     node: input.node,
     records: input.records,

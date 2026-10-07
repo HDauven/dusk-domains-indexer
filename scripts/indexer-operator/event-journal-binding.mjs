@@ -1,3 +1,4 @@
+import { deploymentEvents } from '../../server/local-indexer/deployment-binding.mjs'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
@@ -17,7 +18,9 @@ export async function auditEventJournalDeploymentBinding({
   requireArchiveSnapshot,
   exists = existsSync,
 }) {
-  const entries = parseJournalEntries(await readFile(eventLog, 'utf8'))
+  const rawEntries = parseJournalEntries(await readFile(eventLog, 'utf8'))
+  const entries = deploymentEvents(rawEntries)
+  const frozen = rawEntries.every(e => e?.event?.type === 'frozen_receipt')
   const checks = []
   const push = (id, ok, message) => checks.push({ id, ok, message })
   const bindings = new Map()
@@ -25,10 +28,6 @@ export async function auditEventJournalDeploymentBinding({
   const unknownRows = []
   const belowStart = []
   const activeBlockHeights = []
-  // Contract pools (ADR 0002): registries the router adds all emit as core.
-  const poolRegistries = new Set(entries
-    .filter((entry) => entry?.meta?.contractKey === 'router' && entry.event?.type === 'pool_member_added' && entry.event.kind === 'registry')
-    .map((entry) => normalizeContractId(entry.event.member)))
 
   for (const [index, entry] of entries.entries()) {
     const meta = entry?.meta ?? {}
@@ -74,13 +73,13 @@ export async function auditEventJournalDeploymentBinding({
 
   for (const key of eventContractKeys) {
     const observed = [...(bindings.get(key) ?? [])]
-    const pooled = key === 'core' && observed.length > 1 && observed.every((value) => poolRegistries.has(value))
+    const pooled = frozen && ['store', 'resolver', 'policy', 'marketplace'].includes(key) && observed.length > 1
     push(`event_journal_${key}_contract`, observed.length === 1 || pooled, observed.length === 1 || pooled
       ? `Event journal binds ${key} to ${observed.join(', ')}.`
-      : `Event journal should bind ${key} to exactly one contract ID, or to registries the router added; observed ${observed.length ? observed.join(', ') : 'none'}.`)
+      : `Event journal should bind ${key} to exactly one contract ID, or to members the directory admitted; observed ${observed.length ? observed.join(', ') : 'none'}.`)
     if (deployment?.ok && observed.length > 0) {
       const expected = deployment.contracts[key]
-      // The deployment names the first registry; later ones joined through the router.
+      // The deployment names the initial role ID; later members were admitted by the directory.
       const mismatched = pooled
         ? (observed.includes(expected) ? [] : observed)
         : observed.filter((value) => value !== expected)

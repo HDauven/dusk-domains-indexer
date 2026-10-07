@@ -1,243 +1,57 @@
-import { duskDomainsContractEventTopics } from '@duskdomains/sdk/event-catalog'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { afterEach, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import {
-  loadCollectorConfig,
-  parseArgs,
-  parseEnvFile,
-  summarizeEventLogText,
-  usage,
-} from './local-event-collector.mjs'
-
-const tempDirs = []
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
-})
-
-describe('local event collector config', () => {
-  it('parses CLI options used by the runbook', () => {
-    expect(parseArgs([
-      '--env-file',
-      'local.env',
-      '--event-log',
-      'events.jsonl',
-      '--cursor-file',
-      'cursor.json',
-      '--public-dir',
-      'drivers',
-      '--rusk-dir',
-      '../rusk-private',
-      '--node-url',
-      'http://127.0.0.1:18180/',
-      '--duration-ms',
-      '2500',
-      '--truncate',
-    ])).toEqual({
-      help: false,
-      envFile: 'local.env',
-      eventLog: 'events.jsonl',
-      cursorFile: 'cursor.json',
-      publicDir: 'drivers',
-      ruskDir: '../rusk-private',
-      nodeUrl: 'http://127.0.0.1:18180/',
-      durationMs: 2500,
-      fromBlock: 1,
-      truncate: true,
-    })
-  })
-
-  it('uses the instance node URL ahead of the deployment file and below the CLI override', async () => {
-    const fixture = await createCollectorFixture()
-    const options = { envFile: fixture.envFile, publicDir: fixture.publicDir }
-    const env = { DUSK_DOMAINS_COLLECTOR_NODE_URL: 'https://archive.example/' }
-    expect((await loadCollectorConfig(options, env)).nodeUrl).toBe(env.DUSK_DOMAINS_COLLECTOR_NODE_URL)
-    expect((await loadCollectorConfig({ ...options, nodeUrl: 'http://override.example/' }, env)).nodeUrl).toBe('http://override.example/')
-  })
-
-  it('keeps collector usage with the config surface', () => {
-    expect(usage()).toContain('npm run indexer:collect')
-    expect(usage()).toContain('--duration-ms')
-    expect(usage()).toContain('resumes cursor event counts')
-  })
-
-  it('parses simple dotenv files with comments, quotes, and equals signs in values', () => {
-    expect(parseEnvFile(`
-      # local event collector
-      VITE_DUSK_DOMAINS_NODE_URL="http://127.0.0.1:18180/"
-      VITE_DUSK_DOMAINS_CORE_CONTRACT_ID='0x${'77'.repeat(32)}'
-      VALUE_WITH_EQUALS=a=b=c
-      export INLINE_COMMENT=value # ignored
-      QUOTED_HASH="value#kept"
-    `)).toEqual({
-      VITE_DUSK_DOMAINS_NODE_URL: 'http://127.0.0.1:18180/',
-      VITE_DUSK_DOMAINS_CORE_CONTRACT_ID: `0x${'77'.repeat(32)}`,
-      VALUE_WITH_EQUALS: 'a=b=c',
-      INLINE_COMMENT: 'value',
-      QUOTED_HASH: 'value#kept',
-    })
-  })
-
-  it('summarizes existing JSONL event logs for resumable collector cursors', () => {
-    const summary = summarizeEventLogText(`
-      {"event":{"type":"name_registered","node":"0x${'11'.repeat(32)}"},"meta":{"observedAt":"2026-06-17T20:00:00.000Z","contractKey":"registrar","txId":"0xaaa","blockHeight":7}}
-      not json
-      {"event":{"type":"record_changed","node":"0x${'11'.repeat(32)}"},"meta":{"observedAt":"2026-06-17T20:01:00.000Z","contractKey":"resolver","txId":"0xbbb","blockHeight":8}}
-    `)
-
-    expect(summary).toEqual({
-      eventCount: 2,
-      lastEventAt: '2026-06-17T20:01:00.000Z',
-      lastContract: 'resolver',
-      lastEventName: 'record_changed',
-      lastTxId: '0xbbb',
-      lastBlockHeight: 8,
-      currentBlockHeight: 8,
-      scannedBlockHeight: 8,
-    })
-  })
-
-  it('summarizes JSON array event logs too', () => {
-    expect(summarizeEventLogText(JSON.stringify([
-      {
-        event: { type: 'primary_name_changed', updatedAt: '2026-06-17T21:00:00.000Z' },
-        meta: { contractKey: 'reverse' },
-      },
-    ]))).toMatchObject({
-      eventCount: 1,
-      lastEventAt: '2026-06-17T21:00:00.000Z',
-      lastContract: 'reverse',
-      lastEventName: 'primary_name_changed',
-    })
-  })
-
-  it('loads configured contract IDs and drivers without requiring a Rusk checkout', async () => {
-    const fixture = await createCollectorFixture()
-    const config = await loadCollectorConfig({
-      envFile: fixture.envFile,
-      publicDir: fixture.publicDir,
-      ruskDir: fixture.ruskDir,
-      eventLog: fixture.eventLog,
-      cursorFile: fixture.cursorFile,
-      durationMs: 100,
-      truncate: true,
-    })
-
-    expect(config.nodeUrl).toBe('http://127.0.0.1:18180/')
-    expect(config.eventLog).toBe(fixture.eventLog)
-    expect(config.cursorFile).toBe(fixture.cursorFile)
-    expect(config.publicDir).toBe(fixture.publicDir)
-    expect(config.fromBlock).toBe(1)
-    expect(config.durationMs).toBe(100)
-    expect(config.truncate).toBe(true)
-    expect(config.contracts.map((contract) => [contract.key, contract.contractId])).toEqual([
-      ['router', '78'.repeat(32)],
-      ['core', '77'.repeat(32)],
-      ['treasury', '66'.repeat(32)],
-    ])
-  })
-
-  it('subscribes to proposals, cancellation and completion for every operator', async () => {
-    const fixture = await createCollectorFixture({
-      env: validEnv() + `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=0x${'55'.repeat(32)}\n`,
-    })
-    await writeFile(join(fixture.publicDir, 'dusk-domains-marketplace.data-driver.wasm'), '')
-    const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
-    expect(config.contracts.find(contract => contract.key === 'router').events).toContain('registrations_paused_changed')
-    if (config.contracts.some(contract => contract.key === 'marketplace')) expect(config.contracts.find(contract => contract.key === 'marketplace').events).toContain('trading_paused_changed')
-    for (const contract of config.contracts) expect(contract.events).toBe(duskDomainsContractEventTopics[contract.key])
-    for (const key of ['router', 'treasury', 'marketplace']) {
-      expect(config.contracts.find((contract) => contract.key === key).events).toEqual(expect.arrayContaining([
-        `${key}_operator_proposed`, `${key}_operator_cancelled`, `${key}_operator_changed`,
-      ]))
-    }
-  })
-
-  it('subscribes to subname creation and pruning', async () => {
-    const fixture = await createCollectorFixture()
-    const config = await loadCollectorConfig({ envFile: fixture.envFile, publicDir: fixture.publicDir })
-    expect(config.contracts.find(contract => contract.key === 'router').events).toContain('registrations_paused_changed')
-    if (config.contracts.some(contract => contract.key === 'marketplace')) expect(config.contracts.find(contract => contract.key === 'marketplace').events).toContain('trading_paused_changed')
-    expect(config.contracts.find((contract) => contract.key === 'core').events).toEqual(expect.arrayContaining([
-      'subname_created', 'subname_pruned',
-    ]))
-  })
-
-  it('validates replay heights and unsafe numeric CLI inputs', () => {
-    expect(parseArgs(['--from-block', '42']).fromBlock).toBe(42)
-    for (const n of ['0', '-1', '9007199254740992']) {
-      expect(() => parseArgs(['--from-block', n])).toThrow()
-    }
-  })
-
-  it('fails clearly when contract IDs are missing or malformed', async () => {
-    const fixture = await createCollectorFixture({
-      env: `
-VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=not-a-contract-id
-`,
-    })
-
-    await expect(loadCollectorConfig({
-      envFile: fixture.envFile,
-      publicDir: fixture.publicDir,
-      ruskDir: fixture.ruskDir,
-    })).rejects.toThrow(/Missing or invalid contract IDs/)
-  })
-
-  it('fails clearly when a data-driver is missing', async () => {
-    const fixture = await createCollectorFixture({
-      skipDriver: 'dusk-domains-core.data-driver.wasm',
-    })
-
-    await expect(loadCollectorConfig({
-      envFile: fixture.envFile,
-      publicDir: fixture.publicDir,
-      ruskDir: fixture.ruskDir,
-    })).rejects.toThrow(/Missing data-driver WASM for core/)
-  })
-})
-
-async function createCollectorFixture(options = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'dusk-domains-collector-test-'))
-  tempDirs.push(dir)
-
-  const publicDir = join(dir, 'public', 'contracts')
-  const ruskDir = join(dir, 'rusk-private')
-  const envFile = join(dir, '.env.local')
-  const eventLog = join(dir, 'target', 'events.jsonl')
-  const cursorFile = join(dir, 'target', 'cursor.json')
-
-  await mkdir(publicDir, { recursive: true })
-
-  for (const driverFile of [
-    'dusk-domains-router.data-driver.wasm',
-    'dusk-domains-core.data-driver.wasm',
-    'dusk-domains-treasury.data-driver.wasm',
-  ]) {
-    if (driverFile !== options.skipDriver) {
-      await writeFile(join(publicDir, driverFile), '', 'utf8')
-    }
+import { roles, topicsFor } from './local-event-collector/frozen.mjs'
+import { loadCollectorConfig, parseArgs, parseEnvFile, usage, summarizeEventLogText } from './local-event-collector.mjs'
+import { bootstrap, envelope, receipt, id } from './test-fixtures/frozen-events.mjs'
+const dirs = []
+afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }) })
+async function fixture() {
+  const dir = await mkdtemp(join(tmpdir(), 'frozen-config-')); dirs.push(dir)
+  const publicDir = join(dir, 'contracts'); await mkdir(publicDir)
+  const bytes = Buffer.from('driver'), sha = createHash('sha256').update(bytes).digest('hex')
+  const env = { DUSK_DOMAINS_FROM_BLOCK: '123', DUSK_DOMAINS_EVENT_SCHEMA_VERSION: '1', DUSK_DOMAINS_NODE_URL: 'http://node.invalid/', DUSK_DOMAINS_CHAIN_ID: 'dusk:1' }
+  for (const [i, role] of roles.entries()) {
+    const file = `${role}.${sha}.data-driver.wasm`; await writeFile(join(publicDir, file), bytes)
+    env[`DUSK_DOMAINS_${role.toUpperCase()}_CONTRACT_ID`] = `0x${id(i + 1)}`
+    env[`DUSK_DOMAINS_${role.toUpperCase()}_DRIVER_URL`] = `/contracts/${file}`
   }
-
-  await writeFile(envFile, options.env ?? validEnv(), 'utf8')
-
-  return {
-    dir,
-    publicDir,
-    ruskDir,
-    envFile,
-    eventLog,
-    cursorFile,
-  }
+  const envFile = join(dir, 'indexer.env')
+  const save = () => writeFile(envFile, Object.entries(env).map(([k,v]) => `${k}=${v}`).join('\n'))
+  await save(); return { envFile, publicDir, env, save }
 }
-
-function validEnv() {
-  return `
-VITE_DUSK_DOMAINS_NODE_URL=http://127.0.0.1:18180/
-VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=0x${'78'.repeat(32)}
-VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=0x${'77'.repeat(32)}
-VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'66'.repeat(32)}
-`
-}
+it('loads all frozen roles, immutable release drivers and first deployment block directly from indexer.env', async () => {
+  const f = await fixture(), c = await loadCollectorConfig({ envFile: f.envFile }, {})
+  expect(c).toMatchObject({ fromBlock: 123, chainId: 'dusk:1', eventSchemaVersion: '1', publicDir: f.publicDir, contractStack: 'frozen' })
+  expect(c.contracts.map(x => x.key)).toEqual(roles)
+  for (const contract of c.contracts) expect(contract.events).toEqual(topicsFor(contract.key))
+})
+it('preserves CLI and runtime override precedence and accepts frontend ID aliases', async () => {
+  const f = await fixture()
+  expect((await loadCollectorConfig({ envFile: f.envFile }, { DUSK_DOMAINS_NODE_URL: 'http://runtime.invalid/' })).nodeUrl).toBe('http://runtime.invalid/')
+  expect((await loadCollectorConfig({ envFile: f.envFile, fromBlock: 120, nodeUrl: 'http://cli.invalid/' }, { DUSK_DOMAINS_COLLECTOR_NODE_URL: 'http://runtime.invalid/' }))).toMatchObject({ fromBlock: 120, nodeUrl: 'http://cli.invalid/' })
+  for (const key of Object.keys(f.env)) if (key.endsWith('_CONTRACT_ID') || key.endsWith('_DRIVER_URL')) { f.env[`VITE_${key}`] = f.env[key]; delete f.env[key] }
+  await f.save(); expect((await loadCollectorConfig({ envFile: f.envFile }, {})).contracts).toHaveLength(6)
+})
+it.each(['DUSK_DOMAINS_FROM_BLOCK','DUSK_DOMAINS_EVENT_SCHEMA_VERSION','DUSK_DOMAINS_DIRECTORY_CONTRACT_ID','DUSK_DOMAINS_STORE_DRIVER_URL'])('rejects a missing required %s', async key => {
+  const f = await fixture(); delete f.env[key]; await f.save()
+  await expect(loadCollectorConfig({ envFile: f.envFile }, {})).rejects.toThrow(key)
+})
+it('rejects modified immutable driver bytes', async () => {
+  const f = await fixture(); await writeFile(join(f.publicDir, f.env.DUSK_DOMAINS_STORE_DRIVER_URL.split('/').at(-1)), 'changed')
+  await expect(loadCollectorConfig({ envFile: f.envFile }, {})).rejects.toThrow('hash mismatch')
+})
+it('keeps first-block defaults in deployment env instead of overriding them from CLI defaults', () => {
+  expect(parseArgs([]).fromBlock).toBeUndefined()
+  expect(parseArgs(['--from-block', '5', '--public-dir', 'contracts', '--duration-ms', '2500', '--truncate'])).toMatchObject({ fromBlock: 5, durationMs: 2500, truncate: true })
+  expect(() => parseArgs(['--from-block', '0'])).toThrow('positive')
+  expect(() => parseArgs(['--from-block', '9007199254740993'])).toThrow('safe integer')
+  expect(usage()).toContain('DUSK_DOMAINS_FROM_BLOCK')
+})
+it('parses quoted dotenv values and summarizes durable receipt rows', () => {
+  expect(parseEnvFile('KEY="a=b#c" # comment')).toEqual({ KEY: 'a=b#c' })
+  const entry = bootstrap()
+  expect(summarizeEventLogText(JSON.stringify(entry) + '\n')).toMatchObject({ eventCount: 1, lastEventName: 'frozen_receipt', lastBlockHeight: 1 })
+})

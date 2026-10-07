@@ -11,8 +11,8 @@ Group=duskdomains
 WorkingDirectory=/opt/dusk-domains-indexer-%i
 EnvironmentFile=/etc/dusk-domains/%i.env
 # Follows the finalized archive from the deployment height. The journal and cursor are the
-# API's inputs; the collector is their only writer.
-ExecStart=/usr/bin/env node /opt/dusk-domains-indexer-%i/scripts/local-event-collector.mjs --env-file ${DUSK_DOMAINS_DEPLOYMENT_ENV_FILE} --public-dir ${DUSK_DOMAINS_COLLECTOR_DRIVER_DIR} --event-log ${DUSK_DOMAINS_INDEXER_EVENT_LOG} --cursor-file ${DUSK_DOMAINS_INDEXER_CURSOR} --from-block ${DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT}
+# API's inputs; the collector is their only writer. FROM_BLOCK is read from the release indexer.env.
+ExecStart=/usr/bin/env node /opt/dusk-domains-indexer-%i/scripts/local-event-collector.mjs --env-file ${DUSK_DOMAINS_DEPLOYMENT_ENV_FILE} --public-dir ${DUSK_DOMAINS_COLLECTOR_DRIVER_DIR} --event-log ${DUSK_DOMAINS_INDEXER_EVENT_LOG} --cursor-file ${DUSK_DOMAINS_INDEXER_CURSOR}
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

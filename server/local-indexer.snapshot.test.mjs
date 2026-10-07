@@ -98,9 +98,9 @@ describe('local indexer snapshot API', () => {
         resolverId: `0x${'cc'.repeat(32)}`,
       })
       await expect(expectJson(`${baseUrl}/fee-config`)).resolves.toMatchObject({
-        threeCharYearLux: 150_000_000_000,
-        fourCharYearLux: 50_000_000_000,
-        fivePlusYearLux: 10_000_000_000,
+        threeCharYearLux: '150000000000',
+        fourCharYearLux: '50000000000',
+        fivePlusYearLux: '10000000000',
         referralRewardBps: 2_000,
         renewalReferralRewardBps: 1_000,
         premiumReferralRewardBps: 0,

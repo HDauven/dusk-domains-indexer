@@ -87,8 +87,9 @@ export function listKey(pathname, item) {
   if (pathname === '/names') return [item.lifecycle.canonicalName, item.node]
   if (pathname === '/records') return [item.key]
   if (pathname === '/subnames') return [item.name, item.node]
-  if (pathname === '/marketplace/offers') return [item.node, item.buyerAuthority]
-  if (pathname.startsWith('/marketplace/')) return [item.node]
+  const orderSuffix = item.orderId == null ? '' : `:${String(item.orderId).padStart(20, '0')}`
+  if (pathname === '/marketplace/offers') return [item.node, `${item.buyerAuthority}${orderSuffix}`]
+  if (pathname.startsWith('/marketplace/')) return [`${item.node}${orderSuffix}`]
   if (pathname === '/resolve') return [-(Date.parse(item.timestamp ?? '') || 0), -(item.blockHeight ?? -1), -(item.eventIndex ?? -1), item.txId ?? '', item.id ?? '', digest(JSON.stringify(item))]
   return [-(item.blockHeight ?? -1), -(item.eventIndex ?? -1), -(Date.parse(item.timestamp ?? item.updatedAt ?? '') || 0), item.txId ?? '', item.id ?? item.key ?? '', digest(JSON.stringify(item))]
 }

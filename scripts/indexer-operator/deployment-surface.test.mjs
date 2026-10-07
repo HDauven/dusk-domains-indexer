@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -20,9 +20,9 @@ afterEach(async () => {
 
 describe('indexer deployment surface proof', () => {
   it('exports the production contract key set and legacy split-contract key set', () => {
-    expect(activeContractKeys).toEqual(['router', 'core', 'resolver', 'treasury', 'marketplace'])
-    expect(eventContractKeys).toEqual(['router', 'core', 'treasury', 'marketplace'])
-    expect(legacyContractKeys).toEqual(['registry', 'registrar', 'controller', 'reverse'])
+    expect(activeContractKeys).toEqual(['directory', 'policy', 'store', 'vault', 'resolver', 'marketplace'])
+    expect(eventContractKeys).toEqual(['directory', 'policy', 'store', 'vault', 'resolver', 'marketplace'])
+    expect(legacyContractKeys).toEqual(['router', 'core', 'treasury', 'registry', 'registrar', 'controller', 'reverse'])
   })
 
   it('normalizes contract ids strictly', () => {
@@ -38,17 +38,19 @@ describe('indexer deployment surface proof', () => {
     await expect(loadDeploymentSurface(fixture.envFile, fixture.proofReport)).resolves.toEqual({
       ok: true,
       contracts: {
-        router: `0x${'aa'.repeat(32)}`,
-        core: `0x${'11'.repeat(32)}`,
+        directory: `0x${'aa'.repeat(32)}`,
+        policy: `0x${'cc'.repeat(32)}`,
+        store: `0x${'11'.repeat(32)}`,
         resolver: `0x${'bb'.repeat(32)}`,
-        treasury: `0x${'22'.repeat(32)}`,
+        vault: `0x${'22'.repeat(32)}`,
         marketplace: `0x${'33'.repeat(32)}`,
       },
       reportContracts: {
-        router: `0x${'aa'.repeat(32)}`,
-        core: `0x${'11'.repeat(32)}`,
+        directory: `0x${'aa'.repeat(32)}`,
+        policy: `0x${'cc'.repeat(32)}`,
+        store: `0x${'11'.repeat(32)}`,
         resolver: `0x${'bb'.repeat(32)}`,
-        treasury: `0x${'22'.repeat(32)}`,
+        vault: `0x${'22'.repeat(32)}`,
         marketplace: `0x${'33'.repeat(32)}`,
       },
       message: 'deployment surface ready',
@@ -74,7 +76,7 @@ describe('indexer deployment surface proof', () => {
     })
     const result = await loadDeploymentSurface(fixture.envFile, fixture.proofReport)
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('env/proof contract mismatch: treasury')
+    expect(result.message).toContain('env/proof contract mismatch: vault')
     expect(result.message).toContain('legacy env keys:')
     expect(result.message).toContain('legacy proof contract keys: registrar')
     expect(result.message).toContain('unexpected proof contract keys: registrar, extra')
@@ -99,20 +101,22 @@ async function writeSurfaceFixture({
   const envFile = join(dir, '.env')
   const proofReport = join(dir, 'proof.json')
   await writeFile(envFile, [
-    `VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=0x${'aa'.repeat(32)}`,
-    `VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${envCore}`,
+    `DUSK_DOMAINS_DIRECTORY_CONTRACT_ID=0x${'aa'.repeat(32)}`,
+    `DUSK_DOMAINS_POLICY_CONTRACT_ID=0x${'cc'.repeat(32)}`,
+    `VITE_DUSK_DOMAINS_STORE_CONTRACT_ID=${envCore}`,
     `VITE_DUSK_DOMAINS_RESOLVER_CONTRACT_ID=0x${'bb'.repeat(32)}`,
-    `VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=${envTreasury}`,
+    `VITE_DUSK_DOMAINS_VAULT_CONTRACT_ID=${envTreasury}`,
     `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${envMarketplace}`,
     legacySplitEnv ? `VITE_DUSK_DOMAINS_REGISTRY_CONTRACT_ID=0x${'44'.repeat(32)}` : '',
   ].filter(Boolean).join('\n'), 'utf8')
   await writeFile(proofReport, JSON.stringify({
     ok: proofOk,
     publicContracts: {
-      router: `0x${'aa'.repeat(32)}`,
-      core: proofCore,
+      directory: `0x${'aa'.repeat(32)}`,
+        policy: `0x${'cc'.repeat(32)}`,
+      store: proofCore,
       resolver: `0x${'bb'.repeat(32)}`,
-      treasury: proofTreasury,
+      vault: proofTreasury,
       marketplace: proofMarketplace,
       ...(legacyProofKey ? { registrar: `0x${'55'.repeat(32)}` } : {}),
       ...(extraProofKey ? { extra: `0x${'66'.repeat(32)}` } : {}),
@@ -120,3 +124,16 @@ async function writeSurfaceFixture({
   }, null, 2), 'utf8')
   return { dir, envFile, proofReport }
 }
+
+it('accepts deployment-tool manifest and proof contract ID shapes while checking status', async () => {
+  const fixture = await writeSurfaceFixture()
+  const ids = JSON.parse(await readFile(fixture.proofReport)).publicContracts
+  await writeFile(fixture.proofReport, JSON.stringify({ schema: 'dusk-domains/frozen-proof/v1', ok: true, contractIds: ids }))
+  expect((await loadDeploymentSurface(fixture.envFile, fixture.proofReport)).ok).toBe(true)
+  const manifest = { schema: 'dusk-domains/frozen-release/v1', status: 'verified', contracts: Object.entries(ids).map(([key, id]) => ({ key, id })) }
+  await writeFile(fixture.proofReport, JSON.stringify(manifest))
+  expect((await loadDeploymentSurface(fixture.envFile, fixture.proofReport)).ok).toBe(true)
+  manifest.status = 'planned'
+  await writeFile(fixture.proofReport, JSON.stringify(manifest))
+  expect((await loadDeploymentSurface(fixture.envFile, fixture.proofReport)).ok).toBe(false)
+})

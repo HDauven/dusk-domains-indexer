@@ -77,7 +77,7 @@ export async function checkProductionIndexer(options = {}) {
     try {
       deployment = await loadDeploymentSurface(args.envFile, args.proofReport)
       push('deployment_surface', deployment.ok, deployment.ok
-        ? 'Deployment surface is bound to core, treasury and marketplace contract IDs.'
+        ? 'Deployment surface is bound to the six frozen-layer contract roles.'
         : deployment.message)
     } catch (error) {
       push('deployment_surface', false, `Could not read deployment surface: ${error instanceof Error ? error.message : String(error)}`)

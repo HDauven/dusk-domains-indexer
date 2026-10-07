@@ -9,7 +9,7 @@ import {
 // a projection are estimates made when the event was decoded, and are only consulted for
 // projections that carry no heights.
 export function lifecycleClock(store, date = new Date()) {
-  return { blockHeight: knownChainHeight(store ?? {}), date }
+  return { blockHeight: store?.frozen ? store.projectionBlockHeight : knownChainHeight(store ?? {}), date }
 }
 
 function clockOf(now) {
@@ -19,8 +19,7 @@ function clockOf(now) {
 
 export function lifecycleMomentPassed(blockHeight, isoDate, now) {
   const clock = clockOf(now)
-  const height = numberOrNull(blockHeight)
-  if (clock.blockHeight !== null && height !== null) return clock.blockHeight >= height
+  if (clock.blockHeight !== null && blockHeight != null) return BigInt(clock.blockHeight) >= BigInt(blockHeight)
   if (isoDate) return new Date(isoDate).getTime() <= clock.date.getTime()
   return false
 }
@@ -73,15 +72,16 @@ export function subnameLifecycleForNode(store, node) {
 
 export function subnameLifecycle(subname) {
   return {
+    ...subname,
     node: normalizeNode(subname.node),
     canonicalName: normalizeName(subname.name),
     owner: subname.owner ?? null,
     manager: subname.manager ?? null,
     resolverId: subname.resolver ?? null,
     expiresAt: subname.expiresAt ?? null,
-    expiresAtBlockHeight: numberOrNull(subname.expiresAtBlockHeight),
+    expiresAtBlockHeight: subname.expiresAtBlockHeight ?? null,
     graceEndsAt: subname.graceEndsAt ?? null,
-    graceEndsAtBlockHeight: numberOrNull(subname.graceEndsAtBlockHeight),
+    graceEndsAtBlockHeight: subname.graceEndsAtBlockHeight ?? null,
     status: subname.status ?? 'active',
     lastEventType: subname.lastEventType ?? 'subname_created',
   }

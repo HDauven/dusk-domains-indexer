@@ -1,3 +1,4 @@
+import { validateRecordInput } from '@duskdomains/sdk'
 import { SUPPORTED_ENDPOINT_TYPES } from './constants.mjs'
 
 export const LOCAL_INDEXER_ROUTES = new Set([
@@ -235,8 +236,8 @@ function optionalRecordHistoryParameters(url) {
 }
 
 function recordKeyParameter(url, required) {
-  const key = String(url.searchParams.get('key') ?? '').trim()
-  if (!key) {
+  const key = url.searchParams.get('key')
+  if (key === null) {
     return required
       ? {
           error: {
@@ -248,12 +249,18 @@ function recordKeyParameter(url, required) {
       : { key: null }
   }
 
-  if (!/^[a-zA-Z0-9._:-]{1,96}$/.test(key)) {
+  try {
+    // URLSearchParams replaces malformed UTF-8 with U+FFFD. Reject malformed input
+    // before it can select a different, valid replacement-character record key.
+    const raw = url.search.slice(1).split('&').find(part => new URLSearchParams(part).has('key'))
+    decodeURIComponent(raw.slice(raw.indexOf('=') + 1).replace(/\+/g, ' '))
+    validateRecordInput({ key, value: [0], ttl_seconds: 1n })
+  } catch {
     return {
       error: {
         error: 'invalid_record_key',
         parameter: 'key',
-        message: 'key must be 1-96 visible characters using letters, numbers, dot, underscore, colon, or hyphen.',
+        message: 'key must be valid UTF-8 of 1 to 64 bytes.',
       },
     }
   }

@@ -23,7 +23,7 @@ export const malformedRouteParameterProbes = Object.freeze([
   { route: '/record', expectedError: 'missing_node' },
   { route: '/record?node=not-a-node&key=website', expectedError: 'invalid_node' },
   { route: `/record?node=${'aa'.repeat(32)}`, expectedError: 'missing_record_key' },
-  { route: `/record?node=${'aa'.repeat(32)}&key=bad key`, expectedError: 'invalid_record_key' },
+  { route: `/record?node=${'aa'.repeat(32)}&key=${'a'.repeat(65)}`, expectedError: 'invalid_record_key' },
   { route: '/record-history', expectedError: 'missing_node' },
   { route: '/commitment', expectedError: 'missing_commitment' },
   { route: '/commitment?commitment=not-a-node', expectedError: 'invalid_commitment' },

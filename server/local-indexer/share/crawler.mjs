@@ -278,19 +278,6 @@ function dateOf(iso) {
   return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : null
 }
 
-const bareId = (value) => String(value ?? '').toLowerCase().replace(/^0x/, '')
-
-// The contract refuses to renew a name while a market contract holds it as owner or manager,
-// and a listing closed after the name expired does not hand it back.
-function heldByMarket(store, name) {
-  const markets = new Set([
-    ...(store.deployment?.contracts?.marketplace?.contractIds ?? []),
-    store.marketplaceFixedSalesByNode?.get(name.node)?.marketplaceContractId,
-    store.marketplaceAuctionsByNode?.get(name.node)?.marketplaceContractId,
-  ].map(bareId).filter(Boolean))
-  return markets.has(bareId(name.owner)) || markets.has(bareId(name.manager))
-}
-
 function expiredSentence(canonical, entry) {
   const date = dateOf(entry.expiresAt)
   return date ? `${canonical} expired on ${date}.` : `${canonical} has expired.`
@@ -298,7 +285,7 @@ function expiredSentence(canonical, entry) {
 
 /**
  * Why a known name is not active. A root past its expiry but still in grace can be renewed by
- * anyone until grace ends, unless the market holds it; after that anyone can register it. A subname is inactive when it or
+ * anyone until grace ends, including during marketplace custody; after that anyone can register it. A subname is inactive when it or
  * a name above it has expired.
  */
 function inactiveNotice(store, name, canonical, now) {
@@ -306,10 +293,7 @@ function inactiveNotice(store, name, canonical, now) {
     if (name.status === 'released' || !name.owner) return 'This name is not registered.'
     const graceEnds = dateOf(name.graceEndsAt)
     const inGrace = !lifecycleMomentPassed(name.graceEndsAtBlockHeight, name.graceEndsAt, now)
-    if (inGrace && heldByMarket(store, name)) {
-      return `${expiredSentence(canonical, name)} It was in the market when it expired, so it cannot be renewed. Anyone can register it again ${graceEnds ? `after ${graceEnds}` : 'once its grace period ends'}.`
-    }
-    if (inGrace) return `${expiredSentence(canonical, name)} Its owner, or anyone else, can renew it${graceEnds ? ` until ${graceEnds}` : ''}.`
+    if (inGrace) return `${expiredSentence(canonical, name)} Its owner, or anyone else, can renew it${graceEnds ? ` until ${graceEnds}` : ' until its grace period ends'}.`
     return `${expiredSentence(canonical, name)} Anyone can register it again.`
   }
   if (name.status !== 'active') return 'This name is not registered.'

@@ -6,14 +6,7 @@ import { join } from 'node:path'
 import { afterEach, expect } from 'vitest'
 import { createLocalIndexerHandler } from './local-indexer.mjs'
 
-export {
-  createEventLog,
-  createExpiredRoutingEventLogFixture,
-  createLapsedReregistrationEventLogFixture,
-  createLifecycleCleanupEventLogFixture,
-  createReleaseReregistrationEventLogFixture,
-  createSubnameRenewalEventLogFixture,
-} from './local-indexer-event-fixtures.mjs'
+export { createEventLog } from '../scripts/test-fixtures/frozen-events.mjs'
 
 export const expectedLocalIndexerRoutes = [
   '/health',

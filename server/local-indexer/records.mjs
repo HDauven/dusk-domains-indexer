@@ -1,4 +1,4 @@
-import { getRecordDefinition } from '@duskdomains/sdk'
+import { getRecordDefinition, validateRecordValue as sdkValidateRecordValue } from '@duskdomains/sdk'
 import {
   HIGH_RISK_RECORD_KEYS,
   RECENT_CHANGE_WARNING_WINDOW_SECONDS,
@@ -9,6 +9,7 @@ const utf8 = new TextEncoder()
 
 export function createRecentChangeWarnings(activity, now, windowSeconds = RECENT_CHANGE_WARNING_WINDOW_SECONDS) {
   return activity
+    .flatMap(entry => entry.eventType === 'resolver_slot_written' ? (entry.data?.snapshot?.records ?? []).map(r => ({ ...entry, target: r.key })) : [entry])
     .map((entry) => warningFromActivityEntry(entry, now, windowSeconds))
     .filter(Boolean)
     .sort((left, right) => left.ageSeconds - right.ageSeconds)
@@ -45,7 +46,7 @@ function warningFromActivityEntry(entry, now, windowSeconds) {
   const ageSeconds = Math.max(0, Math.floor((now.getTime() - timestampMs) / 1000))
   if (ageSeconds > windowSeconds) return null
 
-  if (entry.eventType === 'resolver_change') {
+  if (entry.eventType === 'resolver_change' || entry.eventType === 'slot_changed' && entry.data?.reason === 'Move') {
     return createRecentWarning(entry, {
       code: 'recent_resolver_change',
       severity: 'danger',
@@ -55,7 +56,7 @@ function warningFromActivityEntry(entry, now, windowSeconds) {
     })
   }
 
-  if (['primary_name', 'primary_name_set', 'primary_name_cleared'].includes(entry.eventType)) {
+  if (['primary_name', 'primary_name_set', 'primary_name_cleared', 'primary_changed'].includes(entry.eventType)) {
     return createRecentWarning(entry, {
       code: 'recent_primary_name_change',
       severity: 'warning',
@@ -65,7 +66,7 @@ function warningFromActivityEntry(entry, now, windowSeconds) {
     })
   }
 
-  if (entry.eventType === 'record_update' && isHighRiskRecordTarget(entry.target)) {
+  if ((entry.eventType === 'record_update' || entry.eventType === 'resolver_slot_written') && isHighRiskRecordTarget(entry.target)) {
     return createRecentWarning(entry, {
       code: 'recent_high_risk_record_change',
       severity: 'warning',
@@ -108,7 +109,7 @@ function validateRecordValue(key, value) {
 
   return [
     ...validateByteLength(value, definition.maxBytes),
-    ...definition.validate(value),
+    ...(definition.validate ? definition.validate(value) : sdkValidateRecordValue(key, value)),
   ]
 }
 
@@ -132,7 +133,7 @@ function recordDefinition(key) {
   if (staticDefinitions[key]) return staticDefinitions[key]
   if (/^text\.[a-z0-9_:-]{1,40}$/.test(key)) return { maxBytes: 512, validate: validatePublicText }
   if (/^service_endpoint\.[a-z0-9_-]{1,40}$/.test(key)) return { maxBytes: 2048, validate: validateHttpsUrl }
-  return null
+  return getRecordDefinition(key) ?? null
 }
 
 function validateByteLength(value, maxBytes) {

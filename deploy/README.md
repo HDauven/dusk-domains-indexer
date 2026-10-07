@@ -34,17 +34,17 @@ the existing journal and database.
    instance=testnet
    sudo install -d -m 0750 /etc/dusk-domains
    sudo install -d -o duskdomains -g duskdomains -m 0750 \
-     /var/lib/dusk-domains/$instance /var/lib/dusk-domains/$instance/contracts \
+     /var/lib/dusk-domains/$instance /var/lib/dusk-domains/$instance/release/contracts \
      /var/backups/dusk-domains/$instance /var/log/dusk-domains
    sudo install -m 0600 deploy/$instance.env.example /etc/dusk-domains/$instance.env
    ```
 
-   Review every path and fill in `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT`. Store the
+   Review every path; preserve the release `indexer.env` and its `DUSK_DOMAINS_FROM_BLOCK`. Store the
    network's deployment env, deployment proof and matching data-driver WASM in
    the configured locations. The deployment env needs
-   `VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID`, `VITE_DUSK_DOMAINS_CORE_CONTRACT_ID`,
-   `VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID` and, if deployed,
-   `VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID`. Give the service account read access
+   `DUSK_DOMAINS_DIRECTORY_CONTRACT_ID`, `DUSK_DOMAINS_POLICY_CONTRACT_ID`,
+   `DUSK_DOMAINS_STORE_CONTRACT_ID`, `DUSK_DOMAINS_RESOLVER_CONTRACT_ID`,
+   `DUSK_DOMAINS_VAULT_CONTRACT_ID` and `DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID`. Give the service account read access
    to these files and write access to its data and backups. An archive snapshot
    marker/height is optional evidence for the production checks in the
    [production runbook](../docs/production-runbook.md); configure it when used.
@@ -121,7 +121,8 @@ directory blocks another deploy: inspect it and move it aside before retrying.
 
 ## Migrate the existing single testnet instance
 
-Perform these steps in order before bringing up mainnet on port 8787.
+These steps change service layout within the same frozen deployment. For a legacy
+contract replacement, follow the frozen cutover below and use fresh data paths.
 
 1. Record the current code commit, env, unit account, deployment start height and
    cursor. Back up `/etc/dusk-domains/indexer.env`, the Caddy config and the data in
@@ -161,7 +162,7 @@ Perform these steps in order before bringing up mainnet on port 8787.
 
 1. Record the actual mainnet contract IDs, matching drivers, deployment proof and
    **first deployment block**. Set that block as
-   `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT`, so initialization events are included.
+   `DUSK_DOMAINS_FROM_BLOCK`, so initialization events are included.
    Do not use today's chain tip or copy testnet's start height.
 2. Follow the first-time setup using `mainnet.env.example`: port 8787, mainnet-only
    paths, `DUSK_DOMAINS_SITE_URL=https://dusk.domains`, matching CORS and
@@ -225,3 +226,29 @@ rate-limit budgets with `DUSK_DOMAINS_INDEXER_TRUST_PROXY=true`. Leave
 `DUSK_DOMAINS_INDEXER_ALLOW_PUBLIC_PROXY_TRUST=false` on this layout. The default
 budget is 200 requests per minute, including health and OPTIONS; see
 [the API policy](../docs/indexer-api.md) for CORS and rate-limit settings.
+
+### Frozen deployment cutover
+
+Retain `manifest.json`, `indexer.env` and `contracts/` together. `indexer.env` uses
+`DUSK_DOMAINS_{DIRECTORY,POLICY,STORE,VAULT,RESOLVER,MARKETPLACE}_CONTRACT_ID`
+and matching `_DRIVER_URL=/contracts/<crate>.<sha256>.data-driver.wasm` values.
+The collector loads local files from the configured driver directory and checks
+the SHA-256 filename before using SDK 0.3.0's lossless driver decoder. It never
+fetches driver URLs. All six IDs are required, including initialization events
+before the directory's deployment. Later committed directory admissions extend
+collection to new stores, resolvers, policies and markets using their v1 role
+schema. Retired emitters remain followed for names and claims.
+
+At cutover stop the old services, retain their state as an archive, and configure
+new JSONL/cursor/SQLite paths for both mainnet and testnet. Start each collector
+at its release's `DUSK_DOMAINS_FROM_BLOCK`, let it catch up, then start/check its
+API. Do not append frozen receipts to an old journal or reuse an old SQLite DB.
+The collector stores a complete receipt per row; `eventCount` now counts rows.
+
+The dependency and lockfile pin the published `npm:@jsr/duskdomains__sdk@0.3.0`
+package. The committed `.npmrc` maps `@jsr` to its package registry for `npm ci`
+in deployment checkouts and Docker builds.
+
+`production:check --proof-report` accepts the frozen proof report (`contractIds`)
+or the verified frozen manifest (`contracts` array). This checks identity and
+status only; run the protocol release verifier for full artifact/receipt acceptance.

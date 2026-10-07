@@ -1,7 +1,9 @@
 import { blake2b } from '@noble/hashes/blake2.js'
 import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js'
-import { bytesToBase58 } from '@duskdomains/sdk/projection'
+import { encodeBase58 as bytesToBase58 } from '@duskdomains/sdk'
 import { afterEach, expect, it } from 'vitest'
+import { createEventLog, envelope, receipt, rootName, ref, bytes, order } from '../../../scripts/test-fixtures/frozen-events.mjs'
+import { replayEventLog } from '../event-log-store.mjs'
 import { loadSnapshotStore } from '../../local-indexer.mjs'
 import { createSnapshot, startServer, writeSnapshot } from '../../local-indexer-test-helpers.mjs'
 import { nameValidationIssue } from '../naming.mjs'
@@ -162,7 +164,7 @@ it('indexes activity once per read model and rebuilds the sitemap only when the 
 })
 
 it('lists only names that the name page accepts', () => {
-  const tooLong = `${'a'.repeat(59)}.dusk`
+  const tooLong = `${'a'.repeat(64)}.dusk`
   expect(nameValidationIssue(tooLong)).not.toBeNull()
   const xml = namesSitemap(sitemapStore([root(tooLong, '0x03'), root('fine.dusk', '0x04')]), { blockHeight: 1, date: new Date() })
   expect(xml).not.toContain(tooLong)
@@ -223,22 +225,27 @@ it('drops a name that expires by date even while the height stays the same', () 
   expect(namesSitemap(store, { blockHeight: 10, date: new Date('2026-10-05T00:02:00.000Z') })).not.toContain('dated.dusk')
 })
 
-it('says a name the market held when it expired cannot be renewed and frees up after grace', async () => {
-  const market = '0x' + 'ab'.repeat(32)
-  const { baseUrl, store } = await fixture({
-    owner: authority,
-    nameOverrides: { expiresAtBlockHeight: 100, graceEndsAtBlockHeight: 300 },
-  })
-  store.currentBlockHeight = 200
-  store.cursor = { lastBlockHeight: 200 }
-  const name = store.namesByCanonical.get('aurora.dusk')
-  name.owner = market
-  name.manager = market
-  // The listing is already closed: the market contract is known from the deployment only.
-  store.deployment = { contracts: { marketplace: { contractIds: [market] } } }
-  const html = await (await fetch(`${baseUrl}/page/name/aurora.dusk`)).text()
-  expect(html).toContain('<p>aurora.dusk expired on 2027-06-17. It was in the market when it expired, so it cannot be renewed. Anyone can register it again after 2027-07-17.</p>')
+it('allows permissionless renewal during frozen marketplace custody until grace ends', async () => {
+  const name = rootName(), custody = { nonce: 4n, incarnation: name.incarnation, custodian: bytes(6),
+    origin_owner: name.owner, origin_manager: name.manager }
+  const entries = [...createEventLog(), envelope(receipt(16, [
+    [4, 'authorities_changed', { name: { ...name, owner: bytes(6), manager: bytes(6), custody }, actor: name.owner,
+      previous_owner: name.owner, previous_manager: name.manager, data_cleared: false, reason: 'Holder' }],
+    [4, 'custody_started', { name: ref(name), custody, callback_data_hash: bytes(0) }],
+    [6, 'order_changed', { order: order() }],
+  ]))]
+  const warnings = [], store = replayEventLog(entries, warnings, new Date().toISOString(), 1500)
+  expect(warnings).toEqual([])
+  expect(store.marketplaceFixedSalesByNode.values().next().value.escrowed).toBe(true)
+  const server = await startServer(store); servers.push(server)
+  const html = await (await fetch(`${server.baseUrl}/page/name/aurora.dusk`)).text()
+  expect(html).toContain('<p>aurora.dusk has expired. Its owner, or anyone else, can renew it until its grace period ends.</p>')
   expect(html).toContain('<meta name="robots" content="noindex,follow">')
+  expect(html).not.toContain('cannot be renewed')
+  // At grace end the lifecycle is released, even while custody history remains.
+  Object.assign(store, replayEventLog(entries, [], new Date().toISOString(), 2000))
+  const after = await (await fetch(`${server.baseUrl}/page/name/aurora.dusk`)).text()
+  expect(after).not.toContain('can renew it')
 })
 
 it('explains a root past grace that only its lifecycle still records', async () => {

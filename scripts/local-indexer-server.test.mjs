@@ -132,9 +132,9 @@ describe('local indexer HTTP API', () => {
       }],
     })
     await expect(expectJson(`${baseUrl}/fee-config`)).resolves.toMatchObject({
-      threeCharYearLux: 150_000_000_000,
-      fourCharYearLux: 50_000_000_000,
-      fivePlusYearLux: 10_000_000_000,
+      threeCharYearLux: '150000000000',
+      fourCharYearLux: '50000000000',
+      fivePlusYearLux: '10000000000',
       referralRewardBps: 2_000,
       renewalReferralRewardBps: 1_000,
       premiumReferralRewardBps: 0,
@@ -155,9 +155,9 @@ describe('local indexer HTTP API', () => {
     await expect(expectJson(`${baseUrl}/referrals?referrer=0x${'99'.repeat(32)}`)).resolves.toMatchObject({
       supported: true,
       referrer: `0x${'99'.repeat(32)}`,
-      claimableLux: 0,
-      claimedLux: 0,
-      referralCount: 0,
+      claimableLux: '0',
+      claimedLux: '0',
+      accruedLux: '0',
     })
     await expect(expectJson(`${baseUrl}/reverse?type=phoenix_payment_endpoint&value=${encodeURIComponent(snapshot.phoenix)}`)).resolves.toBeNull()
     await expect(expectJson(`${baseUrl}/reverse?type=dusk_contract&value=${snapshot.contract}`)).resolves.toBeNull()

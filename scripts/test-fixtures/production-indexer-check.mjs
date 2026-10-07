@@ -1,3 +1,5 @@
+import { createEventLog, envelope, id, scope } from './frozen-events.mjs'
+import { decodeReceipt } from '../../server/local-indexer/receipt-codec.mjs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,94 +27,26 @@ export async function writeDurableFixture(options = {}) {
   const restoreDir = join(dir, 'restore')
   const blockHeight = options.blockHeight ?? 10
   const currentBlockHeight = options.currentBlockHeight ?? 12
-  const coreContractId = `0x${'44'.repeat(32)}`
-  const treasuryContractId = options.treasuryContractId ?? `0x${'55'.repeat(32)}`
-  const marketplaceContractId = `0x${'77'.repeat(32)}`
-  const routerContractId = `0x${'88'.repeat(32)}`
-  const resolverContractId = `0x${'99'.repeat(32)}`
-  const rows = [
-    {
-      event: {
-        type: 'router_initialized',
-        operator: `0x${'66'.repeat(32)}`,
-        treasury: treasuryContractId,
-        marketplace: marketplaceContractId,
-        feeConfig: {},
-      },
-      meta: {
-        txId: 'tx-router',
-        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'router',
-        contractId: routerContractId,
-        observedAt: '2026-06-22T00:00:00.000Z',
-      },
-    },
-    {
-      event: {
-        type: 'name_registered',
-        node: `0x${'11'.repeat(32)}`,
-        label: 'aurora',
-        actor: `0x${'22'.repeat(32)}`,
-        owner: `0x${'33'.repeat(32)}`,
-        expiresAt: null,
-        graceEndsAt: null,
-        expiresAtBlockHeight: 1000,
-        graceEndsAtBlockHeight: 1100,
-        feeLux: 50_000_000_000,
-      },
-      meta: {
-        txId: 'tx-register',
-        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'core',
-        contractId: coreContractId,
-        observedAt: '2026-06-22T00:00:00.000Z',
-      },
-    },
-    {
-      event: {
-        type: 'treasury_initialized',
-        operator: `0x${'66'.repeat(32)}`,
-        operatorRecipient: 'recipient',
-        allowedFeeSources: [marketplaceContractId],
-        router: routerContractId,
-      },
-      meta: {
-        txId: 'tx-treasury',
-        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'treasury',
-        contractId: treasuryContractId,
-        observedAt: '2026-06-22T00:00:01.000Z',
-      },
-    },
-    {
-      event: {
-        type: 'marketplace_initialized',
-        router: routerContractId,
-        treasuryContract: treasuryContractId,
-        operator: `0x${'66'.repeat(32)}`,
-      },
-      meta: {
-        txId: 'tx-marketplace',
-        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'marketplace',
-        contractId: marketplaceContractId,
-        observedAt: '2026-06-22T00:00:02.000Z',
-      },
-    },
-    ...(options.legacyRow ? [{
-      event: {
-        type: 'record_changed',
-        node: `0x${'11'.repeat(32)}`,
-      },
-      meta: {
-        txId: 'tx-legacy',
-        ...(options.omitBlockHeight ? {} : { blockHeight: options.nullBlockHeight ? null : blockHeight }),
-        contractKey: 'registrar',
-        contractId: `0x${'77'.repeat(32)}`,
-        observedAt: '2026-06-22T00:00:02.000Z',
-      },
-    }] : []),
-  ]
+  const rows = createEventLog().slice(0, 4).map((entry, index) => {
+    const r = decodeReceipt(entry.event.receipt)
+    r.height = BigInt(blockHeight)
+    for (const e of r.events) if (e.topic === 'operation_begin') e.data.height = r.height
+    if (options.treasuryContractId) {
+      for (const e of r.events) if (e.emitter === id(2)) {
+        e.emitter = options.treasuryContractId.replace(/^0x/, '')
+        if (e.data.call_path) e.data.call_path = [Array.from(Buffer.from(e.emitter, 'hex'))]
+      }
+    }
+    const row = envelope(r)
+    if (options.treasuryContractId) {
+      delete row.event.projectionOptions.contracts[id(2)]
+      row.event.projectionOptions.contracts[options.treasuryContractId.replace(/^0x/, '')] = 'vault'
+    }
+    if (options.omitBlockHeight) delete row.meta.blockHeight
+    if (options.nullBlockHeight) row.meta.blockHeight = null
+    return row
+  })
+  if (options.legacyRow) rows.push({ event: { type: 'old' }, meta: { contractKey: 'registrar', blockHeight } })
   await writeFile(eventLog, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8')
   await writeFile(cursor, JSON.stringify({
     version: 2,
@@ -121,36 +55,21 @@ export async function writeDurableFixture(options = {}) {
     scannedBlockHash: '11'.repeat(32),
     status: 'running',
     eventCount: rows.length,
+    eventLogBytes: Buffer.byteLength(rows.map(row => JSON.stringify(row) + '\n').join('')),
     replayedEventCount: 0,
     startedAt: '2026-06-22T00:00:00.000Z',
     updatedAt: new Date().toISOString(),
     lastEventAt: '2026-06-22T00:00:00.000Z',
-    lastContract: 'core',
-    lastEventName: 'name_registered',
+    lastContract: 'frozen',
+    lastEventName: 'frozen_receipt',
     lastTxId: 'tx-register',
     lastBlockHeight: blockHeight,
     currentBlockHeight,
     scannedBlockHeight: options.scannedBlockHeight ?? currentBlockHeight,
   }, null, 2), 'utf8')
-  await writeFile(envFile, `
-VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID=${routerContractId}
-VITE_DUSK_DOMAINS_CORE_CONTRACT_ID=${coreContractId}
-VITE_DUSK_DOMAINS_RESOLVER_CONTRACT_ID=${resolverContractId}
-VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID=0x${'55'.repeat(32)}
-VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID=${marketplaceContractId}
-VITE_DUSK_DOMAINS_CORE_DRIVER_URL=/contracts/dusk-domains-core.data-driver.wasm
-VITE_DUSK_DOMAINS_TREASURY_DRIVER_URL=/contracts/dusk-domains-treasury.data-driver.wasm
-`, 'utf8')
-  await writeFile(proofReport, JSON.stringify({
-    ok: true,
-    publicContracts: {
-      router: routerContractId,
-      core: coreContractId,
-      resolver: resolverContractId,
-      treasury: `0x${'55'.repeat(32)}`,
-      marketplace: marketplaceContractId,
-    },
-  }, null, 2), 'utf8')
+  const contracts = Object.fromEntries(Object.entries(scope).map(([id, role]) => [role, `0x${id}`]))
+  await writeFile(envFile, Object.entries(contracts).map(([role, id]) => `DUSK_DOMAINS_${role.toUpperCase()}_CONTRACT_ID=${id}`).join('\n'))
+  await writeFile(proofReport, JSON.stringify({ ok: true, publicContracts: contracts }))
   await writeFile(browserWriteProof, JSON.stringify({
     ok: true,
     generatedAt: '2026-06-22T00:02:00.000Z',

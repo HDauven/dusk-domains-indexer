@@ -30,7 +30,7 @@ async function startIndexer(store, handlerOptions = {}) {
 }
 
 describe('local indexer malformed event-log handling', () => {
-  it('skips malformed event-log rows while reporting replay warnings', async () => {
+  it('withholds malformed event-log history while reporting replay warnings', async () => {
     const fixture = await writeEventLog({ malformedRow: true })
     const store = await loadEventLogStore(fixture.eventLogFile, fixture.cursorFile)
     const { baseUrl } = await startIndexer(store)
@@ -38,20 +38,11 @@ describe('local indexer malformed event-log handling', () => {
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
       ok: false,
       mode: 'event-log',
-      names: 1,
-      warnings: [{
-        code: 'invalid_event_log_row',
-        line: 2,
-      }],
+      names: 0,
+      projectionBlockHeight: null,
+      warnings: expect.arrayContaining([expect.objectContaining({ code: 'invalid_event_log_row', line: 2 })]),
     })
-    await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
-      canonicalName: 'aurora.dusk',
-      verificationStatus: 'forward_resolved',
-      records: [{
-        key: 'moonlight_address',
-        value: fixture.moonlight,
-      }],
-    })
+    await expect(expectJson(`${baseUrl}/resolve?name=aurora`, { expectedStatus: 503 })).resolves.toMatchObject({ error: 'incomplete_replay' })
   })
 
   it('keeps health alive for malformed event-log array sources', async () => {
@@ -66,17 +57,15 @@ describe('local indexer malformed event-log handling', () => {
       ok: false,
       mode: 'event-log',
       names: 0,
-      warnings: [{
-        code: 'invalid_event_log_array',
+      projectionBlockHeight: null,
+      warnings: [{ code: 'publication_candidate_rejected', step: 'validate-cursor', error: 'Error' }, {
+        code: 'publication_cursor_unavailable',
       }],
     })
-    await expect(expectJson(`${baseUrl}/search?query=aurora`)).resolves.toMatchObject({
-      canonical: 'aurora.dusk',
-      status: 'available',
-    })
+    await expect(expectJson(`${baseUrl}/search?query=aurora`, { expectedStatus: 503 })).resolves.toMatchObject({ error: 'incomplete_replay' })
   })
 
-  it('skips malformed decoded event payloads while keeping later local events indexed', async () => {
+  it('withholds the reconstructed prefix when a cold receipt replay blocks', async () => {
     const fixture = await writeEventLog({ malformedEvent: true })
     const store = await loadEventLogStore(fixture.eventLogFile, fixture.cursorFile)
     const { baseUrl } = await startIndexer(store)
@@ -84,25 +73,14 @@ describe('local indexer malformed event-log handling', () => {
     await expect(expectJson(`${baseUrl}/health`)).resolves.toMatchObject({
       ok: false,
       mode: 'event-log',
-      names: 1,
-      warnings: [{
+      names: 0,
+      projectionBlockHeight: null,
+      warnings: [{ code: 'publication_candidate_rejected', step: 'replay', error: 'Error' }, {
         code: 'invalid_event_log_event',
-        type: 'record_changed',
+        type: 'frozen_receipt',
       }],
     })
-    await expect(expectJson(`${baseUrl}/resolve?name=aurora`)).resolves.toMatchObject({
-      canonicalName: 'aurora.dusk',
-      verificationStatus: 'forward_resolved',
-      records: [{
-        key: 'moonlight_address',
-        value: fixture.moonlight,
-      }],
-    })
-    const activity = await expectJson(`${baseUrl}/activity?node=${fixture.node}`)
-    expect(activity.map((entry) => entry.eventType).slice(0, 3)).toEqual([
-      'subname_created',
-      'primary_name_set',
-      'record_update',
-    ])
+    await expect(expectJson(`${baseUrl}/resolve?name=aurora`, { expectedStatus: 503 })).resolves.toMatchObject({ error: 'incomplete_replay' })
+    await expect(expectJson(`${baseUrl}/activity?node=${fixture.node}`, { expectedStatus: 503 })).resolves.toMatchObject({ error: 'incomplete_replay' })
   })
 })

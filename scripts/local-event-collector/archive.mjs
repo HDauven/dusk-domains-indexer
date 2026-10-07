@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { mkdir, open, readFile, rename } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { dataDrivers } from '@dusk/w3sper'
-import { duskDomainsRetiredContractEventTopics } from '@duskdomains/sdk/event-catalog'
-import { normalizeObservedEvent } from '@duskdomains/sdk/projection'
+import { encodeReceipt, decodeReceipt as decodeStoredReceipt } from '../../server/local-indexer/receipt-codec.mjs'
+import { loadDataDriver } from '@duskdomains/sdk'
+import { decodeReceipt, followAdmissions, jsonSafe } from './frozen.mjs'
 import { parseEventLog } from '../../server/local-indexer/event-log.mjs'
 import { summarizeEventLogText } from './cursor-summary.mjs'
 
@@ -33,28 +33,21 @@ export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wa
   }
 }
 
-export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep } = {}) {
+export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep, loadDriver = loadDataDriver } = {}) {
   integer(config.fromBlock)
   assert(config.fromBlock > 0, '--from-block must be positive')
   const query = text => queryArchive(config.nodeUrl, text, fetcher, { signal, wait })
   const contracts = new Map()
   for (const contract of config.contracts) {
-    const driver = await dataDrivers.load(await readFile(resolve(config.publicDir, contract.driverFile)))
-    driver.init()
+    const driver = await loadDriver(await readFile(resolve(config.publicDir, contract.driverFile)))
     assert(!contracts.has(contract.contractId), 'Duplicate collector contract ID')
     contracts.set(contract.contractId, { ...contract, driver })
   }
-  const scope = JSON.stringify(config.contracts.map(c => [c.key, c.contractId]).sort())
-  // Contract pools (ADR 0002 in dusk-domains-protocol) grow: the router adds registries that emit the
-  // core's events. Follow each one from the router event that adds it, which always comes first.
-  const registry = config.contracts.find(contract => contract.key === 'core')
-  const followPoolMember = entry => {
-    if (!registry || entry?.meta?.contractKey !== 'router' || entry.event?.type !== 'pool_member_added') return
-    if (entry.event.kind !== 'registry') return
-    const contractId = String(entry.event.member).toLowerCase().replace(/^0x/, '')
-    hexHash(contractId)
-    if (!contracts.has(contractId)) contracts.set(contractId, { ...contracts.get(registry.contractId), contractId })
-  }
+  const directoryId = config.contracts.find(c => c.key === 'directory')?.contractId
+  assert(directoryId, 'Frozen collector requires a directory')
+  const projectionOptions = { directoryId, contracts: Object.fromEntries(config.contracts.map(c => [c.contractId, c.key])) }
+  const scope = JSON.stringify({ format: 'frozen-receipts-v1', chainId: config.chainId ?? null,
+    schema: config.eventSchemaVersion ?? '1', contracts: config.contracts.map(c => [c.key, c.contractId, c.driverHash ?? null]).sort() })
   await mkdir(dirname(config.eventLog), { recursive: true })
   await mkdir(dirname(config.cursorFile), { recursive: true })
   let cursor = config.truncate ? null : await readOptionalJson(config.cursorFile)
@@ -80,7 +73,10 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
       assert.equal(parsed.warnings.length, 0, 'Committed journal is corrupt')
       assert.equal(parsed.entries.length, cursor.eventCount, 'Journal/cursor event count mismatch')
       assert(!committed || committed.endsWith('\n'), 'Cursor splits a journal row')
-      for (const entry of parsed.entries) followPoolMember(entry)
+      for (const entry of parsed.entries) {
+        assert.equal(entry.event?.type, 'frozen_receipt', 'Legacy journal: start fresh frozen paths')
+        followAdmissions(decodeStoredReceipt(entry.event.receipt), contracts, directoryId)
+      }
     } else {
       assert.equal(size, 0, 'Unbound/legacy journal: use NEW journal/cursor/SQLite paths for archive replay')
       cursor = { ...summarizeEventLogText(''), version: 2, source: archiveSource, scope,
@@ -100,6 +96,8 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
     const archiveApi = await detectArchiveApi(query)
     await persist({ ...cursor, archiveApi, replayedEventCount, status: 'catching-up', reason: null })
     while (!signal?.aborted) {
+      const committedContracts = new Map(contracts)
+      const committedEventCount = cursor.eventCount
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
         const [currentBlockHeight] = pair?.last_block ?? []
@@ -127,24 +125,21 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
           const batches = archiveApi === 'event-batch' ? await eventBatches(query, blocks) : await finalizedBlockEvents(query, blocks)
           for (const [i, events] of batches.entries()) {
             const { header } = blocks[i]
-            for (const [eventIndex, raw] of events.entries()) {
+            const receipts = new Map()
+            for (const [ordinal, raw] of events.entries()) {
               hexHash(raw.source)
-              const contract = contracts.get(raw.source)
-              if (!contract) continue
-              assert.equal(typeof raw.reverted, 'boolean', 'Archive event lacks rollback metadata')
-              if (raw.reverted) continue
-              if (duskDomainsRetiredContractEventTopics[contract.key]?.includes(raw.topic)) continue
-              assert(contract.events.includes(raw.topic), `Unsupported ${contract.key} event \`${raw.topic}\` at block ${header.height}: upgrade the indexer`)
               hexHash(raw.origin)
-              assert(typeof raw.data === 'string' && /^(?:[0-9a-f]{2})*$/i.test(raw.data), 'Invalid archive event bytes')
-              const event = contract.driver.decodeEvent(raw.topic, Buffer.from(raw.data, 'hex'))
-              const entry = normalizeObservedEvent({ contract, eventName: raw.topic, event,
-                observedAt: new Date(header.timestamp * 1_000).toISOString(), observedBlockHeight: header.height })
-              assert(entry, `Undecoded ${contract.key} event: ${raw.topic}`)
-              Object.assign(entry.meta, { source: archiveSource, timeSource: 'block', blockHeight: header.height,
-                blockHash: header.hash, txId: raw.origin, eventIndex, eventId: header.hash + ':' + eventIndex })
-              entries.push(entry)
-              followPoolMember(entry)
+              if (!receipts.has(raw.origin)) receipts.set(raw.origin, [])
+              receipts.get(raw.origin).push({ raw, ordinal })
+            }
+            for (const [txId, rawEvents] of receipts) {
+              const receipt = decodeReceipt(rawEvents, header, contracts, directoryId)
+              if (!receipt.events.length) continue
+              entries.push(jsonSafe({ event: { type: 'frozen_receipt', receipt: encodeReceipt(receipt), projectionOptions },
+                meta: { source: archiveSource, timeSource: 'block', chainId: config.chainId ?? null,
+                  observedAt: new Date(header.timestamp * 1000).toISOString(), blockHeight: header.height,
+                  blockHash: header.hash, txId, eventIndex: rawEvents[0].ordinal, eventId: receipt.id,
+                  contractKey: 'frozen', contractId: directoryId } }))
             }
           }
           if (batches.length) ({ height: scannedBlockHeight, hash: scannedBlockHash } = blocks[batches.length - 1].header)
@@ -165,6 +160,10 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
           reason: scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null })
         if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
       } catch (error) {
+        if (cursor.eventCount === committedEventCount) {
+          contracts.clear()
+          for (const [id, contract] of committedContracts) contracts.set(id, contract)
+        }
         // Never advance past a missing archive, invalid payload, or failed durable write.
         await journal.truncate(cursor.eventLogBytes)
         await journal.sync()

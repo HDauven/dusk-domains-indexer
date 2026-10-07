@@ -145,7 +145,7 @@ describe('production indexer durability check', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.checks.find((check) => check.id === 'event_journal_treasury_matches_deployment'))
+    expect(result.checks.find((check) => check.id === 'event_journal_vault_matches_deployment'))
       .toMatchObject({
         ok: false,
         message: expect.stringContaining('mismatch'),

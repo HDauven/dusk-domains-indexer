@@ -236,14 +236,14 @@ export function createMockFetch(options = {}) {
         }, { status: 400 })
       }
       const key = parsed.searchParams.get('key')
-      if (parsed.pathname === '/record' && !key) {
+      if (parsed.pathname === '/record' && key === null) {
         return Response.json({
           error: 'missing_record_key',
           parameter: 'key',
           message: 'key query parameter is required.',
         }, { status: 400 })
       }
-      if (key && /\s/.test(key)) {
+      if (key !== null && Buffer.byteLength(key, 'utf8') > 64) {
         return Response.json({
           error: 'invalid_record_key',
           parameter: 'key',

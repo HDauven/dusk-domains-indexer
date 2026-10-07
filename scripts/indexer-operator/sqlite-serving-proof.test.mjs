@@ -1,4 +1,4 @@
-import { rm, writeFile } from 'node:fs/promises'
+import { rm, writeFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { healthResponseForStore, loadSqliteStore } from '../../server/local-indexer.mjs'
@@ -62,8 +62,8 @@ describe('sqlite serving proof', () => {
     const sqlite = join(directory, 'indexer.sqlite')
     vi.useFakeTimers({ toFake: ['Date'] })
     try {
-      const { checkpoint } = await loadSqliteStore(sqlite, { eventLogFile })
-      const cursor = { ...healthyStore().cursor, eventCount: checkpoint.eventCount }
+      const { checkpoint } = await loadSqliteStore(sqlite, { eventLogFile, cursorFile })
+      const cursor = { ...healthyStore().cursor, eventCount: checkpoint.eventCount, eventLogBytes: (await stat(eventLogFile)).size, scannedBlockHeight: 14, currentBlockHeight: 14 }
       const importedAt = cursor.updatedAt
       await writeFile(cursorFile, JSON.stringify(cursor))
       await loadSqliteStore(sqlite, { eventLogFile, cursorFile })
@@ -73,7 +73,7 @@ describe('sqlite serving proof', () => {
       vi.setSystemTime(Date.now() + 31_000)
       expect(healthResponseForStore(await getStore()).ok).toBe(false)
       cursor.updatedAt = new Date().toISOString()
-      cursor.currentBlockHeight = cursor.scannedBlockHeight = 13
+      cursor.currentBlockHeight = cursor.scannedBlockHeight = 15
       await writeFile(cursorFile, JSON.stringify(cursor))
       expect((await checkSqliteServingProof({ sqlite, cursor: cursorFile })).sqliteHealth.ok).toBe(true)
       expect(healthResponseForStore(await getStore()).ok).toBe(true)
@@ -85,7 +85,8 @@ describe('sqlite serving proof', () => {
       expect(healthResponseForStore(await getStore()).ok).toBe(false)
       expect((await loadSqliteStore(sqlite)).checkpoint.eventCount).toBe(checkpoint.eventCount)
       await writeFile(cursorFile, 'invalid json')
-      expect((await loadSqliteStore(sqlite, { cursorFile })).cursor.status).toBe('unreadable')
+      expect(await loadSqliteStore(sqlite, { cursorFile })).toMatchObject({ cursor: null, unavailable: true,
+        health: { ok: false, step: 'load-cursor', error: 'SyntaxError' } })
       await rm(cursorFile)
       expect((await loadSqliteStore(sqlite, { cursorFile })).cursor).toBeNull()
     } finally {
@@ -163,6 +164,7 @@ function healthyStore() {
     namesByCanonical: new Map(),
     warnings: [],
     cursor: {
+      version: 2,
       source: 'rusk-finalized-archive',
       status: 'running',
       updatedAt: new Date().toISOString(),

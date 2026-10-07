@@ -1,4 +1,4 @@
-import { getReservedNamePolicy } from '@duskdomains/sdk/projection'
+import { validateName } from '@duskdomains/sdk'
 import { blake2b } from '@noble/hashes/blake2.js'
 import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js'
 import {
@@ -12,14 +12,8 @@ export function apexLabel(canonical) {
 }
 
 export function nameValidationIssue(canonical) {
-  if (!canonical) return { tone: 'info', text: 'Enter a name to check availability.' }
-  if (canonical.length > 63) return { tone: 'danger', text: 'Names must be 63 characters or shorter.' }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.dusk$/.test(canonical)) {
-    return { tone: 'danger', text: 'Use lowercase letters, numbers, or interior hyphens.' }
-  }
-  if (canonical.split('.').slice(0, -1).some((part) => part.length < 3)) {
-    return { tone: 'danger', text: 'Labels shorter than 3 characters are reserved.' }
-  }
+  const validation = validateName(canonical)
+  if (!validation.ok) return { tone: 'danger', text: 'Use up to four labels of 1–63 lowercase ASCII letters, numbers, or interior hyphens.' }
   return null
 }
 
@@ -31,7 +25,7 @@ export function annualPrice(label, feeConfig = DEFAULT_FEE_CONFIG) {
 }
 
 export function reservedCategory(label) {
-  return getReservedNamePolicy(label)?.category ?? 'ecosystem'
+  return 'ecosystem'
 }
 
 export function endpointKey(endpoint) {

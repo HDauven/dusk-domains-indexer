@@ -1,4 +1,5 @@
-import { duskDomainsContractEventTopics } from '@duskdomains/sdk/event-catalog'
+import { roles, topicsFor } from './frozen.mjs'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -10,84 +11,38 @@ export { summarizeEventLogText } from './cursor-summary.mjs'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
-const coreContracts = [
-  {
-    // Contract pools (ADR 0002): the router owns the fee config and lists pool members.
-    key: 'router',
-    envKey: 'VITE_DUSK_DOMAINS_ROUTER_CONTRACT_ID',
-    driverFile: 'dusk-domains-router.data-driver.wasm',
-    events: duskDomainsContractEventTopics.router,
-  },
-  {
-    key: 'core',
-    envKey: 'VITE_DUSK_DOMAINS_CORE_CONTRACT_ID',
-    driverFile: 'dusk-domains-core.data-driver.wasm',
-    events: duskDomainsContractEventTopics.core,
-  },
-  {
-    key: 'treasury',
-    envKey: 'VITE_DUSK_DOMAINS_TREASURY_CONTRACT_ID',
-    driverFile: 'dusk-domains-treasury.data-driver.wasm',
-    events: duskDomainsContractEventTopics.treasury,
-  },
-]
-
-const optionalContracts = [
-  {
-    key: 'marketplace',
-    envKey: 'VITE_DUSK_DOMAINS_MARKETPLACE_CONTRACT_ID',
-    driverFile: 'dusk-domains-marketplace.data-driver.wasm',
-    events: duskDomainsContractEventTopics.marketplace,
-  },
-]
-
 export async function loadCollectorConfig(options = {}, runtimeEnv = process.env) {
   const envFile = resolve(rootDir, options.envFile ?? '.env.local')
-  const env = existsSync(envFile) ? parseEnvFile(await readFile(envFile, 'utf8')) : {}
-  const nodeUrl = options.nodeUrl
-    ?? runtimeEnv.DUSK_DOMAINS_COLLECTOR_NODE_URL
-    ?? env.VITE_DUSK_DOMAINS_NODE_URL
-    ?? 'http://127.0.0.1:18180/'
-  const eventLog = resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl')
-  const cursorFile = resolve(rootDir, options.cursorFile ?? 'target/dusk-domains-local-indexer.cursor.json')
-  const publicDir = resolve(rootDir, options.publicDir ?? 'public/contracts')
-  const requiredContracts = coreContracts.map((contract) => ({
-    ...contract,
-    contractId: normalizeContractId(env[contract.envKey]),
-  }))
-  const configuredOptionalContracts = optionalContracts
-    .map((contract) => ({
-      ...contract,
-      contractId: normalizeContractId(env[contract.envKey]),
-    }))
-    .filter((contract) => Boolean(env[contract.envKey]))
-  const configuredContracts = [...requiredContracts, ...configuredOptionalContracts]
-  const missing = configuredContracts
-    .filter((contract) => !isContractId(contract.contractId))
-    .map((contract) => contract.envKey)
-
-  if (missing.length > 0) {
-    throw new Error(`Missing or invalid contract IDs in ${envFile}: ${missing.join(', ')}`)
+  const fileEnv = existsSync(envFile) ? parseEnvFile(await readFile(envFile, 'utf8')) : {}
+  const env = { ...fileEnv, ...runtimeEnv }
+  const value = key => env[`DUSK_DOMAINS_${key}`] ?? env[`VITE_DUSK_DOMAINS_${key}`]
+  const publicDir = resolve(rootDir, options.publicDir ?? dirname(envFile) + '/contracts')
+  const schema = value('EVENT_SCHEMA_VERSION')
+  if (String(schema) !== '1') throw new Error('DUSK_DOMAINS_EVENT_SCHEMA_VERSION must be 1')
+  const contracts = []
+  for (const key of roles) {
+    const prefix = key.toUpperCase()
+    const contractId = normalizeContractId(value(`${prefix}_CONTRACT_ID`))
+    if (!isContractId(contractId)) throw new Error(`Missing or invalid DUSK_DOMAINS_${prefix}_CONTRACT_ID in ${envFile}`)
+    const url = value(`${prefix}_DRIVER_URL`)
+    if (!url || !/^\/contracts\/[^/]+\.wasm$/.test(url))
+      throw new Error(`DUSK_DOMAINS_${prefix}_DRIVER_URL must name /contracts/<immutable-file>.wasm`)
+    const driverFile = url.slice('/contracts/'.length)
+    const driverPath = resolve(publicDir, driverFile)
+    const bytes = await readFile(driverPath)
+    const driverHash = createHash('sha256').update(bytes).digest('hex')
+    const expectedHash = driverFile.match(/\.([a-f0-9]{64})\.data-driver\.wasm$/)?.[1]
+    if (!expectedHash || expectedHash !== driverHash) throw new Error(`Immutable driver hash mismatch: ${driverPath}`)
+    contracts.push({ key, contractId, driverFile, driverHash, events: topicsFor(key) })
   }
-
-  for (const contract of configuredContracts) {
-    const driverPath = resolve(publicDir, contract.driverFile)
-    if (!existsSync(driverPath)) {
-      throw new Error(`Missing data-driver WASM for ${contract.key}: ${driverPath}`)
-    }
-  }
-
+  const fromBlock = parseNonNegativeInteger(String(options.fromBlock ?? value('FROM_BLOCK') ?? ''), 'DUSK_DOMAINS_FROM_BLOCK')
+  if (fromBlock < 1) throw new Error('DUSK_DOMAINS_FROM_BLOCK must be positive')
   return {
-    envFile,
-    nodeUrl,
-    eventLog,
-    cursorFile,
-    publicDir,
-    fromBlock: options.fromBlock ?? 1,
-    durationMs: options.durationMs,
-    truncate: Boolean(options.truncate),
-    contractStack: 'core',
-    contracts: configuredContracts,
+    envFile, publicDir, fromBlock, eventSchemaVersion: '1', chainId: value('CHAIN_ID') ?? null,
+    nodeUrl: options.nodeUrl ?? env.DUSK_DOMAINS_COLLECTOR_NODE_URL ?? value('NODE_URL') ?? 'http://127.0.0.1:18180/',
+    eventLog: resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl'),
+    cursorFile: resolve(rootDir, options.cursorFile ?? 'target/dusk-domains-local-indexer.cursor.json'),
+    durationMs: options.durationMs, truncate: Boolean(options.truncate), contractStack: 'frozen', contracts,
   }
 }
 
@@ -97,11 +52,9 @@ export function parseArgs(argv) {
     envFile: '.env.local',
     eventLog: 'target/dusk-domains-local-indexer.events.jsonl',
     cursorFile: 'target/dusk-domains-local-indexer.cursor.json',
-    publicDir: 'public/contracts',
     ruskDir: '../rusk-private-w3sper-contract-deploy',
     nodeUrl: '',
     durationMs: 0,
-    fromBlock: 1,
     truncate: false,
   }
 
@@ -138,13 +91,13 @@ Usage:
   npm run indexer:collect -- --duration-ms 30000
 
 Options:
-  --env-file <file>      Env file with local contract IDs. Default: .env.local.
+  --env-file <file>      Deployment indexer.env file. Default: .env.local.
   --event-log <file>     JSONL event log to append. Default: target/dusk-domains-local-indexer.events.jsonl.
   --cursor-file <file>   Collector status/cursor file. Default: target/dusk-domains-local-indexer.cursor.json.
-  --public-dir <dir>     Directory containing data-driver WASM files. Default: public/contracts.
+  --public-dir <dir>     Directory containing data-driver WASM files. Default: contracts/ beside the env file.
   --rusk-dir <dir>       Accepted for older launchers; no longer needed (Node.js decodes events).
   --node-url <url>       Archive node; requires lastBlockPair, blocks, contractEventBatch.
-  --from-block <n>       First block to replay (at/before deployment). Default: 1; retain on restart.
+  --from-block <n>       First block to replay (at/before deployment). Default: DUSK_DOMAINS_FROM_BLOCK; retain on restart.
   --duration-ms <n>      Stop automatically after n milliseconds. Default: run until SIGINT/SIGTERM.
   --truncate             Discard the journal/cursor and replay again from --from-block.
   --help                 Show this message.

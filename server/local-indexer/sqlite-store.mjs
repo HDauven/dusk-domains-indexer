@@ -1,5 +1,7 @@
+import { guardCandidate } from './candidate-publication.mjs'
+import { committedCursor, loadCommittedJournal, validateCommittedEntries } from './committed-publication.mjs'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { newestEventTimestamp } from './activity.mjs'
 import {
@@ -10,11 +12,9 @@ import {
 import {
   dedupeEventLogEntries,
   eventLogEntryKey,
-  parseEventLog,
 } from './event-log.mjs'
-import { knownChainHeight } from './chain-height.mjs'
 import { deploymentBindingFromEvents } from './deployment-binding.mjs'
-import { replayEventLog } from './event-log-store.mjs'
+import { createReplayState, applyReplayEvent, replayEventLog } from './event-log-store.mjs'
 import {
   migrateIndexerDatabase,
   sqliteSchemaState,
@@ -23,15 +23,32 @@ import {
 export const eventsTable = 'events'
 const kvTable = 'indexer_kv'
 
-export async function loadSqliteStore(dbFile, options = {}) {
+export function loadSqliteStore(dbFile, options = {}) {
+  return guardCandidate(options.publication ?? {}, { source: 'local-indexer-sqlite', mode: 'sqlite' },
+    candidate => buildSqliteCandidate(dbFile, options, candidate))
+}
+
+export async function buildSqliteCandidate(dbFile, options, candidate) {
+  candidate.step = 'load-cursor'
+  // Capture once before import/row replay, never re-read a newer cursor afterwards.
+  let cursor = candidate.cursor = options.cursorFile ? await loadCursor(options.cursorFile) : null
+  if (options.cursorFile) candidate.validateCursor()
+  candidate.step = 'read-prefix'
   if (options.eventLogFile) {
-    await importEventLogToSqlite(dbFile, options.eventLogFile, options)
+    await importCandidateRows(dbFile, options.eventLogFile, { ...options, committedCursor: cursor, candidate })
   } else if (!existsSync(dbFile)) {
     throw new Error(`Missing local indexer SQLite database: ${dbFile}. Import an event log first with --sqlite <db> --event-log <jsonl>.`)
   }
 
   const db = await openIndexerDatabase(dbFile)
   try {
+    db.exec('BEGIN')
+    const storedCursor = kvGet(db, 'cursor')
+    if (!options.cursorFile) {
+      cursor = candidate.cursor = storedCursor
+      candidate.validateCursor()
+    }
+    candidate.step = 'read-prefix'
     const rows = db.prepare(`
       SELECT event_json, meta_json
       FROM ${eventsTable}
@@ -44,11 +61,20 @@ export async function loadSqliteStore(dbFile, options = {}) {
     const storedWarnings = kvGet(db, 'parse_warnings') ?? []
     const rawEventCount = kvGet(db, 'raw_event_count') ?? events.length
     const now = new Date().toISOString()
-    const replayWarnings = []
-    const cursor = options.cursorFile ? await loadCursor(options.cursorFile) : kvGet(db, 'cursor')
-    const state = replayEventLog(events, replayWarnings, now, knownChainHeight({ cursor }))
+    const replayWarnings = candidate.warnings
+    replayWarnings.push(...storedWarnings)
+    committedCursor(cursor, replayWarnings)
+    if (cursor && (storedCursor?.eventLogBytes !== cursor.eventLogBytes || storedCursor?.eventCount !== cursor.eventCount)) {
+      replayWarnings.push({ code: 'publication_prefix_mismatch', message: 'SQLite does not contain the prefix committed by this cursor; import the journal.' })
+    }
+    validateCommittedEntries(events, cursor, replayWarnings, rawEventCount)
+    candidate.check()
+    const state = replayEventLog(events, replayWarnings, now, cursor.scannedBlockHeight, candidate)
+    candidate.view = state
+    candidate.step = 'build-views'
     const warnings = uniqueWarnings([...storedWarnings, ...replayWarnings])
     const checkpoint = sqliteReplayCheckpoint(events, rawEventCount, warnings, now)
+    candidate.metadata.checkpoint = checkpoint
     const storedCheckpoint = kvGet(db, 'checkpoint')
     const durableCheckpoint = storedCheckpoint
       ? { ok: true, value: storedCheckpoint }
@@ -65,6 +91,7 @@ export async function loadSqliteStore(dbFile, options = {}) {
       cursorFile: options.cursorFile,
       checkpointFile: dbFile,
     })
+    db.exec('COMMIT')
     return {
       generatedAt: newestEventTimestamp(events) ?? now,
       source: 'local-indexer-sqlite',
@@ -88,7 +115,6 @@ export async function loadSqliteStore(dbFile, options = {}) {
         code: durability.code,
         message: durability.message,
       } }),
-      ...state,
     }
   } finally {
     db.close()
@@ -96,13 +122,28 @@ export async function loadSqliteStore(dbFile, options = {}) {
 }
 
 export async function importEventLogToSqlite(dbFile, eventLogFile, options = {}) {
-  const parsedLog = parseEventLog(await readFile(eventLogFile, 'utf8'))
+  const store = await loadSqliteStore(dbFile, { ...options, eventLogFile })
+  return { dbFile, eventLogFile, checkpoint: store.checkpoint, cursor: store.cursor, warnings: store.warnings,
+    eventCount: store.checkpoint?.eventCount ?? null, rawEventCount: store.checkpoint?.rawEventCount ?? null }
+}
+
+async function importCandidateRows(dbFile, eventLogFile, options) {
+  const cursor = options.committedCursor
+  const warnings = []
+  const parsedLog = await loadCommittedJournal(eventLogFile, cursor, warnings)
+  warnings.push(...parsedLog.warnings)
+  validateCommittedEntries(parsedLog.entries, cursor, warnings)
   const events = dedupeEventLogEntries(parsedLog.entries)
-  const warnings = [...parsedLog.warnings]
   const now = new Date().toISOString()
-  replayEventLog(events, warnings, now)
+  // Import is an untrusted replay cache, never a serving publication. Finalization
+  // belongs to the guarded candidate that reads these rows (including on restart).
+  options.candidate.step = 'replay'
+  const replay = createReplayState()
+  replay.blocked = warnings.length > 0
+  for (const event of events) applyReplayEvent(replay, event, warnings)
   const checkpoint = sqliteReplayCheckpoint(events, parsedLog.entries.length, warnings, now)
-  const cursor = await loadCursor(options.cursorFile)
+  options.candidate.metadata.checkpoint = checkpoint
+  options.candidate.step = 'persist'
   const db = await openIndexerDatabase(dbFile)
 
   try {
@@ -110,6 +151,7 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
     try {
       db.exec(`DELETE FROM ${eventsTable}`)
       db.exec(`DELETE FROM sqlite_sequence WHERE name = '${eventsTable}'`)
+      db.prepare(`DELETE FROM ${kvTable} WHERE key = ?`).run('incremental_journal_state')
 
       const insertEvent = prepareEventInsert(db)
       for (let index = 0; index < events.length; index += 1) {
@@ -132,15 +174,6 @@ export async function importEventLogToSqlite(dbFile, eventLogFile, options = {})
     db.close()
   }
 
-  return {
-    dbFile,
-    eventLogFile,
-    checkpoint,
-    cursor,
-    warnings,
-    eventCount: events.length,
-    rawEventCount: parsedLog.entries.length,
-  }
 }
 
 // Rows are keyed by the event's identity, so a replayed or re-appended event is ignored

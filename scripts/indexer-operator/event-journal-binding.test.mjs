@@ -16,14 +16,14 @@ afterEach(async () => {
 
 describe('indexer event journal deployment binding', () => {
   it('parses JSON array and JSONL journals while ignoring malformed lines', () => {
-    expect(parseJournalEntries(JSON.stringify([{ meta: { contractKey: 'core' } }]))).toHaveLength(1)
+    expect(parseJournalEntries(JSON.stringify([{ meta: { contractKey: 'store' } }]))).toHaveLength(1)
     expect(parseJournalEntries([
-      JSON.stringify({ meta: { contractKey: 'core' } }),
+      JSON.stringify({ meta: { contractKey: 'store' } }),
       'not json',
-      JSON.stringify({ meta: { contractKey: 'treasury' } }),
+      JSON.stringify({ meta: { contractKey: 'vault' } }),
     ].join('\n'))).toEqual([
-      { meta: { contractKey: 'core' } },
-      { meta: { contractKey: 'treasury' } },
+      { meta: { contractKey: 'store' } },
+      { meta: { contractKey: 'vault' } },
     ])
     expect(parseJournalEntries('')).toEqual([])
   })
@@ -45,12 +45,12 @@ describe('indexer event journal deployment binding', () => {
     expect(result.derivedDeploymentStartHeight).toBe(10)
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'event_journal_contract_keys', ok: true }),
-      expect.objectContaining({ id: 'event_journal_router_contract', ok: true }),
-      expect.objectContaining({ id: 'event_journal_router_matches_deployment', ok: true }),
-      expect.objectContaining({ id: 'event_journal_core_contract', ok: true }),
-      expect.objectContaining({ id: 'event_journal_core_matches_deployment', ok: true }),
-      expect.objectContaining({ id: 'event_journal_treasury_contract', ok: true }),
-      expect.objectContaining({ id: 'event_journal_treasury_matches_deployment', ok: true }),
+      expect.objectContaining({ id: 'event_journal_directory_contract', ok: true }),
+      expect.objectContaining({ id: 'event_journal_directory_matches_deployment', ok: true }),
+      expect.objectContaining({ id: 'event_journal_store_contract', ok: true }),
+      expect.objectContaining({ id: 'event_journal_store_matches_deployment', ok: true }),
+      expect.objectContaining({ id: 'event_journal_vault_contract', ok: true }),
+      expect.objectContaining({ id: 'event_journal_vault_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'event_journal_marketplace_contract', ok: true }),
       expect.objectContaining({ id: 'event_journal_marketplace_matches_deployment', ok: true }),
       expect.objectContaining({ id: 'archive_snapshot_height', ok: true }),
@@ -81,7 +81,7 @@ describe('indexer event journal deployment binding', () => {
       message: expect.stringContaining('legacy row 5'),
     })
     expect(result.checks.find((check) => check.id === 'event_journal_contract_keys')?.message).toContain('6:mystery')
-    expect(result.checks.find((check) => check.id === 'event_journal_treasury_matches_deployment')).toMatchObject({
+    expect(result.checks.find((check) => check.id === 'event_journal_vault_matches_deployment')).toMatchObject({
       ok: false,
       message: expect.stringContaining('mismatch'),
     })
@@ -144,14 +144,14 @@ async function writeJournalFixture({
   const rows = [
     {
       meta: {
-        contractKey: 'core',
+        contractKey: 'store',
         contractId: coreContractId,
         blockHeight,
       },
     },
     {
       meta: {
-        contractKey: 'treasury',
+        contractKey: 'vault',
         contractId: treasuryContractId,
         blockHeight,
       },
@@ -165,12 +165,14 @@ async function writeJournalFixture({
     },
     {
       meta: {
-        contractKey: 'router',
+        contractKey: 'directory',
         contractId: routerContractId,
         blockHeight,
       },
     },
     ...extraRows,
+    { meta: { contractKey: 'policy', contractId: `0x${'aa'.repeat(32)}`, blockHeight } },
+    { meta: { contractKey: 'resolver', contractId: `0x${'bb'.repeat(32)}`, blockHeight } },
   ]
   await writeFile(eventLog, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8')
   await writeFile(archiveSnapshot, 'archive snapshot placeholder', 'utf8')
@@ -180,43 +182,13 @@ async function writeJournalFixture({
     deployment: {
       ok: true,
       contracts: {
-        router: routerContractId,
-        core: coreContractId,
-        treasury: `0x${'55'.repeat(32)}`,
+        directory: routerContractId,
+        policy: `0x${'aa'.repeat(32)}`,
+        resolver: `0x${'bb'.repeat(32)}`,
+        store: coreContractId,
+        vault: `0x${'55'.repeat(32)}`,
         marketplace: marketplaceContractId,
       },
     },
   }
 }
-
-describe('indexer event journal binding for a grown contract pool', () => {
-  it('accepts several core IDs only when the router added each registry', async () => {
-    const router = `0x${'33'.repeat(32)}`
-    const nextRegistry = `0x${'45'.repeat(32)}`
-    const addedRows = (members) => members.map((member) => ({
-      event: { type: 'pool_member_added', kind: 'registry', member },
-      meta: { contractKey: 'router', contractId: router, blockHeight: 10 },
-    }))
-    const audit = async (extraRows) => {
-      const fixture = await writeJournalFixture({ routerContractId: router, extraRows })
-      const result = await auditEventJournalDeploymentBinding({
-        eventLog: fixture.eventLog,
-        deployment: fixture.deployment,
-        deploymentStartHeight: 10,
-        deriveDeploymentStartHeight: false,
-        archiveSnapshotHeight: 9,
-        archiveSnapshot: '',
-        requireArchiveSnapshot: false,
-      })
-      return (id) => result.checks.find((check) => check.id === id)?.ok
-    }
-    const nextRegistryRow = { meta: { contractKey: 'core', contractId: nextRegistry, blockHeight: 11 } }
-
-    const pooled = await audit([...addedRows([`0x${'44'.repeat(32)}`, nextRegistry]), nextRegistryRow])
-    expect(pooled('event_journal_core_contract')).toBe(true)
-    expect(pooled('event_journal_core_matches_deployment')).toBe(true)
-
-    const unlisted = await audit([...addedRows([`0x${'44'.repeat(32)}`]), nextRegistryRow])
-    expect(unlisted('event_journal_core_contract')).toBe(false)
-  })
-})

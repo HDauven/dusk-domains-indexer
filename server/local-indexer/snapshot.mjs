@@ -9,7 +9,7 @@ import {
   emptyMarketplaceConfig,
   marketplaceOfferKey,
   assertSafeNumericTree,
-} from '@duskdomains/sdk/projection'
+} from './view-utils.mjs'
 import { readFile } from 'node:fs/promises'
 import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
@@ -280,8 +280,8 @@ export async function loadSnapshotStore(snapshotFile) {
     commitmentsByKey,
     recordsByNode,
     recordsByNodeKey,
-    recordHistoryByNode,
-    recordHistoryByNodeKey,
+    recordHistoryByNode: new Map([...recordHistoryByNode].map(([node, rows]) => [node, rows.toReversed()])),
+    recordHistoryByNodeKey: new Map([...recordHistoryByNodeKey].map(([key, rows]) => [key, rows.toReversed()])),
     controllersByNode,
     marketplaceConfig,
     marketplaceFixedSalesByNode,

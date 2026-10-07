@@ -13,9 +13,9 @@ old inputs and replays into new journal, cursor and SQLite paths.
    ```sh
    sudo systemctl stop dusk-domains-indexer dusk-domains-collector
    ```
-3. Copy the matching router/core/treasury data drivers, plus marketplace when configured,
-   into a local directory. Supply the same contract IDs and archive URL in the deployment
-   env file. The router events extend collection to added registries.
+3. Copy the frozen deployment's complete `indexer.env`, `manifest.json` and
+   `contracts/` into the release directory. The six role IDs and immutable driver
+   names must match that release. Directory admissions extend collection later.
 4. Select unused paths under `/var/lib/dusk-domains`, which the shipped units can
    write. Ensure the service account can read the deployment env and drivers.
    From the indexer repository root in terminal A, start the replay collector as
@@ -23,10 +23,10 @@ old inputs and replays into new journal, cursor and SQLite paths.
 
    ```sh
    sudo -u dusk-domains mkdir /var/lib/dusk-domains/archive
-   sudo -u dusk-domains npm run indexer:collect -- --env-file /var/lib/dusk-domains/.env.testnet.local --public-dir /var/lib/dusk-domains/contracts --from-block 1 --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor-file /var/lib/dusk-domains/archive/cursor.json
+   sudo -u dusk-domains npm run indexer:collect -- --env-file /var/lib/dusk-domains/release/indexer.env --public-dir /var/lib/dusk-domains/release/contracts --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor-file /var/lib/dusk-domains/archive/cursor.json
    ```
 
-   Replace `1` with the chosen start height. The archive must retain complete finalized
+   Keep `DUSK_DOMAINS_FROM_BLOCK` in the release env at the chosen start height. The archive must retain complete finalized
    events from there. The collector supports `contractEventBatch` or the finalized
    `checkBlock`/`contractEvents` adapter. Missing history fails closed.
 5. Once the journal and cursor exist, start a temporary API in terminal B from the
@@ -56,8 +56,8 @@ old inputs and replays into new journal, cursor and SQLite paths.
    `DUSK_DOMAINS_INDEXER_CURSOR`, `DUSK_DOMAINS_INDEXER_SQLITE` and
    `DUSK_DOMAINS_INDEXER_CHECKPOINT` point to `events.jsonl`, `cursor.json`,
    `indexer.sqlite` and `checkpoint.json` under `/var/lib/dusk-domains/archive`.
-   Set `DUSK_DOMAINS_DEPLOYMENT_START_HEIGHT` to the exact `--from-block` value
-   used in step 4, and retain the same deployment env and driver directory:
+   Retain the release env and its `DUSK_DOMAINS_FROM_BLOCK` from step 4,
+   and point `DUSK_DOMAINS_COLLECTOR_DRIVER_DIR` at its `contracts/`:
 
    ```sh
    sudo editor /etc/dusk-domains/indexer.env
@@ -75,7 +75,7 @@ old inputs and replays into new journal, cursor and SQLite paths.
    ```sh
    sudo systemctl start dusk-domains-indexer
    npm run health -- --health-url http://127.0.0.1:8787/health --max-lag-blocks 12 --max-source-age-minutes 10
-   sudo -u dusk-domains npm run production:check -- --rebuild --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor /var/lib/dusk-domains/archive/cursor.json --checkpoint /var/lib/dusk-domains/archive/checkpoint.json --sqlite /var/lib/dusk-domains/archive/indexer.sqlite --require-sqlite --env-file /var/lib/dusk-domains/.env.testnet.local --proof-report /var/lib/dusk-domains/deployment-proof.json
+   sudo -u dusk-domains npm run production:check -- --rebuild --event-log /var/lib/dusk-domains/archive/events.jsonl --cursor /var/lib/dusk-domains/archive/cursor.json --checkpoint /var/lib/dusk-domains/archive/checkpoint.json --sqlite /var/lib/dusk-domains/archive/indexer.sqlite --require-sqlite --env-file /var/lib/dusk-domains/release/indexer.env --proof-report /var/lib/dusk-domains/deployment-proof.json
    ```
 
 Collection responses are paginated. For comparisons, follow every `nextCursor`
@@ -86,3 +86,5 @@ Released reserved names remain reserved; active and grace-held names are registe
 To undo a cutover, stop the new API/collector and restore the old configured paths.
 This restores the previous read service, not finalized archive guarantees: legacy
 health can remain degraded. See [production recovery](production-runbook.md).
+
+Frozen-layer cutovers always need fresh journal/cursor/SQLite paths, even if the previous collector also used the finalized archive. Copy the complete release hand-off and retain its immutable driver filenames; see [deployment instructions](../deploy/README.md#frozen-deployment-cutover).

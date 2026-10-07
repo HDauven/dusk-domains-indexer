@@ -1,4 +1,6 @@
-const contractKeys = ['router', 'core', 'treasury']
+import { decodeReceipt } from './receipt-codec.mjs'
+import { committedScopeEvents } from '../../scripts/local-event-collector/frozen.mjs'
+const contractKeys = ['directory', 'policy', 'store', 'vault', 'resolver', 'marketplace']
 
 export function deploymentBindingFromEvents(events = []) {
   const binding = createDeploymentBinding()
@@ -12,8 +14,7 @@ export function createDeploymentBinding() {
   return {
     chainIds: new Set(),
     contracts: {},
-    // A contract pool's registries all emit as core; the router's pool_member_added names them.
-    poolRegistries: new Set(),
+    frozenContracts: null,
     deploymentStartHeight: null,
     lastEventBlockHeight: null,
     eventCount: 0,
@@ -21,6 +22,20 @@ export function createDeploymentBinding() {
 }
 
 export function addDeploymentBindingEvent(binding, entry) {
+  if (entry?.event?.type === 'frozen_receipt') {
+    try {
+    const { receipt: r, projectionOptions } = entry.event
+    binding.frozenContracts ??= new Map(Object.entries(projectionOptions.contracts).map(([id, key]) => [id, { key }]))
+    const receipt = decodeReceipt(r)
+    const effects = committedScopeEvents(receipt, binding.frozenContracts, projectionOptions.directoryId)
+    const scope = Object.fromEntries([...binding.frozenContracts].map(([id, c]) => [id, c.key]))
+    for (const effect of effects) {
+      addDeploymentBindingEvent(binding, { event: { type: effect.topic }, meta: { ...entry.meta,
+        contractKey: scope[effect.emitter], contractId: `0x${effect.emitter}` } })
+    }
+    } catch { binding.invalidReceipt = true }
+    return
+  }
   const meta = entry?.meta ?? {}
   const blockHeight = numberOrNull(meta.blockHeight)
   const contractKey = stringOrNull(meta.contractKey)
@@ -30,9 +45,6 @@ export function addDeploymentBindingEvent(binding, entry) {
   if (blockHeight !== null) {
     binding.deploymentStartHeight = binding.deploymentStartHeight === null ? blockHeight : Math.min(binding.deploymentStartHeight, blockHeight)
     binding.lastEventBlockHeight = binding.lastEventBlockHeight === null ? blockHeight : Math.max(binding.lastEventBlockHeight, blockHeight)
-  }
-  if (contractKey === 'router' && entry?.event?.type === 'pool_member_added' && entry.event.kind === 'registry') {
-    binding.poolRegistries.add(String(entry.event.member).toLowerCase())
   }
   if (!contractKey && !contractId) return
 
@@ -48,7 +60,7 @@ export function addDeploymentBindingEvent(binding, entry) {
     contractIdConflict: false,
   }
   if (contractId && !current.contractIds.includes(contractId)) current.contractIds.push(contractId)
-  if (current.contractId && contractId && current.contractId !== contractId) current.contractIdConflict = true
+  if (current.contractId && contractId && current.contractId !== contractId && !['store', 'resolver', 'policy', 'marketplace'].includes(key)) current.contractIdConflict = true
   if (!current.contractId && contractId) current.contractId = contractId
   current.eventCount += 1
   if (blockHeight !== null) {
@@ -59,12 +71,10 @@ export function addDeploymentBindingEvent(binding, entry) {
 }
 
 export function summarizeDeploymentBinding(binding) {
-  const { chainIds, contracts, poolRegistries } = binding
+  const { chainIds, contracts } = binding
   const missingContracts = contractKeys.filter((key) => !contracts[key]?.contractId)
   const conflictedContracts = Object.values(contracts)
-    .filter((contract) => contract.contractKey === 'core' && poolRegistries.size
-      ? contract.contractIds.some((id) => !poolRegistries.has(id.toLowerCase()))
-      : contract.contractIdConflict)
+    .filter((contract) => contract.contractIdConflict)
     .map((contract) => contract.contractKey)
 
   return {
@@ -74,7 +84,7 @@ export function summarizeDeploymentBinding(binding) {
     lastEventBlockHeight: binding.lastEventBlockHeight,
     eventCount: binding.eventCount,
     contracts: structuredClone(contracts),
-    complete: missingContracts.length === 0 && conflictedContracts.length === 0,
+    complete: !binding.invalidReceipt && missingContracts.length === 0 && conflictedContracts.length === 0,
     missingContracts,
     conflictedContracts,
   }
@@ -87,4 +97,25 @@ function stringOrNull(value) {
 function numberOrNull(value) {
   const number = Number(value)
   return Number.isSafeInteger(number) ? number : null
+}
+
+// Flatten committed effects only for deployment auditing; the durable journal remains atomic.
+export function deploymentEvents(entries) {
+  let contracts
+  const result = []
+  for (const entry of entries) {
+    if (entry?.event?.type !== 'frozen_receipt') { result.push(entry); continue }
+    try {
+      const { projectionOptions, receipt: raw } = entry.event
+      contracts ??= new Map(Object.entries(projectionOptions.contracts).map(([id, key]) => [id, { key }]))
+      const receipt = decodeReceipt(raw)
+      const effects = committedScopeEvents(receipt, contracts, projectionOptions.directoryId)
+      const scope = Object.fromEntries([...contracts].map(([id, c]) => [id, c.key]))
+      for (const e of effects) result.push({ event: { type: e.topic, body: e.data.body },
+        meta: { ...entry.meta, contractKey: scope[e.emitter], contractId: `0x${e.emitter}` } })
+    } catch {
+      result.push({ ...entry, meta: { ...entry.meta, contractKey: 'invalid-frozen-receipt' } })
+    }
+  }
+  return result
 }

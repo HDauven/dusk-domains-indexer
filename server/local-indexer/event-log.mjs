@@ -67,17 +67,19 @@ export function stableJson(value) {
   return JSON.stringify(value)
 }
 
-export { eventTimestamp } from '@duskdomains/sdk/projection'
+export function eventTimestamp(event, meta = {}) {
+  return meta?.observedAt ?? event?.updatedAt ?? event?.createdAt ?? event?.observedAt ?? null
+}
 
 export function confirmedEventBlockHeight(event, meta = {}) {
-  if (meta.source !== 'w3sper-live-subscription' || Object.hasOwn(meta, 'observedBlockHeight')) return meta.blockHeight ?? null
+  if (meta?.source !== 'w3sper-live-subscription' || Object.hasOwn(meta, 'observedBlockHeight')) return meta?.blockHeight ?? null
   // Older live logs substituted a polled height. Recover only heights in event payloads.
-  if (event.type === 'registration_committed') return meta.blockHeight ?? null
+  if (event?.type === 'registration_committed') return meta.blockHeight ?? null
   return [
     'createdAtBlockHeight', 'updatedAtBlockHeight', 'openedAtBlockHeight', 'closedAtBlockHeight',
     'filledAtBlockHeight', 'placedAtBlockHeight', 'cancelledAtBlockHeight', 'settledAtBlockHeight',
     'acceptedAtBlockHeight', 'claimedAtBlockHeight',
-  ].map(key => event[key]).find(value => value != null) ?? event.record?.updatedAtBlockHeight ?? null
+  ].map(key => event?.[key]).find(value => value != null) ?? event?.record?.updatedAtBlockHeight ?? null
 }
 
 export function eventLogEntryKey(entry) {

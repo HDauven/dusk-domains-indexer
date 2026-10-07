@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { normalizeName } from '../http.mjs'
 import { nameValidationIssue } from '../naming.mjs'
 import { lifecycleClock } from '../read-models/lifecycle.mjs'
@@ -97,7 +98,7 @@ export function createShareHandler() {
       'cache-control': 'public, max-age=300',
       'x-content-type-options': 'nosniff',
       ...(!png && site.noindex ? { 'x-robots-tag': 'noindex' } : {}),
-      ...(png ? {} : { 'content-security-policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'" }),
+      ...(png ? { etag: `"night-cards-v1-${createHash('sha256').update(body).digest('hex')}"` } : { 'content-security-policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'" }),
     })
     response.end(body)
     return true

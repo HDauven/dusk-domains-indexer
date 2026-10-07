@@ -1,0 +1,92 @@
+[
+  {
+    "name": "tminus.dusk",
+    "node": "e8b94e2fd516ac9f2054690e072233c1eedb65b66348e1f986906225c60622fb",
+    "animal": "heron",
+    "skyKey": "8156406334010312908",
+    "star": {
+      "x": 1051.622,
+      "y": 285.323
+    }
+  },
+  {
+    "name": "hein.dusk",
+    "node": "6d347d523b6f437a9481bc7141a362cc8e8b9ce7ab503c06cd120e6f18fb7660",
+    "animal": "fox",
+    "skyKey": "14291354979678468330",
+    "star": {
+      "x": 518.947,
+      "y": 111.382
+    }
+  },
+  {
+    "name": "smith.dusk",
+    "node": "af283ba502286560568af981da574a2080be7ef34f60792ddfc5a5f3d7719755",
+    "animal": "moth",
+    "skyKey": "14298407271213676137",
+    "star": {
+      "x": 803.365,
+      "y": 46.543
+    }
+  },
+  {
+    "name": "quietfox.dusk",
+    "node": "40afd98bf5a8fed49447ab64bd9b3bd268a8bdded701249481e4c96d1bca9c22",
+    "animal": "owl",
+    "skyKey": "11379079843777107987",
+    "star": {
+      "x": 326.962,
+      "y": 322.195
+    }
+  },
+  {
+    "name": "moonrise.dusk",
+    "node": "dbde86898ee6254a8568748c5bc868b7bfbe169e1d70bb5b7d0ce010bf895527",
+    "animal": "bat",
+    "skyKey": "18218540514145552822",
+    "star": {
+      "x": 996.186,
+      "y": 205.866
+    }
+  },
+  {
+    "name": "nightshade-gardener.dusk",
+    "node": "734e0f9acad0d970a666f6151580544bac6a44e18ef09b5a85017822ec049c6d",
+    "animal": "fox",
+    "skyKey": "4313247480652025307",
+    "star": {
+      "x": 545.252,
+      "y": 273.694
+    }
+  },
+  {
+    "name": "a.dusk",
+    "node": "aeb05937eccdc78ba1344404686e24661c1694bccca6e324b3691be95a7859ef",
+    "animal": "owl",
+    "skyKey": "10823047883208330378",
+    "star": {
+      "x": 801.346,
+      "y": 312.169
+    }
+  },
+  {
+    "name": "x-y.dusk",
+    "node": "dc0825e09c7000c0d2bba519310938abe4f89ba66a236b48ff2184fb460209c5",
+    "animal": "heron",
+    "skyKey": "12590802453690948838",
+    "star": {
+      "x": 996.887,
+      "y": 221.192
+    }
+  },
+  {
+    "name": "sub.tminus.dusk",
+    "node": "4f43d756997338e888dec2b9754b0b84403dd0642322bc04890a776a598b921b",
+    "animal": "wolf",
+    "skyKey": "7621880820807871549",
+    "star": {
+      "x": 389.83,
+      "y": 217.81
+    }
+  }
+]

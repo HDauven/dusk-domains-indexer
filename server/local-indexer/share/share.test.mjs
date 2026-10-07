@@ -77,6 +77,8 @@ it('returns a complete 1200 by 630 PNG and caches repeated renders', async () =>
   expect(response.status).toBe(200)
   expect(response.headers.get('content-type')).toBe('image/png')
   expect(response.headers.get('cache-control')).toBe('public, max-age=300')
+  const etag = response.headers.get('etag')
+  expect(etag).toMatch(/^"night-cards-v1-[a-f0-9]{64}"$/)
   const png = Buffer.from(await response.arrayBuffer())
   expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630])
@@ -88,7 +90,9 @@ it('returns a complete 1200 by 630 PNG and caches repeated renders', async () =>
   }
   expect(inflateSync(Buffer.concat(chunks)).length).toBeGreaterThan(1200 * 630 * 3)
   expect(png.toString('ascii', png.length - 8, png.length - 4)).toBe('IEND')
-  expect(Buffer.from(await (await fetch(`${baseUrl}/share/name/aurora.dusk.png`)).arrayBuffer())).toEqual(png)
+  const cached = await fetch(`${baseUrl}/share/name/aurora.dusk.png`)
+  expect(cached.headers.get('etag')).toBe(etag)
+  expect(Buffer.from(await cached.arrayBuffer())).toEqual(png)
 })
 
 it('evicts the least recently used images within both entry and byte bounds', () => {
@@ -109,12 +113,18 @@ it('evicts the least recently used images within both entry and byte bounds', ()
 
 it('checks current liveness before returning a cached name image', async () => {
   const { baseUrl, store } = await fixture()
-  const readPng = async (name) => Buffer.from(await (await fetch(`${baseUrl}/share/name/${name}.png`)).arrayBuffer())
+  const etags = []
+  const readPng = async (name) => {
+    const response = await fetch(`${baseUrl}/share/name/${name}.png`)
+    etags.push(response.headers.get('etag'))
+    return Buffer.from(await response.arrayBuffer())
+  }
   const known = await readPng('aurora.dusk')
   const lifecycle = store.namesByNode.get(store.namesByCanonical.get('aurora.dusk').node)
   lifecycle.expiresAt = '2000-01-01T00:00:00Z'
   const expired = await readPng('aurora.dusk')
   expect(expired).not.toEqual(known)
+  expect(etags[1]).not.toBe(etags[0])
   expect(expired).toEqual(await readPng('unknown.dusk'))
 })
 

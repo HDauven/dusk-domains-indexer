@@ -14,6 +14,7 @@ export const expectedLocalIndexerRoutes = [
   '/search',
   '/names',
   '/resolve',
+  '/verify',
   '/name',
   '/records',
   '/record',

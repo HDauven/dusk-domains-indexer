@@ -64,7 +64,7 @@ describe('local indexer HTTP API', () => {
 
     const resolved = await fetch(`${baseUrl}/resolve?name=AURORA`)
     expect(resolved.status).toBe(200)
-    expect(resolved.headers.get('cache-control')).toBe('public, max-age=120')
+    expect(resolved.headers.get('cache-control')).toBe('no-store')
     await expect(resolved.json()).resolves.toMatchObject({
       canonicalName: 'aurora.dusk',
       node: snapshot.node,

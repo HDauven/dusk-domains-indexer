@@ -14,7 +14,7 @@ const fixtures = () => [...createEventLog(), vaultEvents(), claimEvents(), envel
   [4, 'commitment_created', { commitment: { key: { actor: bytes(10), hash: bytes(24) }, created_at: 18n } }],
 ]))]
 const urls = {
-  '/health': '', '/names': `?owner=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora',
+  '/health': '', '/names': `?owner=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora', '/verify': '?name=aurora',
   '/name': `?node=${rootNode}`, '/records': `?node=${rootNode}`, '/record': `?node=${rootNode}&key=moonlight_address`,
   '/record-history': `?node=${rootNode}&key=moonlight_address`, '/activity': `?node=${rootNode}`,
   '/subnames': `?parentNode=${rootNode}`, '/subname': `?node=${childNode}`, '/reverse': `?type=moonlight_address&value=${address}`,
@@ -34,7 +34,7 @@ it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receip
   expect(Object.keys(urls).sort()).toEqual(expectedLocalIndexerRoutes.toSorted())
   const bodies = {}
   for (const [path, query] of Object.entries(urls)) {
-    const res = await fetch(server.baseUrl + path + query)
+    const res = await fetch(server.baseUrl + path + query, { method: path === '/verify' ? 'POST' : 'GET' })
     expect(res.status, path).toBe(200)
     bodies[path] = await res.json()
     expect(bodies[path], path).not.toBeNull()

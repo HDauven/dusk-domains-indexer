@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Expose owner-bound DNS website verification with scheduled proof checks and explicit capacity errors.
+
 - Reject incomplete or ill-typed finalized cursors without synthesizing publication fields.
 - Retain complete reads and degraded health when any candidate construction step throws.
 

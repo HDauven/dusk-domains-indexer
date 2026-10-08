@@ -7,6 +7,7 @@ export const LOCAL_INDEXER_ROUTES = new Set([
   '/search',
   '/names',
   '/resolve',
+  '/verify',
   '/name',
   '/records',
   '/record',

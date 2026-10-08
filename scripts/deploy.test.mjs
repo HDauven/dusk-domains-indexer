@@ -23,15 +23,16 @@ it.each(['collector', 'indexer'])('keeps %s unit flags and hardening while isola
 })
 
 it('configures separate data, ports, origins and nodes for both instances', async () => {
-  for (const [instance, port, node, site, noindex] of [
-    ['mainnet', '8787', 'https://nodes.dusk.network', 'https://dusk.domains', 'false'],
-    ['testnet', '8788', 'http://127.0.0.1:8080', 'https://testnet.dusk.domains', 'true'],
+  // Each network's site first, then the explorers that show .dusk names from the browser.
+  for (const [instance, port, node, site, noindex, explorers] of [
+    ['mainnet', '8787', 'https://nodes.dusk.network', 'https://dusk.domains', 'false', ['https://apps.dusk.network', 'https://explorer.dusk.network', 'https://duskscan.net']],
+    ['testnet', '8788', 'http://127.0.0.1:8080', 'https://testnet.dusk.domains', 'true', ['https://apps.testnet.dusk.network', 'https://testnet.duskscan.net']],
   ]) {
     const env = parseEnv(await read(`deploy/${instance}.env.example`))
     expect(env.DUSK_DOMAINS_INDEXER_PORT).toBe(port)
     expect(env.DUSK_DOMAINS_INDEXER_HEALTH_URL).toBe(`http://127.0.0.1:${port}/health`)
     expect(env.DUSK_DOMAINS_SITE_URL).toBe(site)
-    expect(env.DUSK_DOMAINS_INDEXER_CORS_ORIGINS).toBe(site)
+    expect(env.DUSK_DOMAINS_INDEXER_CORS_ORIGINS).toBe([site, ...explorers].join(','))
     expect(env.DUSK_DOMAINS_NOINDEX).toBe(noindex)
     expect(env.DUSK_DOMAINS_COLLECTOR_NODE_URL).toBe(node)
     for (const key of ['DATA_DIR', 'EVENT_LOG', 'SQLITE', 'CURSOR', 'CHECKPOINT']) expect(env[`DUSK_DOMAINS_INDEXER_${key}`]).toMatch(new RegExp(`^/var/lib/dusk-domains/${instance}(/|$)`))

@@ -70,6 +70,39 @@ Rejected rows of any JSON value kind, including `null`, remain diagnosable witho
 
 Retention lasts only for the provider/process lifetime; there is no durable publication checkpoint. A cold start without a complete committed prefix withholds all prefix data: data, crawler and share routes return HTTP 503 with `error: "incomplete_replay"` and `Cache-Control: no-store`. `/health` remains available with degraded status and `projectionBlockHeight: null`. Complete reconstruction restores serving. Legacy cursorless journals and JSON arrays do not establish finalized coverage; rebuild them with the archive collector into fresh JSONL/cursor/SQLite paths.
 
+## Website verification
+
+`/resolve`, `/name`, `/search`, `/names` summaries, active `/subname` and `/subnames` rows, and fixed-sale/auction rows include a separate `verification` object:
+
+```json
+{
+  "domain": "harbourline.com",
+  "status": "verified",
+  "checkedAt": "2026-10-08T12:00:00.000Z",
+  "dnssec": true
+}
+```
+
+`status` is `verified`, `unverified`, `mismatch`, `checking`, or `retry`. Only `verified` warrants a website badge. `domain` is null without an eligible HTTPS website; `checkedAt` is an ISO timestamp or null before a check for the current binding. `dnssec` records the resolver's AD flag and is not required for verification. `retry` means the cached result was evicted; use Check now to try again, rather than treating it as missing proof. This is independent of the existing resolver `verificationStatus` and reverse-primary status. It proves control of a website domain, not a legal organisation's identity or an endorsement.
+
+An active name (including a subname) claims a domain through its own `website` record. Set a TXT record at `_dusk-domains.<website host>` with this exact value, substituting the canonical name and the **current `owner` authority from `/name`**:
+
+```text
+dusk-domains-verification=aurora.dusk;owner=0x<64 lowercase hex digits>
+```
+
+Matching is case-sensitive and permits no extra fields or whitespace. Quoted DNS TXT chunks within one answer are concatenated; separate TXT answers are never concatenated. Any exact answer verifies; a different `dusk-domains-verification=` value gives `mismatch`; absent TXT, unrelated values, and resolver errors give `unverified`. Subnames use their own owner and website, without inheriting a parent's verification. Marketplace custody uses the indexed owner, not the seller.
+
+Website URLs must use HTTPS and an ASCII DNS hostname (punycode is accepted), with at least two labels, labels no longer than 63 characters, and a full TXT query name no longer than 253 characters. IP literals, user info, explicit ports (including 443), trailing dots, encoded hostnames, whitespace and invalid labels are rejected. Paths, queries and fragments are permitted; changing any part of the website value invalidates the cached binding. DNS TXT aliases are not followed: the TXT answer must name the requested host.
+
+The server checks via `https://1.1.1.1/dns-query`, falling back on resolver failure to `https://dns.google/resolve`. Resolvers cannot be supplied by callers. Requests have a three-second timeout per resolver, reject redirects, and cap answers at 64 KiB. An in-memory cache is bound to the name, current owner, generation/serial, resolver and website record's value. Record timestamps and unrelated activity do not change that binding. Restarting clears it. Verified names are rechecked at `min(max(TXT TTL, 5 minutes), 6 hours)`. A badge remains valid until that recheck completes; removing the TXT proof takes effect within `max(TTL, 5 minutes)` plus one lookup (with the recheck interval capped at six hours), subject to resolver propagation and available lookup capacity. Owner or website changes immediately suppress the cached badge on the next API read, and in-flight results for an old binding are discarded.
+
+The worker scans new and changed bindings on startup and every minute and schedules verified rechecks at their due time. Missing or mismatched proofs wait for Check now or a binding change. Resolver errors immediately remove the badge. If the last successful DNS response for that binding was verified, errors retry after 5, 15, 30 and 60 minutes, then hourly until a successful DNS response; a successful response resets the backoff. A binding that was never verified has no automatic error retries. A successful missing or mismatched response stops automatic retries too.
+
+Lookup concurrency and cached results are bounded. When the result cache fills, it evicts the oldest non-verified entries first, then the oldest verified entries; pending checks are retained. Eviction does not itself schedule another lookup. Lightweight scheduling history is retained for eligible bindings so evicted negative results are not automatically rechecked. HTTP responses containing verification use `Cache-Control: no-store`, including `/resolve`; its `cache` field still describes resolver-record freshness.
+
+`POST /verify?name=<name>` checks immediately and returns `{canonicalName,verification}`. This request has no body or wallet-signing requirement. Names are normalized as on `/resolve`; invalid, missing or duplicate name parameters return 400, unknown names return 404, and a busy per-name lookup is shared. The endpoint allows one accepted request per canonical name per minute and five attempts per client IP per minute, in addition to the existing global limiter. HTTP 429 includes `Retry-After` in seconds. When lookup concurrency or a cache full of pending checks prevents admission, HTTP 503 returns `error: "verification_busy"`; clients should offer to try again, not report missing proof. Existing trusted-proxy and IP grouping rules apply. The existing CORS allowlist is retained, with POST allowed for this endpoint's preflight.
+
 ## Activity and records history
 
 `/activity?node=...` → `{activity,nextCursor}`. Frozen activity uses the exact SDK event topic as `eventType`; UI labels must map topics such as `root_registered`, `authorities_changed`, `custody_started`, `root_forwarded`. Rows include stable `id`, `node`, `contractId`, `timestamp`, `blockHeight`, `txId`, `actor` (nullable), and canonical `data`. History survives moves/re-registration.

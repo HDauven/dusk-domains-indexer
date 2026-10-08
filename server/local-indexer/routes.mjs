@@ -1,3 +1,5 @@
+import { createWebsiteVerification } from './website-verification.mjs'
+import { nameValidationIssue } from './naming.mjs'
 import { premiumForName } from './read-models/premium.mjs'
 import { namespaceForNode, namespaceSummary } from './read-models/namespace.mjs'
 import { createShareHandler } from './share/routes.mjs'
@@ -43,9 +45,12 @@ import {
 export function createLocalIndexerHandler(storeProvider, options = {}) {
   const rateLimit = createRateLimiter(options)
   const share = createShareHandler()
+  const verification = options.verification ?? createWebsiteVerification(storeProvider)
+  const verifyIpLimit = createRateLimiter({ ...options, rateLimit: true, rateLimitMax: 5, rateLimitWindowMs: 60_000 })
+  const verifyNameLimit = createRateLimiter({ now: options.now, rateLimit: true, rateLimitMax: 1, rateLimitWindowMs: 60_000 })
   const indexNow = options.indexNow ?? indexNowConfig()
   return (request, response) => {
-    void handleRequest(storeProvider, request, response, { ...options, rateLimit, share, indexNow })
+    void handleRequest(storeProvider, request, response, { ...options, rateLimit, share, indexNow, verification, verifyIpLimit, verifyNameLimit })
   }
 }
 
@@ -67,11 +72,6 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
-    if (request.method !== 'GET') {
-      reply(405, { error: 'method_not_allowed', message: 'Use GET or OPTIONS.' })
-      return
-    }
-
     let url
     try {
       url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -80,6 +80,11 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
+
+    if (request.method !== (pathname === '/verify' ? 'POST' : 'GET')) {
+      reply(405, { error: 'method_not_allowed', message: pathname === '/verify' ? 'Use POST or OPTIONS.' : 'Use GET or OPTIONS.' })
+      return
+    }
 
     if (pathname.startsWith('/indexnow/')) {
       const { enabled, key } = options.indexNow
@@ -116,7 +121,22 @@ async function handleRequest(storeProvider, request, response, options) {
       const result = paginate(rows, page, (item) => listKey(pathname, item))
       reply(200, { [LIST_FIELDS[pathname]]: result.items.map(map), nextCursor: result.nextCursor })
     }
+    if (pathname === '/verify') {
+      const canonical = normalizeName(url.searchParams.get('name'))
+      if (url.searchParams.getAll('name').length !== 1 || nameValidationIssue(canonical)) {
+        reply(400, { error: 'invalid_name', message: 'A valid name is required.' }); return
+      }
+      const retry = options.verifyIpLimit(request) || options.verifyNameLimit({ headers: {}, socket: { remoteAddress: canonical } })
+      if (retry) { reply(429, { error: 'rate_limited', message: 'Try verification again later.' }, { 'retry-after': String(retry) }); return }
+      const current = await resolveStore(storeProvider)
+      const node = current.namesByCanonical.get(canonical)?.node ?? current.subnamesByCanonical?.get(canonical)?.node
+      if (!node) { reply(404, { error: 'name_not_found' }); return }
+      const verification = await options.verification.check(node)
+      if (verification.status === 'retry') { reply(503, { error: 'verification_busy', message: 'Could not check DNS. Try again in a moment.' }); return }
+      reply(200, { canonicalName: canonical, verification }); return
+    }
     let store = await resolveStore(storeProvider, pathname === '/health')
+    const withVerification = item => item ? { ...item, verification: options.verification.read(store, item.node) } : item
     const market = url.searchParams.get('marketplace')
     if (market && pathname.startsWith('/marketplace/')) {
       const id = normalizeNode(market)
@@ -158,7 +178,7 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/search') {
       const result = searchName(store, url.searchParams.get('query') ?? '')
-      reply(200, { ...result, nextCursor: null })
+      reply(200, { ...result, verification: options.verification.read(store, store.namesByCanonical.get(result.canonical)?.node ?? store.subnamesByCanonical?.get(result.canonical)?.node), nextCursor: null })
       return
     }
 
@@ -170,15 +190,15 @@ async function handleRequest(storeProvider, request, response, options) {
       }
       const names = listNames({ ...store, namesByCanonical: new Map(result.items.map((name) => [name.lifecycle.canonicalName, name])) })
       const byNode = new Map(names.map((name) => [name.node, name]))
-      reply(200, { names: result.items.map((name) => byNode.get(name.node)), nextCursor: result.nextCursor })
+      reply(200, { names: result.items.map((name) => withVerification(byNode.get(name.node))), nextCursor: result.nextCursor })
       return
     }
 
     if (pathname === '/resolve') {
       const name = url.searchParams.get('name') ?? ''
-      const body = publicForward(store, name, page)
+      const body = withVerification(publicForward(store, name, page))
       reply(body.errors.some((error) => error.code === 'missing_name') ? 400 : 200, body, {
-        'cache-control': `public, max-age=${body.cache.ttlSeconds}`,
+        'cache-control': 'no-store',
       })
       return
     }
@@ -186,7 +206,7 @@ async function handleRequest(storeProvider, request, response, options) {
     if (pathname === '/name') {
       const node = routeParams.node
       const name = store.namesByNode.get(node) ?? subnameLifecycleForNode(store, node)
-      reply(200, name ? { ...name, ...premiumForName(store, name), namespace: namespaceForNode(store, node) } : null)
+      reply(200, withVerification(name ? { ...name, ...premiumForName(store, name), namespace: namespaceForNode(store, node) } : null))
       return
     }
 
@@ -222,12 +242,12 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/subnames') {
       const now = lifecycleClock(store)
-      replyPage(filterRows(store.subnamesByParent.get(routeParams.parentNode) ?? [], (subname) => indexedSubnameBlocksRegistration(store, subname, now)))
+      replyPage(filterRows(store.subnamesByParent.get(routeParams.parentNode) ?? [], (subname) => indexedSubnameBlocksRegistration(store, subname, now)), withVerification)
       return
     }
 
     if (pathname === '/subname') {
-      reply(200, liveSubnameForNode(store, routeParams.node))
+      reply(200, withVerification(liveSubnameForNode(store, routeParams.node)))
       return
     }
 
@@ -253,22 +273,22 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/fixed-sales') {
-      replyPage(marketOrders('Fixed', store.marketplaceFixedSalesByNode), (sale) => marketplaceOrderForResponse(store, sale))
+      replyPage(marketOrders('Fixed', store.marketplaceFixedSalesByNode), (sale) => withVerification(marketplaceOrderForResponse(store, sale)))
       return
     }
 
     if (pathname === '/marketplace/fixed-sale') {
-      reply(200, marketplaceOrderForResponse(store, singularOrder('Fixed', store.marketplaceFixedSalesByNode?.get(routeParams.node) ?? null)))
+      reply(200, withVerification(marketplaceOrderForResponse(store, singularOrder('Fixed', store.marketplaceFixedSalesByNode?.get(routeParams.node) ?? null))))
       return
     }
 
     if (pathname === '/marketplace/auctions') {
-      replyPage(marketOrders('Auction', store.marketplaceAuctionsByNode), (auction) => marketplaceOrderForResponse(store, auction))
+      replyPage(marketOrders('Auction', store.marketplaceAuctionsByNode), (auction) => withVerification(marketplaceOrderForResponse(store, auction)))
       return
     }
 
     if (pathname === '/marketplace/auction') {
-      reply(200, marketplaceOrderForResponse(store, singularOrder('Auction', store.marketplaceAuctionsByNode?.get(routeParams.node) ?? null)))
+      reply(200, withVerification(marketplaceOrderForResponse(store, singularOrder('Auction', store.marketplaceAuctionsByNode?.get(routeParams.node) ?? null))))
       return
     }
 

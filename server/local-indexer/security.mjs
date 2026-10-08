@@ -30,7 +30,7 @@ export function corsHeaders(options, request) {
     vary: 'Origin',
     ...(allowed ? { 'access-control-allow-origin': allowed } : {}),
     'access-control-expose-headers': 'retry-after, x-request-id',
-    'access-control-allow-methods': 'GET, OPTIONS',
+    'access-control-allow-methods': request.url?.split('?')[0].replace(/\/+$/, '') === '/verify' ? 'GET, POST, OPTIONS' : 'GET, OPTIONS',
     'access-control-allow-headers': 'content-type, accept',
   }
 }

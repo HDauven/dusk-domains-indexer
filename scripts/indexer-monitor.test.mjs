@@ -185,6 +185,7 @@ function healthyPayload() {
       '/health',
       '/search',
       '/resolve',
+      '/verify',
       '/name',
       '/records',
       '/record',

@@ -1,3 +1,4 @@
+import { createWebsiteVerification } from './website-verification.mjs'
 import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { createIndexNowWorker, indexNowConfig } from './indexnow.mjs'
@@ -21,12 +22,14 @@ export async function serveLocalIndexer(args) {
     : source.mode === 'sqlite' && source.eventLogFile
       ? await createIncrementalSqliteStore(source)
       : await createReloadingLocalIndexerStore(source)
-  const server = createServer(createLocalIndexerHandler(storeProvider, { ...args, indexNow }))
+  const verification = createWebsiteVerification(storeProvider)
+  const server = createServer(createLocalIndexerHandler(storeProvider, { ...args, indexNow, verification }))
   const indexNowWorker = createIndexNowWorker(storeProvider, { config: indexNow, maxLagBlocks: args.maxLagBlocks })
-  server.once('close', () => indexNowWorker.stop())
+  server.once('close', () => { indexNowWorker.stop(); verification.stop() })
 
   server.listen(args.port, args.host, () => {
     indexNowWorker.start()
+    verification.start()
     console.log(`Dusk Domains local indexer listening on http://${args.host}:${args.port}`)
     console.log(`${sourceLabel(source)}: ${source.file}${args.watch ? ' (watching)' : ''}`)
     if (source.mode === 'sqlite' && source.eventLogFile) {

@@ -336,6 +336,7 @@ export function defaultRouteManifest() {
     '/search',
     '/names',
     '/resolve',
+    '/verify',
     '/name',
     '/records',
     '/record',

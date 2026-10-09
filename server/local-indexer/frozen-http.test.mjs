@@ -14,6 +14,7 @@ const fixtures = () => [...createEventLog(), vaultEvents(), claimEvents(), envel
   [4, 'commitment_created', { commitment: { key: { actor: bytes(10), hash: bytes(24) }, created_at: 18n } }],
 ]))]
 const urls = {
+  '/controllers': '',
   '/health': '', '/names': `?owner=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora', '/verify': '?name=aurora',
   '/name': `?node=${rootNode}`, '/records': `?node=${rootNode}`, '/record': `?node=${rootNode}&key=moonlight_address`,
   '/record-history': `?node=${rootNode}&key=moonlight_address`, '/activity': `?node=${rootNode}`,

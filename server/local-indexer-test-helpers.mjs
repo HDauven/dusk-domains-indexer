@@ -10,6 +10,7 @@ export { createEventLog } from '../scripts/test-fixtures/frozen-events.mjs'
 
 export const expectedLocalIndexerRoutes = [
   '/health',
+  '/controllers',
   '/commitment',
   '/search',
   '/names',

@@ -1,4 +1,4 @@
-# Dusk Domains indexer API — frozen layer / SDK 0.3.0
+# Dusk Domains indexer API — frozen layer
 
 The frozen deployment requires a **fresh event journal, cursor and SQLite database** replayed from `DUSK_DOMAINS_FROM_BLOCK`. Legacy router/core/treasury journals cannot be mixed with frozen receipts. Health advertises `apiVersion: "v1"`, `eventSchemaVersion: "1"`, `readModelSchemaVersion: 2`.
 
@@ -9,6 +9,21 @@ All existing paths below remain available. GET responses are JSON; missing singu
 **Every Lux amount is now a decimal string**, including premium, fees, treasury balances, referral amounts and market prices. Use BigInt for arithmetic. Existing `*BlockHeight`, `ttlSeconds` fields remain numbers when safe and otherwise return decimal strings. New generations, serials, slot epochs, mapping IDs, custody nonces and order IDs are always decimal strings. Never coerce an unsafe value to Number. ISO dates derived from unknown block times are `null`; block heights are authoritative.
 
 IDs and authorities in convenience fields use `0x` + 64 lowercase hex digits. Canonical protocol objects (`nameRef`, `order`, `policy.config`, `renewalSchedule`, activity `data`) retain SDK field names, byte arrays and tagged enums, with **all bigint/u64 values serialized as decimal strings**. Small u8/u16/u32 fields remain numbers. Convert their u64 strings to bigint before SDK `wireValue` validation. Market rows additionally expose `orderJson`, a canonical lossless JSON string: use `wireValue('Order', parseJson(row.orderJson))` for the complete typed order. Frozen resolver values are bytes; display records include `valueBytes` and `encoding` (`utf8`, `base58`, `hex`) alongside existing `key`, `value`, `visibility`, `ttlSeconds`, `updatedAt` and `updatedAtBlockHeight`. Moonlight endpoints display as base58, contract IDs as hex; undecodable UTF-8 is hex. Custom resolver keys remain available. Record selectors use SDK `validateRecordInput` key constraints: valid UTF-8 of 1–64 bytes, preserved exactly without trimming or normalization. URL-encode keys; an explicit empty key returns HTTP 400 on both record routes, while an omitted key leaves record history unfiltered.
+
+## Controllers and consent
+
+`/controllers` returns `{controllers,version,nextCursor}` for current directory
+admissions. Each row has `contractId`, numeric `scopes` (MANAGE=1, AUTHORITY=2,
+REGISTER_FOR=4, combined with bitwise OR), `suspended`, `admittedAtBlockHeight`
+and decimal-string `admissionVersion`. The directory-wide `version` is a decimal
+string. Removed suspension tombstones are excluded.
+
+The route supports the standard `limit` and `cursor`, sorted by controller ID.
+`admissionVersion` records the controller's latest admission event version.
+Consent is supplied by each direct call to the controller; no per-authority
+approval state or approval route is exposed. A Moonlight principal must sign a
+root call to the controller. A contract principal calls the controller directly.
+Suspension prevents controller execution and survives removal/re-admission.
 
 ## Names and identity
 
@@ -105,13 +120,23 @@ Lookup concurrency and cached results are bounded. When the result cache fills, 
 
 ## Activity and records history
 
-`/activity?node=...` → `{activity,nextCursor}`. Frozen activity uses the exact SDK event topic as `eventType`; UI labels must map topics such as `root_registered`, `authorities_changed`, `custody_started`, `root_forwarded`. Rows include stable `id`, `node`, `contractId`, `timestamp`, `blockHeight`, `txId`, `actor` (nullable), and canonical `data`. History survives moves/re-registration.
+`/activity?node=...` → `{activity,nextCursor}`. Frozen activity uses the exact SDK event topic as `eventType`; UI labels must map topics such as `root_registered`, `authorities_changed`, `custody_started`, `root_forwarded`. Rows include stable `id`, `node`, `contractId`, `timestamp`, `blockHeight`, `txId`, `actor` (nullable), and canonical `data`. History survives moves/re-registration. Delegated effects additionally carry
+`via` (controller contract ID), canonical `principal` and numeric `scope`.
+A `controller_used` activity row appears for each name touched by the same
+operation. Attribution is scoped to the emitter, journal occurrence and `op_seq`;
+callbacks, direct operations and reverted effects do not inherit it.
+
+`root_ceded` records released-root retirement in the root's activity with canonical
+`forward`, `counters` and old `grace_end` in `data`. The root's permanent `forwarding`
+list includes the cession. Name and resolution lookups serve the new canonical
+store and fresh generation; old descendants, records and primaries are not carried.
+Cession and successor registration publish together as one committed receipt.
 
 `/record-history?node=...&key=<optional>` → `{history,nextCursor}`. Resolver snapshot records include the same display/byte fields, `action: "set"`, `resolverId`, `homeShard`, `slotEpoch` and event metadata. Removed snapshot keys and identity clears produce per-key `action: "clear"` rows with `value: null`. Slot/identity transitions also produce rows that use `key: "*"`, `value: null` and their event topic as action. Inspect canonical activity data for complete snapshots and clears.
 
 ## Policy, vault and marketplace
 
-- `/fee-config` → `{threeCharYearLux,fourCharYearLux,fivePlusYearLux,premiumStartLux,policy,renewalSchedule,registrationsPaused}`. `policy` is `{contractId,version,config}` or null; `config` is null if the selected policy initialization is unavailable; `renewalSchedule` is the canonical directory schedule `{version,effective_at,annual_lux,referral_bps}` or null. Missing policy prices are null. Launch registration is 150/50/10 DUSK for 3/4/5+ characters, with 3-character roots; renewal uses the complete five-entry table independently. Premium/referral rates follow published policy.
+- `/fee-config` → `{directory,admissions,threeCharYearLux,fourCharYearLux,fivePlusYearLux,premiumStartLux,policy,renewalSchedule,registrationsPaused}`. `policy` is `{contractId,version,config}` or null; `config` is null if the selected policy initialization is unavailable; `renewalSchedule` is the canonical directory schedule `{version,effective_at,annual_lux,referral_bps}` or null. `directory` is the projected canonical DirectoryConfig, including decimal-string `recipient_version`; `admissions` maps unprefixed contract IDs to canonical Admission objects, including decimal-string `governance_version`. Both counters start at 1. Each store's two governance flags share one version; recipient version also advances on operator acceptance, even with the same recipient. Missing policy prices are null. Launch registration is 150/50/10 DUSK for 3/4/5+ characters, with 3-character roots; renewal uses the complete five-entry table independently. Premium/referral rates follow published policy.
 - `/treasury` now reports the vault: `{initialized,source:"vault",protocolAccruedLux,referralLiabilityLux,protocolLux,liabilityLux,accountedLux,reservedBeneficiaries,sourceVersion,actualLux:null,surplusLux:null,operator,sources,events}`. `protocolAccruedLux` and `availableLux` alias the current claimable protocol balance. `operator` remains a TypedPrincipal; `operatorRecipient` is base58 and `operatorAuthority` is hex. The response retains `allowedFeeSources`, `totalReceivedLux`, `registrationReceivedLux`, `renewalReceivedLux`, `otherReceivedLux` (marketplace fees), `premiumReceivedLux`, `premiumAccountingError`, `referralClaimableLux`, `referralClaimedLux`, `referralCount`, `lastFeeSourceContract`, `lastFeeReason`, `lastFeeNode`, `lastEventType` and `claims`. Lifetime received totals sum vault receipts; the premium subtotal sums root-registration premium fields and is never added again to vault balances. `claims` has at most 12 protocol claims, with `amountLux` and `remainingLux`; `events` has the latest 12 vault receipt/claim effects. Only vault receipts/claims drive money. Actual balance and unsolicited surplus cannot be reconstructed from domain events and are explicitly unknown.
 - `/referrals?referrer=<key>` → `{supported,referrer,beneficiary,claimableLux,claimedLux,accruedLux,events}`. Key is `Moonlight:<192 hex>` or `Contract:<64 hex>` (no `0x`); Moonlight base58 and `0x` contract aliases also work. Absent rows have zero amounts and no beneficiary. `accruedLux = claimableLux + claimedLux`. `referralCount` counts attributed registrations across generations; `recentActivity` retains the last 12 accrual/claim effects with `amountLux` and canonical `counterparty` (payer or null). `events` is also capped at 12.
 - `/marketplace/config` → `{initialized,marketplaceContractId,tradingPaused,feeBps,orderApiVersion:1,config,markets}`. `config` and `markets` retain canonical SDK objects. Launch fee is 250 bps (2.5%).

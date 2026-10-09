@@ -34,6 +34,7 @@ it.each([20, 40])('publishes %s populated names with bounded passes over every s
   expect(view.recordsByNode.size).toBe(size + 2)
   const expectedOrder = [...view.namesByCanonical.values()].sort((a, b) => compareKeys(listKey('/names', a), listKey('/names', b)))
   expect(view.namesByAuthority.get(`0x${id(10)}`)).toEqual(expectedOrder)
+  const publicationScans = { ...scans }
   for (let i = 0; i < size; i++) {
     const endpoint = populationBytes(i, 96)
     const sdk = projectedPrimary(projection, endpoint, 200n)
@@ -42,9 +43,8 @@ it.each([20, 40])('publishes %s populated names with bounded passes over every s
     })
     expect(view.referralsByReferrer.get(`Contract:${hex(populationBytes(i))}`).referralCount).toBe(1)
   }
-  // Subtract the oracle calls above; the publication itself must not rescan tables per entity.
-  scans.primaries -= size
-  expect.soft(scans).toEqual({ names: 1, primaries: 1, forwards: 1, moves: 1, referrals: 1, markets: 1 })
+  // Count publication work independently of the SDK oracle implementation.
+  expect.soft(publicationScans).toEqual({ names: 1, primaries: 1, forwards: 1, moves: 1, referrals: 1, markets: 1 })
   expect.soft(registrationReads).toBeLessThanOrEqual(3 * (size + 1))
 })
 

@@ -9,6 +9,7 @@ import { createLocalIndexerHandler } from '../../server/local-indexer.mjs'
 
 export const expectedLocalIndexerRoutes = [
   '/health',
+  '/controllers',
   '/commitment',
   '/search',
   '/names',

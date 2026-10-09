@@ -43,7 +43,23 @@ export function applyReplayEvent(state, entry, warnings) {
     if (alreadyApplied) return
     projectReceipt(projection, decodeReceipt(r))
     state.newestEventHeight = meta.blockHeight
-    for (let i = effectsStart; i < projection.effects.length; i++) retainHistory(state, projection.effects[i], meta)
+    const effects = projection.effects.slice(effectsStart), controllers = new Map(), affected = new Map()
+    const operation = e => `${e.emitter}:${e.operationOrdinal}:${e.data.op_seq}`
+    for (const e of effects) {
+      const key = operation(e)
+      if (e.topic === 'controller_used') controllers.set(key, e)
+      const node = bodyNode(e.data.body)
+      if (node) {
+        if (!affected.has(key)) affected.set(key, new Set())
+        affected.get(key).add(h(node))
+      }
+    }
+    for (const e of effects) {
+      const key = operation(e), controller = controllers.get(key)?.data.body
+      if (e.topic === 'controller_used') {
+        for (const node of affected.get(key) ?? []) retainHistory(state, e, meta, controller, node)
+      } else retainHistory(state, e, meta, controller)
+    }
   } catch (error) {
     // A missing stage/receipt makes every later answer suspect. Keep the last complete state.
     state.blocked = true
@@ -56,11 +72,12 @@ function bodyNode(b) {
     ?? b.order?.terms?.name?.key?.node ?? b.slot?.node ?? b.current?.name?.key?.node ?? b.previous?.name?.key?.node
     ?? b.ticket?.root?.key?.node ?? b.forward?.root ?? b.target?.key?.node
 }
-function retainHistory(state, e, meta) {
-  const b = e.data.body, nodeBytes = bodyNode(b), node = nodeBytes ? h(nodeBytes) : null
+function retainHistory(state, e, meta, controller, affectedNode) {
+  const b = e.data.body, nodeBytes = bodyNode(b), node = affectedNode ?? (nodeBytes ? h(nodeBytes) : null)
   const base = { id: `${meta.eventId}:${e.ordinal}`, eventType: e.topic, node,
     contractId: h(e.emitter), timestamp: meta.observedAt ?? null, blockHeight: integer(e.height),
-    txId: meta.txId ?? null, actor: b.actor ? h(b.actor) : null, eventIndex: e.ordinal, data: jsonSafe(b) }
+    txId: meta.txId ?? null, actor: b.actor ? h(b.actor) : null, eventIndex: e.ordinal, data: jsonSafe(b),
+    ...(controller ? { via: h(controller.via), principal: jsonSafe(controller.principal), scope: controller.scope } : {}) }
   if (node) {
     push(state.activityByNode, node, base)
     state.timestamps.set(node, meta.observedAt ?? null)
@@ -111,6 +128,7 @@ export function emptyFrozenView() {
   return { namesByAuthority: new Map(), namesByNode: new Map(), namesByCanonical: new Map(), lifecyclesByCanonical: new Map(),
     subnamesByNode: new Map(), subnamesByParent: new Map(), subnamesByCanonical: new Map(),
     recordsByNode: new Map(), recordsByNodeKey: new Map(), reverseByEndpoint: new Map(), rawPrimaries: [],
+    controllers: [], controllerVersion: '1',
     controllersByNode: new Map(), commitmentsById: new Map(), commitmentsByKey: new Map(),
     marketplaceFixedSalesByNode: new Map(), marketplaceAuctionsByNode: new Map(), marketplaceOffersByKey: new Map(),
     marketplaceRefundsByAuthority: new Map(), referralsByReferrer: new Map(),
@@ -256,13 +274,18 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
     boundary(c.created_at + 8641n)
     view.commitmentsById.set(row.commitment, row); view.commitmentsByKey.set(commitmentKey(row.controller, row.commitment), row)
   }
+  view.controllerVersion = String(s.controllerVersion)
+  view.controllers = Object.values(s.controllers).map(({ controller: c, admissionVersion }) => ({
+    contractId: h(c.contract), scopes: c.scopes, suspended: c.suspended,
+    admittedAtBlockHeight: integer(c.admitted_at), admissionVersion: String(admissionVersion),
+  }))
   view.directory = jsonSafe(s.directory)
   view.admissions = jsonSafe(s.admissions)
   const config = s.directory, policy = config ? s.policies[contractId(config.registration.policy)]?.config : null
   view.policy = config ? { contractId: h(config.registration.policy), version: String(config.registration.policy_version), config: jsonSafe(policy ?? null) } : null
   view.renewalSchedule = config ? jsonSafe(config.renewal) : null
   view.poolState.registrationsPaused = !config || config.registration.operator_paused || config.registration.guardian_suspended || !policy?.registration_open
-  view.feeConfig = { threeCharYearLux: policy?.annual_lux[2] ?? null, fourCharYearLux: policy?.annual_lux[3] ?? null,
+  view.feeConfig = { directory: view.directory, admissions: view.admissions, threeCharYearLux: policy?.annual_lux[2] ?? null, fourCharYearLux: policy?.annual_lux[3] ?? null,
     fivePlusYearLux: policy?.annual_lux[4] ?? null, premiumStartLux: policy?.premium_start_lux ?? '0',
     policy: view.policy, renewalSchedule: view.renewalSchedule, registrationsPaused: view.poolState.registrationsPaused, referralRewardBps: policy?.base_referral_bps ?? null,
     renewalReferralRewardBps: config?.renewal.referral_bps ?? null, premiumReferralRewardBps: policy?.premium_referral_bps ?? null, version: view.policy?.version ?? null }

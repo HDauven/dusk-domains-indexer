@@ -52,6 +52,15 @@ PUBLICATION_STEPS=2048 npm test -- server/local-indexer/publication-interleaving
 
 Failures report the seed, store mode, action index and recent transition trace.
 
+Property tests (`*.fuzz.test.mjs`, fast-check) send arbitrary paths, queries,
+methods and bodies to every route on port 0, including `POST /verify` against
+adversarial DNS answers, and feed truncated, reordered, duplicated and wrongly
+typed journal rows to the event-log, SQLite and incremental SQLite stores.
+`npm test` runs them with a fixed seed. For a long campaign, use
+`npm run test:fuzz -- --duration 900 --numRuns 100 --seed 20261010`; counts land
+in `.fuzz/`. Open findings are pinned as intentionally failing `finding_*`
+tests, excluded from `npm test`, and reproduced with `npm run test:findings`.
+
 ## Documentation
 
 - [HTTP API, pagination, rate limits and CORS](docs/indexer-api.md)

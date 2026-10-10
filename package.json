@@ -25,7 +25,8 @@
     "indexer:local": "node server/local-indexer.mjs",
     "indexer:collect": "node scripts/local-event-collector.mjs",
     "check:indexer-production": "node scripts/production-indexer-check.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude='**/finding_*'",
+    "test:findings": "vitest run finding_",
     "check": "vitest run",
     "smoke": "node scripts/local-indexer-smoke.mjs",
     "backfill:check": "node scripts/local-indexer-backfill-check.mjs",
@@ -34,7 +35,8 @@
     "backup": "node scripts/indexer-backup.mjs",
     "disk": "node scripts/indexer-disk-budget.mjs",
     "production:check": "node scripts/production-indexer-check.mjs",
-    "bench:incremental": "node scripts/indexer-incremental-bench.mjs"
+    "bench:incremental": "node scripts/indexer-incremental-bench.mjs",
+    "test:fuzz": "node scripts/run-fuzz.mjs"
   },
   "dependencies": {
     "@dusk/w3sper": "npm:@jsr/dusk__w3sper@^1.6.0",
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.3",
+    "fast-check": "^4.10.2",
     "vitest": "^4.1.9"
   },
   "engines": {

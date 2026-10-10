@@ -10,3 +10,6 @@ target/
 *.sqlite-wal
 *.jsonl
 *.log
+
+# Reproducible local fuzz campaigns and per-property counts.
+.fuzz/

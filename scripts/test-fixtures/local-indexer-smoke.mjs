@@ -301,6 +301,24 @@ export function createMockFetch(options = {}) {
         canonicalName: 'settlement.aurora.dusk',
       })
     }
+    if (parsed.pathname === '/holdings') {
+      const rawAuthority = parsed.searchParams.get('authority')
+      if (!rawAuthority) {
+        return Response.json({
+          error: 'missing_authority',
+          parameter: 'authority',
+          message: 'authority is required.',
+        }, { status: 400 })
+      }
+      if (!/^0x[a-f0-9]{64}$/.test(rawAuthority)) {
+        return Response.json({
+          error: 'invalid_authority',
+          parameter: 'authority',
+          message: 'authority must be a 32-byte hex authority.',
+        }, { status: 400 })
+      }
+      return Response.json({ holdings: [], nextCursor: null })
+    }
     if (parsed.pathname === '/names') {
       if (parsed.searchParams.get('owner') === '0xmissing-local-smoke') return Response.json([])
       if (parsed.searchParams.has('owner')) return Response.json(options.ownerNames ?? [nameSummary])
@@ -335,6 +353,7 @@ export function defaultRouteManifest() {
     '/commitment',
     '/search',
     '/names',
+    '/holdings',
     '/resolve',
     '/verify',
     '/name',

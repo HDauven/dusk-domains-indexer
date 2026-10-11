@@ -3,7 +3,8 @@ import { decodeReceipt } from './receipt-codec.mjs'
 import assert from 'node:assert/strict'
 import { hex, contractId, encodeBase58, stringifyJson, authority } from '@duskdomains/sdk'
 import { createProjectionState, projectReceipt, slotStateKey, nameStateKey, effectiveMoveLock, moveLockEndsAt, assertRecordsDigest } from '@duskdomains/sdk/projection'
-import { indexNamesByAuthority } from './name-authority-index.mjs'
+import { indexHoldingsByAuthority, indexNamesByAuthority } from './name-authority-index.mjs'
+import { lifecycleClock } from './read-models/lifecycle.mjs'
 import { recordIndexKey, commitmentKey, marketplaceOfferKey, emptyMarketplaceConfig, emptyTreasuryState, appendRecordHistory } from './view-utils.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
 
@@ -71,6 +72,8 @@ function bodyNode(b) {
   return b.name?.key?.node ?? b.name?.node ?? b.root?.key?.node ?? (Array.isArray(b.root) ? b.root : null)
     ?? b.order?.terms?.name?.key?.node ?? b.slot?.node ?? b.current?.name?.key?.node ?? b.previous?.name?.key?.node
     ?? b.ticket?.root?.key?.node ?? b.forward?.root ?? b.target?.key?.node
+    // A renewal paid from a listing: the market's event names the payer.
+    ?? b.renewal?.name?.key?.node
 }
 function retainHistory(state, e, meta, controller, affectedNode) {
   const b = e.data.body, nodeBytes = bodyNode(b), node = affectedNode ?? (nodeBytes ? h(nodeBytes) : null)
@@ -125,7 +128,7 @@ function forwardView(f, source) {
     moveId: h(f.move_id), generation: String(f.generation), completedAtBlockHeight: integer(f.completed_at) }
 }
 export function emptyFrozenView() {
-  return { namesByAuthority: new Map(), namesByNode: new Map(), namesByCanonical: new Map(), lifecyclesByCanonical: new Map(),
+  return { namesByAuthority: new Map(), holdingsByAuthority: new Map(), namesByNode: new Map(), namesByCanonical: new Map(), lifecyclesByCanonical: new Map(),
     subnamesByNode: new Map(), subnamesByParent: new Map(), subnamesByCanonical: new Map(),
     recordsByNode: new Map(), recordsByNodeKey: new Map(), reverseByEndpoint: new Map(), rawPrimaries: [],
     controllers: [], controllerVersion: '1',
@@ -153,7 +156,7 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
     activityByNode: historyView(state.activityByNode), recordHistoryByNode: historyView(state.recordHistoryByNode),
     recordHistoryByNodeKey: historyView(state.recordHistoryByNodeKey) }
 
-  if (!s) { view.namesByAuthority = new Map(); state.lastCompleteView = view; return view }
+  if (!s) { view.namesByAuthority = new Map(); view.holdingsByAuthority = new Map(); state.lastCompleteView = view; return view }
   const boundary = n => { if (n > height && n <= BigInt(Number.MAX_SAFE_INTEGER)) view.nextLifecycleBoundary = Math.min(view.nextLifecycleBoundary ?? Infinity, Number(n)) }
   const rows = Object.entries(s.names)
   // Group once. Rows shared inside this publication are independent of SDK-owned state.
@@ -294,6 +297,7 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
   vaultView(view, state)
   marketView(view, s)
   view.namesByAuthority = indexNamesByAuthority(view.namesByCanonical, view.controllersByNode)
+  view.holdingsByAuthority = indexHoldingsByAuthority(view, lifecycleClock(view))
   state.lastCompleteView = view
   return view
 }

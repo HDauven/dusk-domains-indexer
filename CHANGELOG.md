@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Serve `/holdings?authority=`: every root and subname an authority currently owns or manages, with its role, built from the same publication in event-log, SQLite and snapshot modes.
+- File renewals paid from a market listing (`escrow_renewed`) under the renewed name, with the payer.
+- Document activity row order: by block height, then `eventIndex`, the event's position in its block. List `/holdings` in the runbook and the local smoke.
+
 - Expose owner-bound DNS website verification with scheduled proof checks and explicit capacity errors.
 
 - Reject incomplete or ill-typed finalized cursors without synthesizing publication fields.

@@ -7,6 +7,7 @@ export const LOCAL_INDEXER_ROUTES = new Set([
   '/commitment',
   '/search',
   '/names',
+  '/holdings',
   '/resolve',
   '/verify',
   '/name',
@@ -68,7 +69,7 @@ export function routeParameters(pathname, url) {
     const authority = optionalAuthorityParameter(url, 'buyerAuthority')
     return authority.error ? authority : { ...node, ...authority }
   }
-  if (pathname === '/marketplace/refund') {
+  if (pathname === '/marketplace/refund' || pathname === '/holdings') {
     return requiredAuthorityParameter(url, 'authority')
   }
   return {}

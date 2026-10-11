@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
+import { commitJournal } from '../test-fixtures/committed-cursor.mjs'
+import { createEventLog } from '../test-fixtures/frozen-events.mjs'
+import { loadEventLogStore } from '../../server/local-indexer.mjs'
+import { startServer, writeEventLog } from '../../server/local-indexer-test-helpers.mjs'
 import {
   checkRouteManifest,
   indexerHealthContract,
@@ -58,6 +62,23 @@ describe('local indexer smoke route contract helpers', () => {
       message: expect.stringContaining('fail fast'),
     })
     expect(seen).toEqual(malformedRouteParameterProbes.map((probe) => probe.route))
+  })
+
+  const servers = []
+  afterEach(async () => { for (const server of servers.splice(0)) await server.close() })
+
+  it('requires the holder index and checks every probe against a running indexer', async () => {
+    expect(requiredLocalIndexerRoutes).toContain('/holdings')
+    expect(malformedRouteParameterProbes.filter((probe) => probe.route.startsWith('/holdings'))).toEqual([
+      { route: '/holdings', expectedError: 'missing_authority' },
+      { route: '/holdings?authority=not-an-authority', expectedError: 'invalid_authority' },
+    ])
+    const file = await writeEventLog(createEventLog())
+    const server = await startServer(await loadEventLogStore(file, await commitJournal(file, { scannedBlockHeight: 20, currentBlockHeight: 20 })))
+    servers.push(server)
+    const health = await (await fetch(`${server.baseUrl}/health`)).json()
+    expect(checkRouteManifest(health.routes)).toMatchObject({ ok: true })
+    await expect(probeRouteParameterErrors(fetch, server.baseUrl)).resolves.toMatchObject({ ok: true })
   })
 
   it('reports unstable malformed route responses', async () => {

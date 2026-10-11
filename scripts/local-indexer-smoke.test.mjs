@@ -78,6 +78,8 @@ describe('local indexer smoke check', () => {
       '/commitment',
       '/commitment',
       '/commitment',
+      '/holdings',
+      '/holdings',
       '/activity',
       '/subnames',
       '/subname',

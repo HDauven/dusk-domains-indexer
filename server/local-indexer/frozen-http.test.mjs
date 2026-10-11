@@ -15,7 +15,7 @@ const fixtures = () => [...createEventLog(), vaultEvents(), claimEvents(), envel
 ]))]
 const urls = {
   '/controllers': '',
-  '/health': '', '/names': `?owner=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora', '/verify': '?name=aurora',
+  '/health': '', '/names': `?owner=${prefixed(10)}`, '/holdings': `?authority=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora', '/verify': '?name=aurora',
   '/name': `?node=${rootNode}`, '/records': `?node=${rootNode}`, '/record': `?node=${rootNode}&key=moonlight_address`,
   '/record-history': `?node=${rootNode}&key=moonlight_address`, '/activity': `?node=${rootNode}`,
   '/subnames': `?parentNode=${rootNode}`, '/subname': `?node=${childNode}`, '/reverse': `?type=moonlight_address&value=${address}`,
@@ -42,6 +42,7 @@ it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receip
   }
   expect(bodies['/health']).toMatchObject({ ok: true, readModelSchemaVersion: 2, deployment: { complete: true } })
   expect(bodies['/names'].names[0]).toMatchObject({ homeShard: prefixed(4), generation: '7', namespace: { descendantCount: 1 } })
+  expect(bodies['/holdings'].holdings.map(row => [row.name, row.role])).toEqual([['aurora.dusk', 'owner'], ['x.aurora.dusk', 'owner']])
   expect(bodies['/name'].nameRef.incarnation).toEqual({ generation: '7', serial: '1' })
   expect(bodies['/resolve']).toMatchObject({ verificationStatus: 'forward_resolved', homeShard: prefixed(4), generation: '7' })
   expect(bodies['/records'].records[0]).toMatchObject({ value: address, valueBytes: Array(96).fill(12) })

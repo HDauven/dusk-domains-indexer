@@ -6,7 +6,7 @@ import { createShareHandler } from './share/routes.mjs'
 import { indexNowConfig } from './indexnow.mjs'
 import { randomUUID } from 'node:crypto'
 import { LIST_FIELDS, listKey, pageParameters, paginate } from './pagination.mjs'
-import { namesPage } from './name-authority-index.mjs'
+import { holdingsPage, namesPage } from './name-authority-index.mjs'
 import { corsHeaders, createRateLimiter } from './security.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
 import {
@@ -196,6 +196,16 @@ async function handleRequest(storeProvider, request, response, options) {
       const names = listNames({ ...store, namesByCanonical: new Map(result.items.map((name) => [name.lifecycle.canonicalName, name])) })
       const byNode = new Map(names.map((name) => [name.node, name]))
       reply(200, { names: result.items.map((name) => withVerification(byNode.get(name.node))), nextCursor: result.nextCursor })
+      return
+    }
+
+    if (pathname === '/holdings') {
+      const result = holdingsPage(store, routeParams.authority, page)
+      if (result.error) {
+        reply(503, result)
+        return
+      }
+      reply(200, { holdings: result.items, nextCursor: result.nextCursor })
       return
     }
 

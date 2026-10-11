@@ -7,7 +7,7 @@ This service is the Dusk Domains read API. It is not the archive node and it doe
 - Source of truth: DuskDS contracts.
 - Event source: decoded Dusk Domains event journal from the archive-node or collector process.
 - Read store: SQLite/WAL plus cursor and checkpoint files.
-- API: `/health`, `/search`, `/resolve`, `/name`, `/records`, `/record`, `/record-history`, `/names`, `/activity`, `/reverse`, `/subnames`, `/subname`, `/treasury`, `/referrals`, `/fee-config` and marketplace routes.
+- API: `/health`, `/search`, `/resolve`, `/name`, `/records`, `/record`, `/record-history`, `/names`, `/holdings`, `/activity`, `/reverse`, `/subnames`, `/subname`, `/treasury`, `/referrals`, `/fee-config` and marketplace routes.
 - Shared projection/decoder: `@duskdomains/sdk/projection`; topics: `@duskdomains/sdk/event-catalog`.
 
 The indexer can be rebuilt from the event journal and the archive-node snapshot that covers the deployment start height.

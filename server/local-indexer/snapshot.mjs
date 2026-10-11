@@ -15,7 +15,7 @@ import { knownChainHeight } from './chain-height.mjs'
 import { normalizeSnapshotBlockCursor } from './checkpoint.mjs'
 import { PUBLIC_PRIMARY_ENDPOINT_TYPES } from './constants.mjs'
 import { endpointKey } from './naming.mjs'
-import { indexNamesByAuthority } from './name-authority-index.mjs'
+import { indexHoldingsByAuthority, indexNamesByAuthority } from './name-authority-index.mjs'
 import { indexedNamespaceNodeBlocksRegistration } from './read-models/lifecycle.mjs'
 import {
   indexedLifecycleBlocksRegistration,
@@ -262,7 +262,7 @@ export async function loadSnapshotStore(snapshotFile) {
     })
   }
 
-  return {
+  const store = {
     generatedAt: snapshot.generatedAt ?? new Date().toISOString(),
     source: snapshot.source ?? 'local-indexer-snapshot',
     mode: 'snapshot',
@@ -295,6 +295,8 @@ export async function loadSnapshotStore(snapshotFile) {
     ...(cursor ? { cursor } : {}),
     ...(checkpoint ? { checkpoint } : {}),
   }
+  store.holdingsByAuthority = indexHoldingsByAuthority(store, now)
+  return store
 }
 
 function marketplaceId(value) {

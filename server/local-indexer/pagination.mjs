@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 
 export const LIST_FIELDS = Object.freeze({
   '/names': 'names',
+  '/holdings': 'holdings',
   '/controllers': 'controllers',
   '/records': 'records',
   '/record-history': 'history',
@@ -31,7 +32,7 @@ export function pageParameters(pathname, url) {
         || decoded.key.length < 1 || decoded.key.length > 12
         || !decoded.key.every((value) => typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))) throw new Error()
       const types = ['/records', '/controllers'].includes(pathname) ? ['string']
-        : ['/names', '/subnames', '/marketplace/offers'].includes(pathname) ? ['string', 'string']
+        : ['/names', '/holdings', '/subnames', '/marketplace/offers'].includes(pathname) ? ['string', 'string']
           : pathname.startsWith('/marketplace/') ? ['string'] : ['number', 'number', 'number', 'string', 'string', 'string']
       if (decoded.key.length !== types.length || !decoded.key.every((value, index) => typeof value === types[index])) throw new Error()
       after = decoded.key
@@ -87,6 +88,7 @@ export function paginate(rows, page, keyFor) {
 export function listKey(pathname, item) {
   if (pathname === '/controllers') return [item.contractId]
   if (pathname === '/names') return [item.lifecycle.canonicalName, item.node]
+  if (pathname === '/holdings') return [item.name, item.node]
   if (pathname === '/records') return [item.key]
   if (pathname === '/subnames') return [item.name, item.node]
   const orderSuffix = item.orderId == null ? '' : `:${String(item.orderId).padStart(20, '0')}`

@@ -278,6 +278,7 @@ function healthyPayload() {
       '/record',
       '/record-history',
       '/names',
+      '/holdings',
       '/activity',
       '/reverse',
       '/subnames',

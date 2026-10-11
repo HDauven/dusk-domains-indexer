@@ -29,6 +29,7 @@ Suspension prevents controller execution and survives removal/re-admission.
 
 - `/health`: existing readiness, cursor, checkpoint, deployment, package and pause fields. Deployment roles are `directory`, `policy`, `store`, `vault`, `resolver`, `marketplace`; plural admitted IDs appear in `deployment.contracts[role].contractIds`. `eventCount` counts receipt rows (not individual effects). `lastEvent.eventName` is `frozen_receipt`. `projectionBlockHeight` is the finalized scanned height used for lifecycle and premium reads (retained at the last complete publication after a replay failure, or `null` when cold reconstruction blocks), distinct from the observed live tip. Warnings mark replay degraded; an invalid receipt or malformed journal row retains the last complete publication and blocks further projection.
 - `/names?owner=<authority>` → `{names,nextCursor}`: roots held through grace, filtered by current owner/manager. Existing lifecycle, records, primary, namespace and activity-count fields remain.
+- `/holdings?authority=<authority>` → `{holdings,nextCursor}`: every name, root or subname, whose current owner or manager is the authority. Roots are listed through grace, as on `/names?owner=`; subnames while `/subname` serves them (active, under a held root). Rows are `{node,name,kind,role,root,parentNode,parentName,owner,manager,status,expiresAtBlockHeight,graceEndsAtBlockHeight,homeShard,generation,serial}`. `kind` is `root` or `subname`. `role` is `owner` when the authority owns the name (it may also manage it), otherwise `manager`. `status` is `active` or `grace` for roots and `active` for subnames, which have no grace of their own (`graceEndsAtBlockHeight: null`). `parentNode` and `parentName` are null for roots; `root` is the root node. `generation` and `serial` are decimal strings, null in snapshot mode, where `owner` or `manager` is also null when the snapshot doesn't carry it. Rows are ordered by name, then node, with the standard `limit` and `cursor`. The authority is the 32-byte owner/manager value of name rows: the domain-separated hash of a Moonlight key, or a contract ID. A listing makes the market contract both owner and manager, so a listed root appears under the market, not the seller; subnames the seller holds directly stay listed under the seller. Event-log, SQLite and snapshot stores build this index with each publication. A store without it returns HTTP 503 `holder_index_unavailable`; older indexers return 404 `not_found` and omit the route from `/health` `routes`.
 - `/name?node=<node>` → lifecycle plus premium and `namespace: {descendantCount,heldByOthersCount,subnames,ancestors}`. Stored expired root lifecycle remains inspectable. `/subname?node=<node>` returns an active child; `/subnames?parentNode=<node>` → `{subnames,nextCursor}` returns immediate active children. Stored descendants count toward namespace capacity even when expired. Inherited lifecycle updates come from SDK projection.
 - `/search?query=<name>` → existing canonical/display/label/status/price/issues/transactionBlocked/premium fields, plus `policy`, `renewalSchedule`, `estimate: true`. `price` remains a DUSK display number (null when policy configuration is unavailable), never a signing quote. Eligibility and stop flags come from the selected policy/directory; root minimum is 3 at launch, sublabels can have one character. Obtain an SDK store quote before signing.
 - `/resolve?name=<canonical>` → existing `{canonicalName,node,records,resolver,expiry,cache,warnings,verificationStatus,errors,nextCursor}` plus `homeShard`, `forwarding`, `generation`, `serial`, `custody`, `moveStatus` and `nameRef` from the routing/incarnation fields below. Reads follow the SDK-projected current home automatically. Expired names are unverified. `/records?node=...` → `{records,nextCursor}` and `/record?node=...&key=...` expose stored raw records, including expired stored names; resolver verification is a separate check.
@@ -120,11 +121,15 @@ Lookup concurrency and cached results are bounded. When the result cache fills, 
 
 ## Activity and records history
 
-`/activity?node=...` → `{activity,nextCursor}`. Frozen activity uses the exact SDK event topic as `eventType`; UI labels must map topics such as `root_registered`, `authorities_changed`, `custody_started`, `root_forwarded`. Rows include stable `id`, `node`, `contractId`, `timestamp`, `blockHeight`, `txId`, `actor` (nullable), and canonical `data`. History survives moves/re-registration. Delegated effects additionally carry
+`/activity?node=...` → `{activity,nextCursor}`. Frozen activity uses the exact SDK event topic as `eventType`; UI labels must map topics such as `root_registered`, `authorities_changed`, `custody_started`, `root_forwarded`. Rows include stable `id`, `node`, `contractId`, `timestamp`, `blockHeight`, `txId`, `actor` (nullable), `eventIndex` and canonical `data`. Rows run newest first, by `blockHeight` and then by `eventIndex`, the event's position among its block's events, so transactions in one block keep their execution order. History survives moves/re-registration. Delegated effects additionally carry
 `via` (controller contract ID), canonical `principal` and numeric `scope`.
 A `controller_used` activity row appears for each name touched by the same
 operation. Attribution is scoped to the emitter, journal occurrence and `op_seq`;
 callbacks, direct operations and reverted effects do not inherit it.
+
+`escrow_renewed`, a renewal paid from a market listing, is filed under the renewed root with
+the paying principal in `data.payer`. The same transaction's `root_renewed` names the market
+contract as its payer.
 
 `root_ceded` records released-root retirement in the root's activity with canonical
 `forward`, `counters` and old `grace_end` in `data`. The root's permanent `forwarding`
@@ -170,6 +175,7 @@ are clamped. Empty, negative, fractional, nonnumeric, or repeated limits return
 ```text
 GET /names?owner=0x...&limit=50
 GET /names?owner=0x...&limit=50&cursor=<nextCursor from the previous response>
+GET /holdings?authority=0x...&limit=200
 ```
 
 ```json

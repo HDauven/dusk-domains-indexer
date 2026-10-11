@@ -3,7 +3,7 @@ import { createLocalIndexerHandler } from './local-indexer/routes.mjs'
 import { serveLocalIndexer } from './local-indexer/server.mjs'
 import { createRateLimiter } from './local-indexer/security.mjs'
 import { parseArgs } from './local-indexer/cli.mjs'
-import { indexNamesByAuthority } from './local-indexer/name-authority-index.mjs'
+import { indexHoldingsByAuthority, indexNamesByAuthority } from './local-indexer/name-authority-index.mjs'
 
 const node = `0x${'11'.repeat(32)}`
 const owner = `0x${'22'.repeat(32)}`
@@ -20,7 +20,7 @@ function storeWithRows(count = 205) {
     key: `key${String(index).padStart(4, '0')}`, blockHeight: 10, txId: `tx${index}`, eventIndex: index,
     id: `event${index}`, buyerAuthority: owner,
   }))
-  return {
+  const store = {
     namesByAuthority: indexNamesByAuthority(new Map(names.map((name) => [name.lifecycle.canonicalName, name]))),
     namesByCanonical: new Map(names.map((name) => [name.lifecycle.canonicalName, name])),
     namesByNode: new Map([[node, { node, status: 'active' }], ...names.map((name) => [name.node, name.lifecycle])]),
@@ -31,6 +31,8 @@ function storeWithRows(count = 205) {
     marketplaceAuctionsByNode: new Map(rows.map((row) => [row.node, row])),
     marketplaceOffersByKey: new Map(rows.map((row) => [row.node, row])),
   }
+  store.holdingsByAuthority = indexHoldingsByAuthority(store, { blockHeight: 1, date: new Date() })
+  return store
 }
 
 function request(handler, url, { method = 'GET', ip = '127.0.0.1', headers = {} } = {}) {
@@ -44,7 +46,7 @@ function request(handler, url, { method = 'GET', ip = '127.0.0.1', headers = {} 
 }
 
 const routes = [
-  ['/names', 'names'], ['/names?owner=' + owner, 'names'],
+  ['/names', 'names'], ['/names?owner=' + owner, 'names'], ['/holdings?authority=' + owner, 'holdings'],
   ['/records?node=' + node, 'records'], ['/record-history?node=' + node, 'history'],
   ['/activity?node=' + node, 'activity'], ['/subnames?parentNode=' + node, 'subnames'],
   ['/marketplace/fixed-sales', 'fixedSales'], ['/marketplace/auctions', 'auctions'], ['/marketplace/offers', 'offers'],

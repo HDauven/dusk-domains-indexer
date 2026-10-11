@@ -1,22 +1,21 @@
 # Frozen v1 protocol fixtures
 
-This test-only subset was copied from the reviewed SDK 0.3.0 fixture directory;
-the SDK captured it from the frozen protocol worktree.
+These test-only gzip files are copied from the read-only frozen protocol worktree.
 They are excluded from npm/JSR releases. They are data drivers, not deployable
 contracts. Tests exercise their actual WASM encode/decode implementations.
 
-Reference HEAD: `d18f0a65bbb23e637b1028dfd8dbc3b464a53566` (the worktree also
-contains the frozen implementation). Sources:
+Reference HEAD: `4e7eff846445a80160804e6e99ab3f0c7d957dfd` (`fix/frozen-verification`). Sources:
 
 - `contracts/crates/dusk-domains-types/tests/fixtures/frozen-v1.json`
+- `contracts/crates/dusk-domains-types/tests/fixtures/frozen-v1-max.json`
 - `contracts/crates/dusk-domains-marketplace-v1/tests/market-v1.json`
-- `target/frozen-drivers/wasm32-unknown-unknown/release/dusk_domains_store.data_driver.wasm`
+- `target/frozen-drivers/wasm32-unknown-unknown/release/*.wasm`
 
-`drivers.json` retains the SDK driver hash catalog; only the store WASM is included here. The source
+`drivers.json` pins each uncompressed WASM's SHA-256 and byte count. The source
 `schema.rs` SHA-256 is
-`5ef5900d8f17d80cbb8b0228fc94667662bb90a0204f0727c811d1984c7f4773`;
+`2ee0be6fbbc3596f82b7b2dc1348402f6d22b90245661ee65c69a4bc4e5a9eae`;
 shared `driver.rs` is
-`3e60f1b107f2a143525601a6c8917f46dcefe531216c88a974f1dcee99fc9263`.
+`38dd40c8a4aac0b49612a665a901a86f5eb0d4a2af24f4418a3f29047c48372e`.
 The digest tests additionally transcribe pinned results from
 `dusk-domains-types/tests/frozen_wire.rs`.
 

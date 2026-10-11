@@ -5,7 +5,7 @@ import { afterEach, expect, it } from 'vitest'
 import { loadEventLogStore, loadSqliteStore } from '../local-indexer.mjs'
 import { startServer, writeEventLog, expectedLocalIndexerRoutes } from '../local-indexer-test-helpers.mjs'
 import { join, dirname } from 'node:path'
-import { createEventLog, rootNode, childNode, prefixed, address, envelope, receipt, order, rootName, ref, bytes, vaultEvents, claimEvents } from '../../scripts/test-fixtures/frozen-events.mjs'
+import { createEventLog, rootNode, childNode, prefixed, address, envelope, receipt, order, rootName, ref, bytes, vaultEvents, claimEvents, beneficiary } from '../../scripts/test-fixtures/frozen-events.mjs'
 const servers = []
 afterEach(async () => { for (const s of servers.splice(0)) await s.close() })
 const fixtures = () => [...createEventLog(), vaultEvents(), claimEvents(), envelope(receipt(18, [
@@ -14,6 +14,7 @@ const fixtures = () => [...createEventLog(), vaultEvents(), claimEvents(), envel
   [4, 'commitment_created', { commitment: { key: { actor: bytes(10), hash: bytes(24) }, created_at: 18n } }],
 ]))]
 const urls = {
+  '/controllers': '',
   '/health': '', '/names': `?owner=${prefixed(10)}`, '/search': '?query=aurora', '/resolve': '?name=aurora', '/verify': '?name=aurora',
   '/name': `?node=${rootNode}`, '/records': `?node=${rootNode}`, '/record': `?node=${rootNode}&key=moonlight_address`,
   '/record-history': `?node=${rootNode}&key=moonlight_address`, '/activity': `?node=${rootNode}`,
@@ -64,6 +65,23 @@ it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receip
     const res = await fetch(server.baseUrl + path); expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain(type); expect(await res.text()).toContain(text)
   }
+})
+
+it.each(['event-log', 'sqlite'])('derives reclaimed beneficiaries and drained refund removal from %s', async mode => {
+  const auction = { ...order('Auction', 7n), payer: { kind: 'Contract', bytes: bytes(14) } }
+  const entries = [...createEventLog(), vaultEvents(), envelope(receipt(17, [
+    [2, 'beneficiary_released', { beneficiary, reserved_beneficiaries: 0 }],
+    [6, 'order_changed', { order: auction }],
+    [6, 'refund_changed', { refund: { authority: bytes(14), amount_lux: '0' } }],
+    [6, 'order_closed', { order: auction, reason: 'Sold' }],
+  ]))]
+  const file = await writeEventLog(entries), cursorFile = await commitJournal(file)
+  const store = mode === 'sqlite'
+    ? await loadSqliteStore(join(dirname(file), 'reclaimed.sqlite'), { eventLogFile: file, cursorFile })
+    : await loadEventLogStore(file, cursorFile)
+  expect(store.warnings).toEqual([])
+  expect(store.referralsByReferrer.has(prefixed(13))).toBe(false)
+  expect(store.marketplaceRefundsByAuthority.has(prefixed(14))).toBe(false)
 })
 it('keeps an old-market refund accessible via marketplace selector', async () => {
   const entries = fixtures(), store = await loadFixture(entries)

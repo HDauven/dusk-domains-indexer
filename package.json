@@ -34,16 +34,18 @@
     "backup": "node scripts/indexer-backup.mjs",
     "disk": "node scripts/indexer-disk-budget.mjs",
     "production:check": "node scripts/production-indexer-check.mjs",
-    "bench:incremental": "node scripts/indexer-incremental-bench.mjs"
+    "bench:incremental": "node scripts/indexer-incremental-bench.mjs",
+    "test:fuzz": "node scripts/run-fuzz.mjs"
   },
   "dependencies": {
     "@dusk/w3sper": "npm:@jsr/dusk__w3sper@^1.6.0",
-    "@duskdomains/sdk": "npm:@jsr/duskdomains__sdk@0.3.0",
+    "@duskdomains/sdk": "npm:@jsr/duskdomains__sdk@0.3.2",
     "@noble/hashes": "^2.2.0",
     "@resvg/resvg-js": "^2.6.2"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",
+    "fast-check": "^4.10.2",
     "vitest": "^4.1.9"
   },
   "engines": {

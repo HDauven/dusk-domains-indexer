@@ -1,6 +1,7 @@
 import { guardCandidate } from './candidate-publication.mjs'
 import { readCommittedJournal } from './committed-publication.mjs'
 import { stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import {
   indexerDurabilityState,
   loadCursor,
@@ -11,7 +12,7 @@ import {
   createDeploymentBinding,
   summarizeDeploymentBinding,
 } from './deployment-binding.mjs'
-import { dedupeEventLogEntries, eventTimestamp, parseEventLog } from './event-log.mjs'
+import { dedupeEventLogEntries, eventLogEntryWarning, eventTimestamp, parseEventLog } from './event-log.mjs'
 import { applyReplayEvent, createReplayState, finalizeReplayState } from './event-log-store.mjs'
 import { sqliteSchemaState } from './sqlite-migrations.mjs'
 import {
@@ -89,7 +90,7 @@ export class IncrementalSqliteIndexer {
           const saved = kvGet(this.db, JOURNAL_STATE_KEY)
           const journal = await statOrNull(this.source.eventLogFile)
           // Rows are only a replay cache; restart must validate and finalize again.
-          if (saved?.committed && journal && sameFile(saved, journal)
+          if (saved?.committed && typeof saved.digest === 'string' && journal && sameFile(saved, journal)
             && saved.offset <= this.cursor.eventLogBytes && saved.offset <= journal.size
             && !(saved.size === journal.size && saved.mtimeMs !== journal.mtimeMs)) {
             this.loadFromDatabase(saved)
@@ -187,7 +188,7 @@ export class IncrementalSqliteIndexer {
     this.journal = {
       committed: true, format: 'jsonl', dev: journal.dev, ino: journal.ino,
       size: journal.size, mtimeMs: journal.mtimeMs, offset: complete,
-      lines: countNewlines(bytes, complete),
+      lines: countNewlines(bytes, complete), digest: prefixDigest(bytes),
     }
 
     for (const entry of events) this.apply(entry)
@@ -213,6 +214,11 @@ export class IncrementalSqliteIndexer {
       return true
     }
     if (journal.size < this.cursor.eventLogBytes) throw new Error('Journal is shorter than its committed cursor.')
+    const verified = await readCommittedJournal(this.source.eventLogFile, { eventLogBytes: previous.offset })
+    if (!sameFile(previous, verified.stat) || prefixDigest(verified.bytes) !== previous.digest) {
+      await this.rebuild()
+      return true
+    }
     if (this.cursor.eventLogBytes === previous.offset) return false
 
     const { bytes: chunk, stat: loaded } = await readCommittedJournal(this.source.eventLogFile, this.cursor, previous.offset)
@@ -226,7 +232,12 @@ export class IncrementalSqliteIndexer {
       line += 1
       if (!text.trim()) continue
       try {
-        entries.push(JSON.parse(text))
+        const entry = JSON.parse(text)
+        const warning = eventLogEntryWarning(entry, line)
+        if (warning) {
+          this.replay.blocked = true
+          this.parseWarnings.push(warning)
+        } else entries.push(entry)
       } catch (error) {
         this.replay.blocked = true
         this.parseWarnings.push({
@@ -245,7 +256,9 @@ export class IncrementalSqliteIndexer {
         if (insert.run(...eventRow(entry, this.eventCount)).changes > 0) this.apply(entry)
       }
       this.rawEventCount += entries.length
-      this.journal = { ...previous, size: journal.size, mtimeMs: journal.mtimeMs, offset: previous.offset + complete, lines: line }
+      this.journal = { ...previous, size: loaded.size, mtimeMs: loaded.mtimeMs,
+        offset: previous.offset + complete, lines: line,
+        digest: prefixDigest(Buffer.concat([verified.bytes, chunk])) }
       this.persistTotals()
     }))
     return true
@@ -378,4 +391,8 @@ function countNewlines(bytes, end) {
   let count = 0
   for (let index = 0; index < end; index += 1) if (bytes[index] === NEWLINE) count += 1
   return count
+}
+
+function prefixDigest(bytes) {
+  return createHash('sha256').update(bytes).digest('hex')
 }

@@ -2,14 +2,14 @@ import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { expect, it } from 'vitest'
 
-it('pins the published 0.3.0 SDK and imports collector and server entrypoints in plain Node', async () => {
+it('pins the published 0.3.2 SDK and imports collector and server entrypoints in plain Node', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
   const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url)))
-  expect(manifest.dependencies['@duskdomains/sdk']).toBe('npm:@jsr/duskdomains__sdk@0.3.0')
+  expect(manifest.dependencies['@duskdomains/sdk']).toBe('npm:@jsr/duskdomains__sdk@0.3.2')
   expect(lock.packages[''].dependencies['@duskdomains/sdk']).toBe(manifest.dependencies['@duskdomains/sdk'])
   expect(lock.packages['node_modules/@duskdomains/sdk']).toMatchObject({
-    name: '@jsr/duskdomains__sdk', version: '0.3.0',
-    resolved: 'https://npm.jsr.io/~/11/@jsr/duskdomains__sdk/0.3.0.tgz',
+    name: '@jsr/duskdomains__sdk', version: '0.3.2',
+    resolved: 'https://npm.jsr.io/~/11/@jsr/duskdomains__sdk/0.3.2.tgz',
   })
   const script = `
     import assert from 'node:assert/strict'

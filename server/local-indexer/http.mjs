@@ -3,6 +3,7 @@ import { SUPPORTED_ENDPOINT_TYPES } from './constants.mjs'
 
 export const LOCAL_INDEXER_ROUTES = new Set([
   '/health',
+  '/controllers',
   '/commitment',
   '/search',
   '/names',

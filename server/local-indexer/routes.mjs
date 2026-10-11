@@ -168,6 +168,11 @@ async function handleRequest(storeProvider, request, response, options) {
       return
     }
 
+    if (pathname === '/controllers') {
+      const result = paginate(store.controllers ?? [], page, item => listKey(pathname, item))
+      reply(200, { controllers: result.items, version: store.controllerVersion ?? '1', nextCursor: result.nextCursor })
+      return
+    }
     if (pathname === '/commitment') {
       const commitment = routeParams.controller
         ? store.commitmentsByKey?.get(commitmentKey(routeParams.controller, routeParams.commitment))

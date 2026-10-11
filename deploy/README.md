@@ -233,7 +233,7 @@ Retain `manifest.json`, `indexer.env` and `contracts/` together. `indexer.env` u
 `DUSK_DOMAINS_{DIRECTORY,POLICY,STORE,VAULT,RESOLVER,MARKETPLACE}_CONTRACT_ID`
 and matching `_DRIVER_URL=/contracts/<crate>.<sha256>.data-driver.wasm` values.
 The collector loads local files from the configured driver directory and checks
-the SHA-256 filename before using SDK 0.3.0's lossless driver decoder. It never
+the SHA-256 filename before using SDK 0.3.2's lossless driver decoder. It never
 fetches driver URLs. All six IDs are required, including initialization events
 before the directory's deployment. Later committed directory admissions extend
 collection to new stores, resolvers, policies and markets using their v1 role
@@ -245,7 +245,7 @@ at its release's `DUSK_DOMAINS_FROM_BLOCK`, let it catch up, then start/check it
 API. Do not append frozen receipts to an old journal or reuse an old SQLite DB.
 The collector stores a complete receipt per row; `eventCount` now counts rows.
 
-The dependency and lockfile pin the published `npm:@jsr/duskdomains__sdk@0.3.0`
+The dependency and lockfile pin the published `npm:@jsr/duskdomains__sdk@0.3.2`
 package. The committed `.npmrc` maps `@jsr` to its package registry for `npm ci`
 in deployment checkouts and Docker builds.
 

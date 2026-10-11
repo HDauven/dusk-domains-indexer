@@ -269,6 +269,7 @@ function healthyPayload() {
     },
     routes: [
       '/health',
+      '/controllers',
       '/search',
       '/resolve',
       '/verify',

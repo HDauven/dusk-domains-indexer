@@ -14,10 +14,10 @@ it.each(Object.entries(indexerEventCatalog))('round-trips the golden %s event th
   const restored = decodeReceipt(JSON.parse(JSON.stringify(encodeReceipt(r))))
   expect(wireValue(spec.type, restored.events[0].data)).toEqual(event.data)
 })
-it('decodes actual frozen store golden rkyv with the lossless WASM data driver', async () => {
-  const driver = await loadDataDriver(gunzipSync(readFileSync(new URL('../../scripts/test-fixtures/frozen/store.wasm.gz', import.meta.url))))
+it.each(['store', 'directory'])('decodes actual frozen %s golden rkyv with the lossless WASM data driver', async role => {
+  const driver = await loadDataDriver(gunzipSync(readFileSync(new URL(`../../scripts/test-fixtures/frozen/${role}.wasm.gz`, import.meta.url))))
   for (const [topic, spec] of Object.entries(indexerEventCatalog)) {
-    if (!['store', '*'].includes(spec.role)) continue
+    if (![role, '*'].includes(spec.role)) continue
     const g = Object.values(golden).find(row => row.type === spec.type)
     expect(wireValue(spec.type, driver.decodeEvent(topic, Buffer.from(g.rkyv, 'hex')))).toEqual(wireValue(spec.type, g.json))
   }

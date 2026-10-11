@@ -20,7 +20,7 @@ export function admissions(receipt, scope, directoryId) {
       if (b.args.initial_market) result.push(['marketplace', b.args.initial_market, e.ordinal])
     } else if (e.topic === 'action_applied') {
       if (b.admission) {
-        const role = 'AddStore' in b.action || 'SetAcceptsMoves' in b.action ? 'store'
+        const role = 'AddStore' in b.action || 'SetAcceptsMoves' in b.action || 'SetRetiring' in b.action ? 'store'
           : 'AddResolver' in b.action ? 'resolver' : 'SetPolicy' in b.action ? 'policy' : null
         assert(role, 'Unknown admission action: upgrade the indexer')
         result.push([role, b.admission, e.ordinal])

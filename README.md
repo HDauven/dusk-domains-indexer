@@ -52,6 +52,15 @@ PUBLICATION_STEPS=2048 npm test -- server/local-indexer/publication-interleaving
 
 Failures report the seed, store mode, action index and recent transition trace.
 
+Property tests (`*.fuzz.test.mjs`, fast-check) send arbitrary paths, queries,
+methods and bodies to every route on port 0, including `POST /verify` against
+adversarial DNS answers, and feed truncated, reordered, duplicated and wrongly
+typed journal rows to the event-log, SQLite and incremental SQLite stores.
+`npm test` runs them with a fixed seed. For a long campaign, use
+`npm run test:fuzz -- --duration 900 --numRuns 100 --seed 20261010`; counts land
+in `.fuzz/`. Any minimized regression becomes a named behavior test in the
+normal suite.
+
 ## Documentation
 
 - [HTTP API, pagination, rate limits and CORS](docs/indexer-api.md)
@@ -69,4 +78,4 @@ For separate mainnet and testnet releases, see [the two-instance deployment guid
 
 Licensed under [MIT](LICENSE).
 
-The frozen collector follows the directory, policy, admitted store/resolver shards, vault and marketplace from the first deployment block. SDK 0.3.0 projects complete finalized receipts. See [API migration shapes](docs/indexer-api.md) and [cutover instructions](deploy/README.md#frozen-deployment-cutover). The SDK is pinned to the published JSR 0.3.0 package through its npm alias.
+The frozen collector follows the directory, policy, admitted store/resolver shards, vault and marketplace from the first deployment block. SDK 0.3.2 projects complete finalized receipts. See [API migration shapes](docs/indexer-api.md) and [cutover instructions](deploy/README.md#frozen-deployment-cutover). The SDK is pinned to the published JSR 0.3.2 package through its npm alias.

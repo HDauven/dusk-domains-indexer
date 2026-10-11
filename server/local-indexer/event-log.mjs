@@ -4,7 +4,15 @@ export function parseEventLog(text) {
   if (trimmed.startsWith('[')) {
     try {
       const entries = JSON.parse(trimmed)
-      if (Array.isArray(entries)) return { entries, warnings: [] }
+      if (Array.isArray(entries)) {
+        const warnings = []
+        const valid = entries.filter((entry, index) => {
+          const warning = eventLogEntryWarning(entry, index + 1)
+          if (warning) warnings.push(warning)
+          return !warning
+        })
+        return { entries: valid, warnings }
+      }
       return {
         entries: [],
         warnings: [{
@@ -32,7 +40,10 @@ export function parseEventLog(text) {
     if (!line) continue
 
     try {
-      entries.push(JSON.parse(line))
+      const entry = JSON.parse(line)
+      const warning = eventLogEntryWarning(entry, index + 1)
+      if (warning) warnings.push(warning)
+      else entries.push(entry)
     } catch (error) {
       warnings.push({
         code: 'invalid_event_log_row',
@@ -43,6 +54,35 @@ export function parseEventLog(text) {
   }
 
   return { entries, warnings }
+}
+
+const textMetadata = ['eventId', 'txId', 'blockHash', 'chainId', 'source', 'timeSource', 'contractKey', 'contractId', 'observedAt']
+const integerMetadata = ['blockHeight', 'observedBlockHeight', 'eventIndex']
+const eventTimestampFields = ['updatedAt', 'createdAt', 'observedAt']
+
+/** Validate journal metadata before a storage backend can replay or bind it. */
+export function eventLogEntryWarning(entry, line) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return {
+    code: 'invalid_event_log_envelope', line, message: 'Event log row must be an object.',
+  }
+  const meta = entry.meta ?? {}
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return {
+    code: 'invalid_event_log_metadata', line, message: 'Event log metadata must be an object.',
+  }
+  const invalidText = textMetadata.find(field => Object.hasOwn(meta, field)
+    && meta[field] !== null && typeof meta[field] !== 'string')
+  const invalidInteger = integerMetadata.find(field => Object.hasOwn(meta, field)
+    && meta[field] !== null && (!Number.isSafeInteger(meta[field]) || meta[field] < 0))
+  const event = entry.event ?? entry
+  const invalidTimestamp = event && typeof event === 'object' && !Array.isArray(event)
+    ? eventTimestampFields.find(field => Object.hasOwn(event, field)
+      && event[field] !== null && typeof event[field] !== 'string')
+    : null
+  const field = invalidText ?? invalidInteger ?? invalidTimestamp
+  return field ? {
+    code: 'invalid_event_log_metadata', line,
+    message: `Event log ${invalidTimestamp === field ? 'timestamp' : 'metadata'} field ${field} has an invalid type or value.`,
+  } : null
 }
 
 export function dedupeEventLogEntries(entries) {

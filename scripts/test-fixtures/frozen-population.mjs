@@ -1,5 +1,6 @@
 // Representative receipt populations shared by publication regressions and the benchmark.
 import { recordsDigest } from '@duskdomains/sdk/projection'
+import { authority } from '@duskdomains/sdk'
 import { makeName, moveHistory, envelope, receipt, registered, ref, bytes, sample, order } from './frozen-events.mjs'
 
 export function populationBytes(index, length = 32) {
@@ -14,7 +15,8 @@ export function* populationEntries(size, from = 0) {
   for (let i = from; i < from + size; i++) {
     const height = BigInt(100 + i), endpoint = populationBytes(i, 96)
     const beneficiary = { kind: 'Contract', bytes: populationBytes(i) }
-    const name = { ...makeName(`population${i}.dusk`), referrer: beneficiary,
+    const name = { ...makeName(`population${i}.dusk`),
+      manager: authority({ kind: 'Moonlight', bytes: endpoint }), referrer: beneficiary,
       expires_at: 50000000n, grace_end: 50300000n }
     const records = [{ key: 'moonlight_address', value: endpoint, ttl_seconds: 300n, updated_at: height },
       { key: 'profile/display', value: [...Buffer.from(`Name ${i}`)], ttl_seconds: 300n, updated_at: height }]

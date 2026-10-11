@@ -260,6 +260,8 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
     const name = s.names[nameStateKey(store, p.name.key)]
     if (!name || name.incarnation.generation !== p.name.incarnation.generation
       || name.incarnation.serial !== p.name.incarnation.serial || height >= name.expires_at || !name.records) continue
+    const endpointAuthority = h(authority({ kind: 'Moonlight', bytes: p.endpoint }))
+    if (h(name.owner) !== endpointAuthority && h(name.manager) !== endpointAuthority) continue
     const resolver = resolverFor(store, name)
     assert(resolver.records, 'Incomplete event history: primary resolver history')
     assert.equal(resolver.health, 'ok', 'Invalid primary records digest')

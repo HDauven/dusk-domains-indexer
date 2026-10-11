@@ -48,7 +48,7 @@ it.each([20, 40])('publishes %s populated names with bounded passes over every s
   expect.soft(registrationReads).toBeLessThanOrEqual(3 * (size + 1))
 })
 
-it.each(['expired', 'generation', 'serial', 'missing name', 'no pointer', 'different endpoint', 'missing slot', 'bad digest', 'duplicate endpoint'])(
+it.each(['expired', 'generation', 'serial', 'missing name', 'no pointer', 'authority', 'different endpoint', 'missing slot', 'bad digest', 'duplicate endpoint'])(
   'matches SDK primary verification for %s', kind => {
     const state = population(1), s = state.projection, endpoint = populationBytes(0, 96)
     const [primaryKey, primary] = Object.entries(s.primaries).find(([, p]) => hex(p.endpoint) === hex(endpoint))
@@ -60,6 +60,7 @@ it.each(['expired', 'generation', 'serial', 'missing name', 'no pointer', 'diffe
     if (kind === 'serial') name.incarnation.serial++
     if (kind === 'missing name') delete s.names[nameKey]
     if (kind === 'no pointer') name.records = null
+    if (kind === 'authority') name.manager = bytes(11)
     if (kind === 'different endpoint') primary.endpoint = populationBytes(99, 96)
     if (kind === 'missing slot') delete s.slots[slotKey]
     if (kind === 'bad digest') name.records.digest = bytes(0)

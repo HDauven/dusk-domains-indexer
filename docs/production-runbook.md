@@ -70,7 +70,7 @@ cd /opt/dusk-domains-indexer
 npm ci
 ```
 
-The SDK is pinned to `npm:@jsr/duskdomains__sdk@0.3.0`. Run `npm ci` with the committed lockfile and `.npmrc` to install the published JSR package.
+The SDK is pinned to `npm:@jsr/duskdomains__sdk@0.3.2`. Run `npm ci` with the committed lockfile and `.npmrc` to install the published JSR package.
 
 Replay retains the SDK effect log to build history from exactly the accepted projection effects, including emitters admitted within a receipt. Effects, receipt membership and indexer activity/history accumulate for the process lifetime. Plan memory for retained history; restarting replays it rather than pruning it. History ingestion appends in receipt order; publication copies histories into newest-first order, avoiding repeated shifts for concentrated edits. No full projection snapshot is taken per receipt.
 

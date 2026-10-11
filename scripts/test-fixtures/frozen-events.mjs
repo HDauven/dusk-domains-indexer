@@ -1,7 +1,7 @@
 import { encodeReceipt } from '../../server/local-indexer/receipt-codec.mjs'
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
-import { parseJson, wireValue, nameKey, launchPolicyConfig, hex, encodeBase58 } from '@duskdomains/sdk'
+import { authority, parseJson, wireValue, nameKey, launchPolicyConfig, hex, encodeBase58 } from '@duskdomains/sdk'
 import { recordsDigest, moveManifestDigest } from '@duskdomains/sdk/projection'
 import { jsonSafe } from '../../server/local-indexer/frozen-view.mjs'
 const golden = parseJson(gunzipSync(readFileSync(new URL('./frozen/frozen-v1.json.gz', import.meta.url))).toString())
@@ -29,7 +29,8 @@ export function records(value) {
     ...(value ? [{ key: 'website', value: [...new TextEncoder().encode(value)], ttl_seconds: 300n, updated_at: 11n }] : [])]
 }
 export function rootName(value) {
-  return { ...makeName(), records: { resolver: bytes(5), epoch: 1n, count: records(value).length, digest: recordsDigest(records(value)) } }
+  return { ...makeName(), manager: authority({ kind: 'Moonlight', bytes: endpoint }),
+    records: { resolver: bytes(5), epoch: 1n, count: records(value).length, digest: recordsDigest(records(value)) } }
 }
 export function childName() {
   return { ...makeName('x.aurora.dusk', 2n), subname: { parent: nameKey('aurora.dusk').node, depth: 1, expiry_policy: 'InheritsParent', created_at: 14n } }
@@ -145,7 +146,7 @@ export function claimEvents(height = 17) {
 }
 export function order(kind = 'Fixed', number = 1n, store = 4) {
   return { terms: { version: 1, directory: bytes(1), store: bytes(store), name: ref(rootName()), id: number, kind,
-    amount_lux: '20000000000', fee_bps: 250, seller: bytes(10), seller_manager: bytes(11), seller_recipient: endpoint,
+    amount_lux: '20000000000', fee_bps: 250, seller: bytes(10), seller_manager: rootName().manager, seller_recipient: endpoint,
     buyer: kind === 'Offer' ? bytes(14) : null, buyer_manager: kind === 'Offer' ? bytes(14) : null,
     deadline: 500n, duration_blocks: kind === 'Auction' ? 360n : 0n, referral: null },
     nonce: 4n, status: 'Open', payer: null, highest: null, started_at: null, end: null, maximum_end: null, bid_count: 0 }

@@ -58,8 +58,8 @@ adversarial DNS answers, and feed truncated, reordered, duplicated and wrongly
 typed journal rows to the event-log, SQLite and incremental SQLite stores.
 `npm test` runs them with a fixed seed. For a long campaign, use
 `npm run test:fuzz -- --duration 900 --numRuns 100 --seed 20261010`; counts land
-in `.fuzz/`. Open findings are pinned as intentionally failing `finding_*`
-tests, excluded from `npm test`, and reproduced with `npm run test:findings`.
+in `.fuzz/`. Any minimized regression becomes a named behavior test in the
+normal suite.
 
 ## Documentation
 
@@ -78,4 +78,4 @@ For separate mainnet and testnet releases, see [the two-instance deployment guid
 
 Licensed under [MIT](LICENSE).
 
-The frozen collector follows the directory, policy, admitted store/resolver shards, vault and marketplace from the first deployment block. SDK 0.3.0 projects complete finalized receipts. See [API migration shapes](docs/indexer-api.md) and [cutover instructions](deploy/README.md#frozen-deployment-cutover). The SDK is pinned to the published JSR 0.3.0 package through its npm alias.
+The frozen collector follows the directory, policy, admitted store/resolver shards, vault and marketplace from the first deployment block. SDK 0.3.2 projects complete finalized receipts. See [API migration shapes](docs/indexer-api.md) and [cutover instructions](deploy/README.md#frozen-deployment-cutover). The SDK is pinned to the published JSR 0.3.2 package through its npm alias.

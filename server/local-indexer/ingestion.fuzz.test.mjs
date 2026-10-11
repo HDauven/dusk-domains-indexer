@@ -28,7 +28,7 @@ const jsonl = rows => rows.map(row => (typeof row === 'string' ? row : JSON.stri
 const viewKeys = Object.keys(replayEventLog(createEventLog(), [], '2026-10-07T12:00:00Z', 100))
 const published = store => Object.fromEntries(viewKeys.map(key => [key, store[key]]))
 // Documented repair: atomically replace the journal (an in-place rewrite of
-// committed bytes is finding_incremental_in_place_rewrite).
+// committed bytes is covered by the in-place rewrite regression).
 async function replaceJournal(file, contents) {
   await writeFile(`${file}.repair`, contents)
   await rename(`${file}.repair`, file)
@@ -77,15 +77,6 @@ function agree(views, retained, oldHeight) {
     }
   }
   return rejected[0]
-}
-
-// Open finding: event-log replay accepts malformed metadata that the SQLite
-// persistence boundary cannot bind. Keep exercising repair and later mutations
-// without letting this known divergence hide another counterexample.
-function knownMetadataBindDivergence(views) {
-  const rejectedAtBind = view => view.warnings.some(w => w.code === 'publication_candidate_rejected'
-    && w.error === 'TypeError' && /cannot be bound to SQLite parameter/.test(w.message))
-  return views.eventLog.warnings.length === 0 && rejectedAtBind(views.sqlite) && rejectedAtBind(views.incremental)
 }
 
 it('ingestion: generated valid histories have identical event-log, SQLite and incremental publications', async () => {
@@ -242,17 +233,7 @@ it('ingestion: adversarial archive rows never corrupt published state in any sto
         if (commit) await commitJournal(eventLogFile, { scannedBlockHeight: 111, currentBlockHeight: 111 }, cursorFile)
         const retained = structuredClone(published(before.eventLog))
         const views = await reload(stores)
-        const metadataBind = knownMetadataBindDivergence(views)
-        if (metadataBind) {
-          count(metrics, 'known:sqlite-metadata-bind-divergence')
-          if (process.env.FUZZ_REPORT_KNOWN === '1')
-            throw new Error('Known finding sqlite-metadata-bind-divergence')
-          for (const mode of ['sqlite', 'incremental']) {
-            expect(published(views[mode])).toEqual(retained)
-            expect(views[mode].projectionBlockHeight).toBe(100)
-          }
-        }
-        const rejected = metadataBind || agree(views, retained, 100)
+        const rejected = agree(views, retained, 100)
         count(metrics, `${commit ? 'committed' : 'uncommitted'}:${rejected ? 'rejected' : 'accepted'}`)
         if (!commit) for (const view of Object.values(views)) expect(published(view)).toEqual(retained)
         if (!rejected) {

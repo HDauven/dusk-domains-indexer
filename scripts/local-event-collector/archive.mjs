@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { encodeReceipt, decodeReceipt as decodeStoredReceipt } from '../../server/local-indexer/receipt-codec.mjs'
 import { loadDataDriver } from '@duskdomains/sdk'
-import { decodeReceipt, followAdmissions, jsonSafe } from './frozen.mjs'
+import { decodeReceipt, followAdmissions, jsonSafe, policyAdmissions } from './frozen.mjs'
+import { fetchPolicyInitialization, initializationRow, unavailableInitialization } from './deployment.mjs'
 import { parseEventLog } from '../../server/local-indexer/event-log.mjs'
 import { summarizeEventLogText } from './cursor-summary.mjs'
 
@@ -33,7 +34,7 @@ export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wa
   }
 }
 
-export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep, loadDriver = loadDataDriver } = {}) {
+export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep, loadDriver = loadDataDriver, now = Date.now } = {}) {
   integer(config.fromBlock)
   assert(config.fromBlock > 0, '--from-block must be positive')
   const query = text => queryArchive(config.nodeUrl, text, fetcher, { signal, wait })
@@ -45,7 +46,26 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
   }
   const directoryId = config.contracts.find(c => c.key === 'directory')?.contractId
   assert(directoryId, 'Frozen collector requires a directory')
+  const vaultId = config.contracts.find(c => c.key === 'vault')?.contractId
   const projectionOptions = { directoryId, contracts: Object.fromEntries(config.contracts.map(c => [c.contractId, c.key])) }
+  // Release-scoped policies journal their own initialization. Every later admitted policy
+  // needs its deployment initialization journaled after the admitting receipt. `admitted` maps
+  // each policy to its current admission and the collected block that admitted it.
+  let policies = { admitted: new Map(), initialized: new Set(config.contracts.filter(c => c.key === 'policy').map(c => c.contractId)), status: new Map() }
+  const admit = (a, height, hash) => policies.admitted.set(a.id, { admission: a.admission,
+    block: Number.isSafeInteger(height) && /^[0-9a-f]{64}$/.test(hash ?? '') ? { height, hash } : null })
+  // Deployment heights already linked to the collected chain; finalized blocks never change.
+  const linked = new Map()
+  const clonePolicies = p => ({ admitted: new Map(p.admitted), initialized: new Set(p.initialized), status: new Map(p.status) })
+  // A rejection waits for its retry time, if it has one; a mismatch waits for a re-admission or restart.
+  const pendingPolicies = () => [...policies.admitted.keys()].filter(id => {
+    const status = policies.status.get(id)
+    return !policies.initialized.has(id) && (status?.status !== 'rejected' || (status.retryAt && now() >= Date.parse(status.retryAt)))
+  })
+  const noteInitialization = initialization => {
+    policies.initialized.add(initialization.contractId)
+    policies.status.set(initialization.contractId, { status: 'authenticated', transaction: initialization.transaction, blockHeight: initialization.blockHeight })
+  }
   const scope = JSON.stringify({ format: 'frozen-receipts-v1', chainId: config.chainId ?? null,
     schema: config.eventSchemaVersion ?? '1', contracts: config.contracts.map(c => [c.key, c.contractId, c.driverHash ?? null]).sort() })
   await mkdir(dirname(config.eventLog), { recursive: true })
@@ -75,7 +95,10 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
       assert(!committed || committed.endsWith('\n'), 'Cursor splits a journal row')
       for (const entry of parsed.entries) {
         assert.equal(entry.event?.type, 'frozen_receipt', 'Legacy journal: start fresh frozen paths')
-        followAdmissions(decodeStoredReceipt(entry.event.receipt), contracts, directoryId)
+        if (entry.event.initialization) { noteInitialization(entry.event.initialization); continue }
+        const receipt = decodeStoredReceipt(entry.event.receipt)
+        for (const a of policyAdmissions(receipt, contracts, directoryId)) admit(a, entry.meta?.blockHeight, entry.meta?.blockHash)
+        followAdmissions(receipt, contracts, directoryId)
       }
     } else {
       assert.equal(size, 0, 'Unbound/legacy journal: use NEW journal/cursor/SQLite paths for archive replay')
@@ -83,20 +106,64 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         fromBlock: config.fromBlock, scannedBlockHeight: config.fromBlock - 1, scannedBlockHash: null,
         eventLogBytes: 0, startedAt: new Date().toISOString() }
     }
-    const anchor = (await query(`{block(height:${cursor.scannedBlockHeight}){header{height hash}}}`)).block?.header
+    const anchor = (await query(`{block(height:${cursor.scannedBlockHeight}){header{height hash timestamp}}}`)).block?.header
     assert(anchor && anchor.height === cursor.scannedBlockHeight, 'Committed cursor block is unavailable')
     hexHash(anchor.hash)
     assert(!cursor.scannedBlockHash || cursor.scannedBlockHash === anchor.hash, 'Committed block hash changed; refusing to mix chains')
     cursor.scannedBlockHash = anchor.hash
+    // The last committed block: an initialization journaled outside a new block uses it.
+    let committedHeader = anchor
     // A crash can leave appended bytes without a committed cursor. Roll back only that suffix, then refetch it.
     await journal.truncate(cursor.eventLogBytes)
     await journal.sync()
     await syncDirectory(dirname(config.eventLog))
     const replayedEventCount = cursor.eventCount
     const archiveApi = await detectArchiveApi(query)
-    await persist({ ...cursor, archiveApi, replayedEventCount, status: 'catching-up', reason: null })
+    await persist({ ...cursor, archiveApi, replayedEventCount, status: 'catching-up', reason: null,
+      policyInitializations: Object.fromEntries(policies.status) })
+    // The deployment block's events read like any scanned block: same ordinals and receipt ID.
+    const blockEvents = async block => {
+      const [events] = archiveApi === 'event-batch' ? await eventBatches(query, [block]) : await finalizedBlockEvents(query, [block])
+      assert(events, `Archive events unavailable at ${block.header.height}`)
+      return events
+    }
+    // `batch` holds the headers this poll verified; with the committed block and the admitting
+    // block they are the collected chain a deployment's block must link to.
+    const journalInitialization = async (policy, header, entries, batch = []) => {
+      const { admission, block } = policies.admitted.get(policy)
+      const verified = new Map([...linked, [committedHeader.height, committedHeader.hash], ...batch.map(b => [b.header.height, b.header.hash])])
+      if (block) verified.set(block.height, block.hash)
+      let result
+      try {
+        result = await fetchPolicyInitialization({ query, blockEvents, policy, admission, admittedAt: admission.admitted_at,
+          canonicalHash: async height => {
+            const hash = await linkedHash(query, height, verified)
+            linked.set(height, hash)
+            return hash
+          },
+          driver: [...contracts.values()].find(c => c.key === 'policy').driver, directoryId, vaultId })
+      } catch (error) {
+        // Only this policy waits; collection and every other projection go on.
+        if (signal?.aborted) throw error
+        result = { rejected: { code: 'lookup_failed', message: error.message } }
+      }
+      if (result.rejected) {
+        // Fail closed: the API serves no configuration for this policy meanwhile. An archive that lacks
+        // the deployment yet, answers for another block or fails is asked again at 5 s, then four
+        // times as long each time, up to an hour.
+        const previous = policies.status.get(policy), attempts = (previous?.status === 'rejected' ? previous.attempts : 0) + 1
+        const retryAt = unavailableInitialization.has(result.rejected.code)
+          ? new Date(now() + Math.min(5_000 * 4 ** (attempts - 1), 3_600_000)).toISOString() : undefined
+        policies.status.set(policy, { status: 'rejected', ...result.rejected, attempts, ...(retryAt ? { retryAt } : {}) })
+        console.error(`Policy ${policy} initialization not authenticated: ${result.rejected.message}${retryAt ? `; retrying at ${retryAt}` : ''}`)
+        return
+      }
+      entries.push(initializationRow(result, header, { source: archiveSource, chainId: config.chainId, directoryId, projectionOptions }))
+      noteInitialization(result.initialization)
+    }
     while (!signal?.aborted) {
       const committedContracts = new Map(contracts)
+      const committedPolicies = clonePolicies(policies)
       const committedEventCount = cursor.eventCount
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
@@ -108,8 +175,11 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         assert(finalizedHeight <= currentBlockHeight && finalizedHeight >= cursor.scannedBlockHeight, 'Finalized head is behind the committed cursor')
         const to = Math.min(finalizedHeight, cursor.scannedBlockHeight + batchSize)
         const entries = []
+        // Admitted before this collector version or before a restart: journal at the committed block.
+        for (const policy of pendingPolicies()) await journalInitialization(policy, committedHeader, entries)
         let scannedBlockHeight = cursor.scannedBlockHeight
         let scannedBlockHash = cursor.scannedBlockHash
+        let lastHeader = null
         if (to > scannedBlockHeight) {
           const from = scannedBlockHeight + 1
           const fields = archiveApi === 'event-batch' ? '' : ' transactions{id}'
@@ -140,9 +210,19 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
                   observedAt: new Date(header.timestamp * 1000).toISOString(), blockHeight: header.height,
                   blockHash: header.hash, txId, eventIndex: rawEvents[0].ordinal, eventId: receipt.id,
                   contractKey: 'frozen', contractId: directoryId } }))
+              // A re-admission retries a rejected initialization against its new admission.
+              for (const a of policyAdmissions(receipt, contracts, directoryId)) {
+                admit(a, header.height, header.hash)
+                if (policies.status.get(a.id)?.status === 'rejected') policies.status.delete(a.id)
+              }
+              // The policy initialized before its admission: journal that directly after the admission.
+              for (const policy of pendingPolicies()) await journalInitialization(policy, header, entries, blocks)
             }
           }
-          if (batches.length) ({ height: scannedBlockHeight, hash: scannedBlockHash } = blocks[batches.length - 1].header)
+          if (batches.length) {
+            lastHeader = blocks[batches.length - 1].header
+            ;({ height: scannedBlockHeight, hash: scannedBlockHash } = lastHeader)
+          }
         } else {
           assert.equal(scannedBlockHash, finalizedHash, 'Finalized head hash mismatch')
         }
@@ -157,12 +237,15 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
           ...(last ? { lastEventAt: last.meta.observedAt, lastContract: last.meta.contractKey,
             lastEventName: last.event.type, lastTxId: last.meta.txId, lastBlockHeight: last.meta.blockHeight } : {}),
           status: scannedBlockHeight === finalizedHeight ? 'running' : 'catching-up',
-          reason: scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null })
+          reason: scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null,
+          policyInitializations: Object.fromEntries(policies.status) })
+        if (lastHeader) committedHeader = lastHeader
         if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
       } catch (error) {
         if (cursor.eventCount === committedEventCount) {
           contracts.clear()
           for (const [id, contract] of committedContracts) contracts.set(id, contract)
+          policies = committedPolicies
         }
         // Never advance past a missing archive, invalid payload, or failed durable write.
         await journal.truncate(cursor.eventLogBytes)
@@ -187,6 +270,35 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
     cursor = next
     await syncDirectory(dirname(config.cursorFile))
   }
+}
+
+/**
+ * The collected chain's block hash at `height`. `verified` maps heights to hashes this collector
+ * verified (scanned and linked, or committed); one of them must lie at or above `height`. Below the
+ * nearest one, the archive's headers must link to it by prevBlockHash, exactly as the scan links
+ * each batch, so a block the chain did not keep can't stand in. Throws when they don't.
+ */
+export async function linkedHash(query, height, verified) {
+  integer(height)
+  let anchor = null
+  for (const known of verified.keys()) if (known >= height && (anchor === null || known < anchor)) anchor = known
+  assert(anchor !== null, `No collected block at or above ${height}`)
+  if (anchor === height) return verified.get(height)
+  let previous = null, found = null
+  for (let from = height; from <= anchor; from += batchSize) {
+    const to = Math.min(from + batchSize - 1, anchor)
+    const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash}}}`)).blocks
+    assert(Array.isArray(blocks) && blocks.length === to - from + 1, 'Incomplete block range')
+    for (const [i, block] of blocks.entries()) {
+      assert.equal(block.header?.height, from + i, 'Out-of-order block range')
+      hexHash(block.header.hash)
+      if (previous !== null) assert.equal(block.header.prevBlockHash, previous, `Block ${from + i} does not link to block ${from + i - 1}`)
+      previous = block.header.hash
+      if (from + i === height) found = previous
+    }
+  }
+  assert.equal(previous, verified.get(anchor), `Block ${height} does not link to the collected block at ${anchor}`)
+  return found
 }
 
 // rusk-private #290 adds contractEventBatch; Rusk 1.7 releases predate it.

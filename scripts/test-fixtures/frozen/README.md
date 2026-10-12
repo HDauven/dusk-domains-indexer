@@ -22,3 +22,14 @@ The digest tests additionally transcribe pinned results from
 Refresh fixtures from reviewed protocol output; never download deployment drivers
 inside the test suite. Production drivers always come from the release manifest
 and are hash-verified before instantiation.
+
+`policy.wasm.gz` is the policy data driver from the same build (its SHA-256 is the
+`policy` entry of `drivers.json`); tests use it as the canonical init archive encoder.
+
+`policy-deployment.json.gz` holds archive responses recorded from a local Rusk 1.7.1
+(`2e40199`) archive node, chain `dusk:0`, for a frozen policy that protocol
+`deploy-frozen` deployed at block 142: `finalizedEvents` for the policy, its deployment
+transaction (`tx`, including the Boreas `raw` bytes), block 142 with its `contractEvents`
+and `checkBlock`, the directory's genesis admission of the policy, the deployment binding,
+and the release manifest's owner, nonce, code hash and init hash. Only public chain data
+is recorded.

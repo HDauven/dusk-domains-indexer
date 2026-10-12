@@ -12,6 +12,16 @@ This service is the Dusk Domains read API. It is not the archive node and it doe
 
 The indexer can be rebuilt from the event journal and the archive-node snapshot that covers the deployment start height.
 
+After a governance fee change (`SetPolicy`), confirm `/fee-config` serves the new
+policy's prices and `/health` → `cursor.policyInitializations` marks it
+`authenticated`. Until then the API shows registrations as paused with no prices for
+that policy; every other route stays current. A `rejected` entry with a `retryAt` means
+the archive did not have the deployment yet, answered for a block the collected chain
+does not hold (`deployment_not_canonical`, `deployment_not_included`), or a lookup failed
+(`lookup_failed`), and the collector asks again; check the archive node if it persists.
+Any other `rejected` code means the deployment does not match its admission and stays
+fail-closed. See [policy replacement](indexer-api.md#policy-replacement).
+
 `/health` must be treated as the SDK/indexer handshake. It exposes the indexer package version, pinned SDK dependency, API version, event schema version, read-model schema version, SQLite schema version, and the deployment binding derived from indexed event metadata.
 
 ## Public HTTP configuration

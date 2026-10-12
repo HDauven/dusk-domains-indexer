@@ -18,8 +18,10 @@ Copy the deployment bundle's `indexer.env`, `manifest.json` and `contracts/` tog
 The collector reads the six frozen contract IDs, immutable driver filenames, schema
 version and first deployment block from `indexer.env`; retain that block on restart.
 The archive must serve `lastBlockPair`/`blocks` and either `contractEventBatch`
-or finalized `checkBlock`/`contractEvents`. `npm run backfill:check -- --node-url <archive> --json`
-probes that API; it does not prove historical retention.
+or finalized `checkBlock`/`contractEvents`, plus `finalizedEvents` and `tx` to
+authenticate a policy admitted after launch. `npm run backfill:check -- --node-url <archive> --json`
+probes the event-batch API; it does not probe `finalizedEvents` or `tx` and does not prove
+historical retention.
 
 Run the API in a second terminal:
 
@@ -72,7 +74,9 @@ normal suite.
 `server/local-indexer` owns persistence, health, HTTP and chain-height read views.
 `scripts` owns collection and operator utilities; `deploy/systemd` supplies service
 units. Event projection comes from `@duskdomains/sdk/projection`, topic definitions from
-`@duskdomains/sdk/event-catalog`, and policy from the selected policy initialization.
+`@duskdomains/sdk/event-catalog`, and policy from the selected policy's initialization;
+a policy selected after launch is served only from its deployment initialization,
+authenticated against its admission ([policy replacement](docs/indexer-api.md#policy-replacement)).
 
 For separate mainnet and testnet releases, see [the two-instance deployment guide](deploy/README.md).
 

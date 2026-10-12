@@ -390,6 +390,11 @@ function publicHealth(store, page, logger, requestId) {
   if (health.cursor) health.cursor = {
     ...health.cursor,
     reason: health.cursor.reason ? 'Collector is not ready; consult server logs.' : null,
+    // Status and code stay public; the collector logs each rejection's detail.
+    ...(health.cursor.policyInitializations && typeof health.cursor.policyInitializations === 'object' ? {
+      policyInitializations: Object.fromEntries(Object.entries(health.cursor.policyInitializations).map(([policy, row]) =>
+        [policy, { status: row?.status, code: row?.code, retryAt: row?.retryAt, transaction: row?.transaction, blockHeight: row?.blockHeight }])),
+    } : {}),
   }
   if (health.durability) health.durability = {
     ...health.durability,

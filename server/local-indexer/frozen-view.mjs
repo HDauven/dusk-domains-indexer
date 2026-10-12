@@ -7,6 +7,7 @@ import { indexHoldingsByAuthority, indexNamesByAuthority } from './name-authorit
 import { lifecycleClock } from './read-models/lifecycle.mjs'
 import { recordIndexKey, commitmentKey, marketplaceOfferKey, emptyMarketplaceConfig, emptyTreasuryState, appendRecordHistory } from './view-utils.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
+import { admitPolicyInitialization, admittedGenesisInitialization, admittedInitialization } from './policy-initialization.mjs'
 
 const h = v => `0x${typeof v === 'string' ? v.replace(/^0x/, '') : hex(v)}`
 const integer = v => v == null ? null : BigInt(v) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : String(v)
@@ -18,7 +19,10 @@ const historyView = map => new Map([...map].map(([key, rows]) => [key, rows.toRe
 export function createReplayState() {
   return { projection: null, options: null, appliedCount: 0, newestEventHeight: null, blocked: false, lastCompleteView: null,
     activityByNode: new Map(), recordHistoryByNode: new Map(), recordHistoryByNodeKey: new Map(),
-    slotRecords: new Map(), registrationByNode: new Map(), timestamps: new Map(), treasuryEvents: [], referralEvents: new Map() }
+    slotRecords: new Map(), registrationByNode: new Map(), timestamps: new Map(), treasuryEvents: [], referralEvents: new Map(),
+    // Policies outside the release scope initialize before admission; the SDK projection never
+    // sees that event, and consumers must not write its maps. Only authenticated rows land here.
+    genesisPolicies: new Set(), policyInitializations: new Map() }
 }
 
 export function applyReplayEvent(state, entry, warnings) {
@@ -29,16 +33,28 @@ export function applyReplayEvent(state, entry, warnings) {
     assert.equal(event?.type, 'frozen_receipt', 'Legacy event journal: rebuild from the frozen deployment first block')
     const r = event.receipt
     assert(r && typeof r.id === 'string' && r.success === true && Array.isArray(r.events), 'Invalid receipt envelope')
-    assert.equal(String(r.height), String(meta.blockHeight), 'Receipt/metadata height mismatch')
+    // An initialization row keeps its deployment height; the row is journaled after admission.
+    if (event.initialization === undefined) assert.equal(String(r.height), String(meta.blockHeight), 'Receipt/metadata height mismatch')
     assert.equal(r.id, meta.eventId, 'Receipt/metadata identity mismatch')
     if (!state.projection) {
       state.options = JSON.stringify(event.projectionOptions)
       // Consume the projector's accepted effects, including same-receipt admissions.
       // There is no public drain API: this log grows for the lifetime of the replay.
       state.projection = createProjectionState({ ...event.projectionOptions, retainEffects: true })
+      state.genesisPolicies = new Set(Object.entries(event.projectionOptions.contracts)
+        .filter(([, role]) => role === 'policy').map(([id]) => contractId(id)))
     }
     assert.equal(JSON.stringify(event.projectionOptions), state.options, 'Deployment scope changed inside journal')
     const projection = state.projection
+    if (event.initialization !== undefined) {
+      // A historical deployment receipt, journaled at a later block once its policy is admitted.
+      const accepted = admitPolicyInitialization(projection, decodeReceipt(r), event.initialization, meta.blockHeight)
+      const prior = state.policyInitializations.get(accepted.policy)
+      assert(!prior || stringifyJson(prior.args) === stringifyJson(accepted.args), 'Conflicting policy initialization')
+      state.policyInitializations.set(accepted.policy, accepted)
+      state.newestEventHeight = meta.blockHeight
+      return
+    }
     const alreadyApplied = Object.hasOwn(projection.receipts, r.id)
     const effectsStart = projection.effects.length
     if (alreadyApplied) return
@@ -286,7 +302,13 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
   }))
   view.directory = jsonSafe(s.directory)
   view.admissions = jsonSafe(s.admissions)
-  const config = s.directory, policy = config ? s.policies[contractId(config.registration.policy)]?.config : null
+  // A release-scoped policy initializes in scope. Any other selected policy is served only from
+  // a deployment initialization authenticated against its admission. Either way the current
+  // admission must still pin the evidence it was accepted with.
+  const config = s.directory, selected = config ? contractId(config.registration.policy) : null
+  const authenticated = selected ? state.policyInitializations.get(selected) : undefined
+  const policy = !selected ? null : (authenticated ? admittedInitialization(s, selected, authenticated)
+    : state.genesisPolicies.has(selected) ? admittedGenesisInitialization(s, selected) : null)?.config ?? null
   view.policy = config ? { contractId: h(config.registration.policy), version: String(config.registration.policy_version), config: jsonSafe(policy ?? null) } : null
   view.renewalSchedule = config ? jsonSafe(config.renewal) : null
   view.poolState.registrationsPaused = !config || config.registration.operator_paused || config.registration.guardian_suspended || !policy?.registration_open

@@ -31,7 +31,7 @@ Suspension prevents controller execution and survives removal/re-admission.
 - `/names?owner=<authority>` → `{names,nextCursor}`: roots held through grace, filtered by current owner/manager. Existing lifecycle, records, primary, namespace and activity-count fields remain.
 - `/holdings?authority=<authority>` → `{holdings,nextCursor}`: every name, root or subname, whose current owner or manager is the authority. Roots are listed through grace, as on `/names?owner=`; subnames while `/subname` serves them (active, under a held root). Rows are `{node,name,kind,role,root,parentNode,parentName,owner,manager,status,expiresAtBlockHeight,graceEndsAtBlockHeight,homeShard,generation,serial}`. `kind` is `root` or `subname`. `role` is `owner` when the authority owns the name (it may also manage it), otherwise `manager`. `status` is `active` or `grace` for roots and `active` for subnames, which have no grace of their own (`graceEndsAtBlockHeight: null`). `parentNode` and `parentName` are null for roots; `root` is the root node. `generation` and `serial` are decimal strings, null in snapshot mode, where `owner` or `manager` is also null when the snapshot doesn't carry it. Rows are ordered by name, then node, with the standard `limit` and `cursor`. The authority is the 32-byte owner/manager value of name rows: the domain-separated hash of a Moonlight key, or a contract ID. A listing makes the market contract both owner and manager, so a listed root appears under the market, not the seller; subnames the seller holds directly stay listed under the seller. Event-log, SQLite and snapshot stores build this index with each publication. A store without it returns HTTP 503 `holder_index_unavailable`; older indexers return 404 `not_found` and omit the route from `/health` `routes`.
 - `/name?node=<node>` → lifecycle plus premium and `namespace: {descendantCount,heldByOthersCount,subnames,ancestors}`. Stored expired root lifecycle remains inspectable. `/subname?node=<node>` returns an active child; `/subnames?parentNode=<node>` → `{subnames,nextCursor}` returns immediate active children. Stored descendants count toward namespace capacity even when expired. Inherited lifecycle updates come from SDK projection.
-- `/search?query=<name>` → existing canonical/display/label/status/price/issues/transactionBlocked/premium fields, plus `policy`, `renewalSchedule`, `estimate: true`. `price` remains a DUSK display number (null when policy configuration is unavailable), never a signing quote. Eligibility and stop flags come from the selected policy/directory; root minimum is 3 at launch, sublabels can have one character. Obtain an SDK store quote before signing.
+- `/search?query=<name>` → existing canonical/display/label/status/price/issues/transactionBlocked/premium fields, plus `policy`, `renewalSchedule`, `estimate: true`. `price` remains a DUSK display number (null when policy configuration is unavailable), never a signing quote. Eligibility and stop flags come from the selected policy/directory; root minimum is 3 at launch, sublabels can have one character. Prices use the policy's five length tiers (1, 2, 3, 4 and 5+ characters); a root below the policy minimum shows 0, as the policy quotes it denied. For an unregistered name the policy's denied list comes first, then its reserved list, then its minimum length; a name registered under an earlier policy stays `registered`. Obtain an SDK store quote before signing.
 - `/resolve?name=<canonical>` → existing `{canonicalName,node,records,resolver,expiry,cache,warnings,verificationStatus,errors,nextCursor}` plus `homeShard`, `forwarding`, `generation`, `serial`, `custody`, `moveStatus` and `nameRef` from the routing/incarnation fields below. Reads follow the SDK-projected current home automatically. Expired names are unverified. `/records?node=...` → `{records,nextCursor}` and `/record?node=...&key=...` expose stored raw records, including expired stored names; resolver verification is a separate check.
 - `/reverse?type=moonlight_address&value=<base58>` → `{primaryName,name,node}` only for a current incarnation with an active exact forward match. Stale raw mappings are never treated as verified.
 - `/commitment?commitment=<hash>&controller=<authority>` → `{commitment,controller,commitmentStore,createdAtBlockHeight}` or null. The controller parameter disambiguates owners; preserve the original commitment store across moves. Expired/consumed commitments disappear.
@@ -141,7 +141,7 @@ Cession and successor registration publish together as one committed receipt.
 
 ## Policy, vault and marketplace
 
-- `/fee-config` → `{directory,admissions,threeCharYearLux,fourCharYearLux,fivePlusYearLux,premiumStartLux,policy,renewalSchedule,registrationsPaused}`. `policy` is `{contractId,version,config}` or null; `config` is null if the selected policy initialization is unavailable; `renewalSchedule` is the canonical directory schedule `{version,effective_at,annual_lux,referral_bps}` or null. `directory` is the projected canonical DirectoryConfig, including decimal-string `recipient_version`; `admissions` maps unprefixed contract IDs to canonical Admission objects, including decimal-string `governance_version`. Both counters start at 1. Each store's two governance flags share one version; recipient version also advances on operator acceptance, even with the same recipient. Missing policy prices are null. Launch registration is 150/50/10 DUSK for 3/4/5+ characters, with 3-character roots; renewal uses the complete five-entry table independently. Premium/referral rates follow published policy.
+- `/fee-config` → `{directory,admissions,threeCharYearLux,fourCharYearLux,fivePlusYearLux,premiumStartLux,policy,renewalSchedule,registrationsPaused}`. `policy` is `{contractId,version,config}` or null; `config` is null while the selected policy's initialization is unavailable or not authenticated ([policy replacement](#policy-replacement)); `renewalSchedule` is the canonical directory schedule `{version,effective_at,annual_lux,referral_bps}` or null. `directory` is the projected canonical DirectoryConfig, including decimal-string `recipient_version`; `admissions` maps unprefixed contract IDs to canonical Admission objects, including decimal-string `governance_version`. Both counters start at 1. Each store's two governance flags share one version; recipient version also advances on operator acceptance, even with the same recipient. Missing policy prices are null. Launch registration is 150/50/10 DUSK for 3/4/5+ characters, with 3-character roots; renewal uses the complete five-entry table independently. Premium/referral rates follow published policy.
 - `/treasury` now reports the vault: `{initialized,source:"vault",protocolAccruedLux,referralLiabilityLux,protocolLux,liabilityLux,accountedLux,reservedBeneficiaries,sourceVersion,actualLux:null,surplusLux:null,operator,sources,events}`. `protocolAccruedLux` and `availableLux` alias the current claimable protocol balance. `operator` remains a TypedPrincipal; `operatorRecipient` is base58 and `operatorAuthority` is hex. The response retains `allowedFeeSources`, `totalReceivedLux`, `registrationReceivedLux`, `renewalReceivedLux`, `otherReceivedLux` (marketplace fees), `premiumReceivedLux`, `premiumAccountingError`, `referralClaimableLux`, `referralClaimedLux`, `referralCount`, `lastFeeSourceContract`, `lastFeeReason`, `lastFeeNode`, `lastEventType` and `claims`. Lifetime received totals sum vault receipts; the premium subtotal sums root-registration premium fields and is never added again to vault balances. `claims` has at most 12 protocol claims, with `amountLux` and `remainingLux`; `events` has the latest 12 vault receipt/claim effects. Only vault receipts/claims drive money. Actual balance and unsolicited surplus cannot be reconstructed from domain events and are explicitly unknown.
 - `/referrals?referrer=<key>` → `{supported,referrer,beneficiary,claimableLux,claimedLux,accruedLux,events}`. Key is `Moonlight:<192 hex>` or `Contract:<64 hex>` (no `0x`); Moonlight base58 and `0x` contract aliases also work. Absent rows have zero amounts and no beneficiary. `accruedLux = claimableLux + claimedLux`. `referralCount` counts attributed registrations across generations; `recentActivity` retains the last 12 accrual/claim effects with `amountLux` and canonical `counterparty` (payer or null). `events` is also capped at 12.
 - `/marketplace/config` → `{initialized,marketplaceContractId,tradingPaused,feeBps,orderApiVersion:1,config,markets}`. `config` and `markets` retain canonical SDK objects. Launch fee is 250 bps (2.5%).
@@ -156,13 +156,77 @@ All order/refund paths accept optional `marketplace=<contract ID>` to read admit
 
 Existing `/share/name/<name>`, `/share/name/<name>.png`, crawler `/page/name/<name>`, `/sitemap/names.xml`, and IndexNow verification routes keep their current HTML/image/XML contracts and network-specific origin/noindex settings. Sitemaps list active names and subnames from the same projected state. IndexNow observes receipt-driven name changes.
 
-A replacement immutable policy normally initializes before admission. SDK 0.3.0
-does not expose authenticated historical-initialization ingestion after admission.
-Until that API is available, a newly selected policy without an indexed initialization
-returns `policy: {contractId,version,config:null}`, null registration prices and
-`registrationsPaused: true`; the selected policy ID/version and renewal table remain available.
-The frontend must obtain a fresh SDK quote. New stores/resolvers continue to project
-from their admissions; retired emitters continue to serve history and claims.
+## Policy replacement
+
+A fee change deploys a new immutable policy and selects it with `SetPolicy`. The policy
+initializes in its own deployment transaction, before governance can admit it, so its
+`policy_initialized` event lies outside the collected scope. When a committed
+`SetPolicy` admits a policy, the collector reads that deployment from the archive
+(`finalizedEvents` for the policy, the deployment transaction, its block and the headers
+that link it to the collected chain) and journals the deployment receipt directly after
+the admitting receipt, but only when, as the deploy tool's admission evidence check does
+off chain:
+
+- the deployment's block is the one the collector's chain holds at that height, and it lists the deployment transaction (see below);
+- the deployed bytecode, nonce and owner derive the admitted contract ID;
+- BLAKE3 of the bytecode equals the admission's `code_hash`;
+- `H("duskds:init:v1" || init archive)` over the init arguments actually deployed equals the admission's `init_hash`;
+- the arguments of the policy's `policy_initialized`, re-encoded with the reviewed policy data driver, are exactly that init archive, and the event commits under the policy's own journal frame;
+- its binding is this deployment's directory, vault and network.
+
+A contract ID does not bind init arguments: the same ID deployed in a block the chain did
+not keep could carry the admitted init while the canonical deployment carries others.
+So the archive's lookups never vouch for each other. The deployment's height and block
+hash must be the collected chain's: a block the collector scanned, committed or that
+admitted the policy, or a block the archive's headers link to one of those through
+`prevBlockHash`, exactly as the scan links its batches. Its events are read by that hash,
+and its transaction list must include the deployment. An orphan or any other block hash at
+that height is rejected (`deployment_not_canonical`), even when its initialization matches
+the admission, as is a block that does not list the transaction (`deployment_not_included`).
+
+Replay accepts that row only for an admitted policy, at or before its admission. It
+checks the receipt's journal frame and binding, and that the admission pins the row's
+code hash and the hash of its init archive. As with every journaled event, the receipt's
+arguments are the collector's decoding: replay has no data driver, so the check that they
+encode to that init archive is the collector's. A configuration is served only while the
+selected policy's current admission pins the same hashes; for the launch policy, the
+hashes of its genesis admission. For a policy admitted after launch, neither another
+contract's nor a later in-scope `policy_initialized` is ever served.
+
+From the block that executes `SetPolicy`, `/fee-config`, `/search` and `/health` serve
+the new policy's prices, premium start, referral rates, reserved and denied lists,
+minimum length and open flag; `policy.version` is the directory's selection version.
+Event-log, SQLite and incremental SQLite replay the same rows. Snapshot mode applies the
+policy in its `feeConfig`, so a snapshot of this publication gives the same `/fee-config`
+and policy decisions in `/search`.
+
+The row is a `frozen_receipt` row with `event.initialization`
+(`{role,contractId,transaction,blockHeight,blockHash,codeHash,initArchive,deployNonce,deploymentOwner}`).
+Its receipt keeps the deployment height and block; its metadata names the block at which
+the collector journaled it. The cursor's `policyInitializations` records each policy
+admitted after launch as `authenticated` (with its deployment transaction and height) or
+`rejected` with a `code`, `message` and `attempts`; public `/health` `cursor` shows the
+status, code and any `retryAt`, and the collector logs the message. Neither a rejection
+nor a failed lookup stops collection: that policy alone fails closed with
+`policy: {contractId,version,config:null}`, null registration prices and
+`registrationsPaused: true`, while the collector keeps journaling every other receipt, so
+renewals, ownership, records, the renewal table and every other route stay current. Some
+codes say nothing about the chain and are asked again in the same run at `retryAt`, after
+5 seconds, then four times as long each time, up to an hour: `initialization_not_found` and
+`deployment_not_found` (Rusk can report a block final before `finalizedEvents` has its
+events), `deployment_not_canonical` and `deployment_not_included` (the archive answered
+for a block the collected chain does not hold), and `lookup_failed` (a lookup query
+failed or returned a malformed answer). Every other code is a fact about the chain (for
+example `init_hash_mismatch`, `code_hash_mismatch`, `deployment_mismatch`); a
+re-admission or a collector restart retries those. On start, the collector also journals
+the initialization of any admitted policy whose row is missing, such as a `SetPolicy`
+collected by an earlier version, at its committed block; no rebuild is needed.
+
+Earlier policies' registrations, fees and activity stay in history. Renewal prices come
+only from the directory renewal schedule, which `SetPolicy` does not change. The
+frontend must still obtain a fresh SDK quote before signing. New stores/resolvers
+continue to project from their admissions; retired emitters continue to serve history
+and claims.
 
 ## Pagination and public HTTP policy
 

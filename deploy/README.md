@@ -54,10 +54,14 @@ the existing journal and database.
    the deployment env; an explicit `--node-url` overrides both. The collector
    queries finalized archive history (`lastBlockPair`, `blocks`, `checkBlock`,
    `contractEvents`) and verifies its cursor's anchor block at startup. It detects
-   `contractEventBatch` when available. HTTP 429 and 5xx responses retry the same
-   request with exponential delays, honoring `Retry-After`. After six retries,
-   startup fails for systemd to restart, or polling records a blocked cursor and
-   retries the batch. No failed query advances the journal or cursor.
+   `contractEventBatch` when available. A policy admitted after launch also needs
+   `finalizedEvents` and `tx`, which Rusk 1.7.0 and 1.7.1 archives serve. HTTP 429
+   and 5xx responses retry the same request with exponential delays, honoring
+   `Retry-After`. After six retries, startup fails for systemd to restart, or polling
+   records a blocked cursor and retries the batch. No failed query advances the
+   journal or cursor. A failed lookup of a policy's deployment is the exception: it
+   withholds only that policy's configuration and is asked again with backoff, while
+   collection continues.
 
 3. Install the templates, then load them:
 
@@ -237,7 +241,25 @@ the SHA-256 filename before using SDK 0.3.2's lossless driver decoder. It never
 fetches driver URLs. All six IDs are required, including initialization events
 before the directory's deployment. Later committed directory admissions extend
 collection to new stores, resolvers, policies and markets using their v1 role
-schema. Retired emitters remain followed for names and claims.
+schema. Retired emitters remain followed for names and claims. A policy selected
+by a later `SetPolicy` initialized at its own deployment, so after the admitting
+receipt the collector journals that initialization from the archive, authenticated
+against the admission ([policy replacement](../docs/indexer-api.md#policy-replacement)).
+
+Updating a running collector and API to a version with this needs no new journal:
+deploy both together. On start the collector journals any admitted policy's missing
+initialization at its committed block, and the API serves it after its next reload.
+After a fee change, check `/fee-config` for the new prices and `/health` →
+`cursor.policyInitializations` for `authenticated`. A `rejected` entry with a `retryAt`
+means the archive did not have the deployment yet, answered for a block the collected
+chain does not hold, or a lookup failed; it is asked again, and collection continues
+meanwhile. Any other rejection stays fail-closed until a corrected re-admission or a
+collector restart.
+
+Rolling back below this version: an earlier API stops replay at the first
+initialization row and keeps its last publication, or returns 503 after a restart.
+Roll back the collector and API together and rebuild their journal from
+`DUSK_DOMAINS_FROM_BLOCK` with the earlier collector.
 
 At cutover stop the old services, retain their state as an archive, and configure
 new JSONL/cursor/SQLite paths for both mainnet and testnet. Start each collector

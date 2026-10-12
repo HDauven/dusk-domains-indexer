@@ -290,6 +290,10 @@ export async function loadSnapshotStore(snapshotFile) {
     marketplaceRefundsByAuthority,
     treasuryState,
     feeConfig,
+    // A snapshot of a frozen publication carries the selected policy and renewal schedule in
+    // its fee config; search then applies that policy's lists, minimum and tiers as replay does.
+    policy: snapshot.policy ?? feeConfig.policy ?? null,
+    renewalSchedule: snapshot.renewalSchedule ?? feeConfig.renewalSchedule ?? null,
     referralsByReferrer,
     referralRewardsSupported,
     ...(cursor ? { cursor } : {}),

@@ -96,7 +96,8 @@ Options:
   --cursor-file <file>   Collector status/cursor file. Default: target/dusk-domains-local-indexer.cursor.json.
   --public-dir <dir>     Directory containing data-driver WASM files. Default: contracts/ beside the env file.
   --rusk-dir <dir>       Accepted for older launchers; no longer needed (Node.js decodes events).
-  --node-url <url>       Archive node; requires lastBlockPair, blocks, contractEventBatch.
+  --node-url <url>       Archive node; requires lastBlockPair, blocks, contractEventBatch or checkBlock/contractEvents,
+                         and finalizedEvents and tx for policies admitted after launch.
   --from-block <n>       First block to replay (at/before deployment). Default: DUSK_DOMAINS_FROM_BLOCK; retain on restart.
   --duration-ms <n>      Stop automatically after n milliseconds. Default: run until SIGINT/SIGTERM.
   --truncate             Discard the journal/cursor and replay again from --from-block.

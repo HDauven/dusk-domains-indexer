@@ -30,8 +30,15 @@ export function admissions(receipt, scope, directoryId) {
   }
   return result.map(([role, admission, ordinal]) => {
     assert.equal(admission.interface_version, 1, 'Unsupported admitted interface: upgrade the indexer')
-    return { role, id: contractId(admission.id), ordinal, codeHash: hex(admission.code_hash) }
+    return { role, id: contractId(admission.id), ordinal, codeHash: hex(admission.code_hash), admission }
   })
+}
+
+// A policy admitted after launch initialized at its deployment, before admission and outside
+// the collected scope; the collector journals that initialization separately.
+export function policyAdmissions(receipt, contracts, directoryId) {
+  const scope = Object.fromEntries([...contracts].map(([id, c]) => [id, c.key]))
+  return admissions(receipt, scope, directoryId).filter(a => a.role === 'policy')
 }
 
 export function followAdmissions(receipt, contracts, directoryId) {

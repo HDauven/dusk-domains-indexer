@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Serve a policy selected by `SetPolicy` after launch at once: its prices, premium start, referral rates, reserved and denied lists, minimum length and open flag. The collector journals the policy's deployment initialization after the admitting receipt, authenticated like the deploy tool's admission evidence: contract ID from the deployed bytecode, nonce and owner, BLAKE3 code hash, and the init hash of the arguments actually deployed. Contract IDs don't bind init arguments, so the deployment's block must be the collected chain's at its height, linked by `prevBlockHash` to blocks the collector verified, and must list the deployment transaction; an orphan or other block hash is rejected even when its init matches the admission. Replay checks the row against the admission again and serves it only while the current admission pins the same hashes; the launch policy likewise only while the selected admission pins its genesis hashes. A mismatch or a failed lookup fails closed for that policy only, never stopping collection or other projections, and the cursor's `policyInitializations` records why; an archive that does not have the deployment yet, answers for another block or fails is asked again with backoff. A collector started on an older journal catches up a missing initialization without a rebuild.
+- Price `/search` by the selected policy's five length tiers; a root below the policy minimum stays at 0. Names registered under an earlier policy stay `registered` when a later policy denies their label or raises the minimum, and labels only a later policy reserves carry the reservation reason.
+- Apply the snapshot's selected policy in snapshot-mode `/search`, as replay does.
+
 - Serve `/holdings?authority=`: every root and subname an authority currently owns or manages, with its role, built from the same publication in event-log, SQLite and snapshot modes.
 - File renewals paid from a market listing (`escrow_renewed`) under the renewed name, with the payer.
 - Document activity row order: by block height, then `eventIndex`, the event's position in its block. List `/holdings` in the runbook and the local smoke.

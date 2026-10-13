@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict'
 import { mkdir, open, readFile, rename } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { encodeReceipt, decodeReceipt as decodeStoredReceipt } from '../../server/local-indexer/receipt-codec.mjs'
 import { loadDataDriver } from '@duskdomains/sdk'
-import { decodeReceipt, followAdmissions, jsonSafe, policyAdmissions } from './frozen.mjs'
-import { fetchPolicyInitialization, initializationRow, unavailableInitialization } from './deployment.mjs'
+import { CollectorEventError, beginReceipt, followAdmissions, jsonSafe, marketAdmissions, policyAdmissions } from './frozen.mjs'
+import { fetchMarketInitialization, fetchPolicyInitialization, initializationRow, unavailableInitialization } from './deployment.mjs'
 import { parseEventLog } from '../../server/local-indexer/event-log.mjs'
 import { summarizeEventLogText } from './cursor-summary.mjs'
+import { marketCandidatesFile } from './candidates-file.mjs'
 
 export const archiveSource = 'rusk-finalized-archive'
 const pollMs = 5_000
 const batchSize = 100
+const frameTopics = new Set(['operation_begin', 'operation_end'])
 
 export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wait = sleep } = {}) {
   for (let attempt = 0; ; attempt += 1) {
@@ -66,12 +68,99 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
     policies.initialized.add(initialization.contractId)
     policies.status.set(initialization.contractId, { status: 'authenticated', transaction: initialization.transaction, blockHeight: initialization.blockHeight })
   }
+  // Likewise a marketplace admitted after launch, configured before its admission outside the
+  // scope: its configuration then is journaled after the admitting receipt. `candidates` maps
+  // each contract outside the scope that committed a `market_configured` to the first and last
+  // scanned transactions that did, and whether it emitted anything else. `admitted` maps each
+  // market to its record and the event that admitted it.
+  let markets = { admitted: new Map(), initialized: new Set(config.contracts.filter(c => c.key === 'marketplace').map(c => c.contractId)), status: new Map() }
+  // Every candidate, however many contracts configure themselves: each costs its own gas, and
+  // only its first and last configuration are kept. Changes are appended to their own journal
+  // (`candidatesFile`), which the cursor counts like the event log, and undone in memory when a
+  // block or poll fails before the cursor is published.
+  const candidates = new Map()
+  let candidateUndo = [], candidateLines = []
+  const setCandidate = (source, value) => {
+    candidateUndo.push([source, candidates.get(source)])
+    if (value === undefined) candidates.delete(source)
+    else candidates.set(source, value)
+  }
+  const undoCandidates = (undo = 0, lines = 0) => {
+    while (candidateUndo.length > undo) {
+      const [source, value] = candidateUndo.pop()
+      if (value === undefined) candidates.delete(source)
+      else candidates.set(source, value)
+    }
+    candidateLines.length = lines
+  }
+  const mergeCandidate = ({ source, at, configures, other }) => {
+    const prior = candidates.get(source)
+    if (prior) setCandidate(source, { first: prior.first, last: configures ? at : prior.last, other: prior.other || other })
+    else if (configures) setCandidate(source, { first: at, last: at, other })
+  }
+  // Events of markets whose deployment has not authenticated, set aside instead of collected.
+  let quarantine = new Map()
+  // A marketplace is trusted once authenticated, doomed once its authentication failed for good,
+  // and pending meanwhile, including while a failed lookup waits to be asked again.
+  const trustOf = id => {
+    if (contracts.get(id)?.key !== 'marketplace' || markets.initialized.has(id)) return 'trusted'
+    const status = markets.status.get(id)
+    return status?.status === 'rejected' && !status.retryAt ? 'doomed' : 'pending'
+  }
+  const quarantined = header => ({ emitter, code, topic, ordinals }) => {
+    const previous = quarantine.get(emitter)
+    quarantine.set(emitter, { events: (previous?.events ?? 0) + ordinals.length, code, topic,
+      firstBlockHeight: previous?.firstBlockHeight ?? header.height, lastBlockHeight: header.height, lastTxId: header.txId })
+    console.error(`Quarantined ${ordinals.length} events of unauthenticated marketplace ${emitter} at block ${header.height} (${code})`)
+  }
+  const admitMarket = (a, receipt) => {
+    if (!markets.admitted.has(a.id)) markets.admitted.set(a.id, { record: a.admission, txId: receipt.id.split(':')[1], ordinal: a.ordinal })
+  }
+  const pendingMarkets = () => [...markets.admitted.keys()].filter(id => {
+    const status = markets.status.get(id)
+    return !markets.initialized.has(id) && (status?.status !== 'rejected' || (status.retryAt && now() >= Date.parse(status.retryAt)))
+  })
+  const noteMarketInitialization = initialization => {
+    markets.initialized.add(initialization.contractId)
+    if (candidates.has(initialization.contractId)) setCandidate(initialization.contractId, undefined)
+    markets.status.set(initialization.contractId, { status: 'authenticated', transaction: initialization.transaction, blockHeight: initialization.blockHeight,
+      configTransaction: initialization.configTransaction, configBlockHeight: initialization.configBlockHeight })
+  }
+  // Retain, before decoding admits anything, the market configurations of contracts outside the
+  // scope. `collected` holds the ordinals the receipt took in, or set aside after an admission.
+  const retain = (rawEvents, header, known, collected) => {
+    const bySource = new Map()
+    for (const { raw, ordinal } of rawEvents) {
+      if (known.has(raw.source) || collected.has(ordinal) || raw.reverted === true) continue
+      if (!bySource.has(raw.source)) bySource.set(raw.source, [])
+      bySource.get(raw.source).push(raw.topic)
+    }
+    for (const [source, topics] of bySource) {
+      const change = { source, at: { height: header.height, hash: header.hash, txId: rawEvents[0].raw.origin },
+        configures: topics.includes('market_configured'), other: topics.some(t => t !== 'market_configured' && !frameTopics.has(t)) }
+      if (!candidates.has(source) && !change.configures) continue
+      mergeCandidate(change)
+      candidateLines.push(JSON.stringify(change) + '\n')
+    }
+  }
+  const rejectInitialization = (state, id, rejected, kind) => {
+    // Fail closed: the API serves no configuration for it meanwhile. An archive that lacks the
+    // deployment yet, answers for another block or fails is asked again at 5 s, then four times
+    // as long each time, up to an hour.
+    const previous = state.status.get(id), attempts = (previous?.status === 'rejected' ? previous.attempts : 0) + 1
+    const retryAt = unavailableInitialization.has(rejected.code)
+      ? new Date(now() + Math.min(5_000 * 4 ** (attempts - 1), 3_600_000)).toISOString() : undefined
+    state.status.set(id, { status: 'rejected', ...rejected, attempts, ...(retryAt ? { retryAt } : {}) })
+    console.error(`${kind} ${id} initialization not authenticated: ${rejected.message}${retryAt ? `; retrying at ${retryAt}` : ''}`)
+  }
   const scope = JSON.stringify({ format: 'frozen-receipts-v1', chainId: config.chainId ?? null,
     schema: config.eventSchemaVersion ?? '1', contracts: config.contracts.map(c => [c.key, c.contractId, c.driverHash ?? null]).sort() })
   await mkdir(dirname(config.eventLog), { recursive: true })
   await mkdir(dirname(config.cursorFile), { recursive: true })
   let cursor = config.truncate ? null : await readOptionalJson(config.cursorFile)
   const journal = await open(config.eventLog, 'a+')
+  const candidatesFile = config.candidatesFile ?? marketCandidatesFile(config.cursorFile)
+  const candidateJournal = await open(candidatesFile, 'a+')
   try {
     if (config.truncate) {
       await journal.truncate(0)
@@ -93,11 +182,35 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
       assert.equal(parsed.warnings.length, 0, 'Committed journal is corrupt')
       assert.equal(parsed.entries.length, cursor.eventCount, 'Journal/cursor event count mismatch')
       assert(!committed || committed.endsWith('\n'), 'Cursor splits a journal row')
+      // Retained configurations hold for the scan that wrote them. A cursor that scanned on
+      // without them, such as an older collector's, keeps a stale count: start over. A market
+      // whose deployment the scan then no longer covers fails closed (`initialization_not_collected`).
+      const retained = cursor.marketCandidatesAt, bytes = cursor.marketCandidatesBytes
+      const kept = Number.isSafeInteger(bytes) && bytes >= 0 && retained?.height === cursor.scannedBlockHeight && retained.hash === cursor.scannedBlockHash
+      // The cursor vouches for those bytes: without them, markets deployed before and listed later
+      // would be lost. Never start over silently, as after restoring a cursor without its journal.
+      const held = (await candidateJournal.stat()).size
+      assert(!kept || held >= bytes, `Market candidate journal ${candidatesFile} holds ${held} of the ${bytes} bytes its cursor committed: `
+        + `restore it from the backup the cursor came from (it belongs beside the cursor as ${basename(candidatesFile)}), `
+        + 'or replay into new journal, cursor and SQLite paths (docs/archive-migration.md)')
+      if (kept) {
+        const text = (await readFile(candidatesFile)).subarray(0, bytes).toString('utf8')
+        assert(!text || text.endsWith('\n'), 'Cursor splits a market candidate row')
+        for (const line of text.split('\n').filter(Boolean)) mergeCandidate(JSON.parse(line))
+      } else if (cursor.marketCandidates || cursor.marketCandidatesBytes !== undefined)
+        console.error(`Collector cursor's market configurations are not from block ${cursor.scannedBlockHeight}; retaining anew`)
+      cursor = { ...cursor, marketCandidates: undefined, marketCandidatesBytes: kept ? bytes : 0 }
+      if (cursor.quarantine && typeof cursor.quarantine === 'object') quarantine = new Map(Object.entries(cursor.quarantine))
       for (const entry of parsed.entries) {
         assert.equal(entry.event?.type, 'frozen_receipt', 'Legacy journal: start fresh frozen paths')
-        if (entry.event.initialization) { noteInitialization(entry.event.initialization); continue }
+        if (entry.event.initialization) {
+          if (entry.event.initialization.role === 'marketplace') noteMarketInitialization(entry.event.initialization)
+          else noteInitialization(entry.event.initialization)
+          continue
+        }
         const receipt = decodeStoredReceipt(entry.event.receipt)
         for (const a of policyAdmissions(receipt, contracts, directoryId)) admit(a, entry.meta?.blockHeight, entry.meta?.blockHash)
+        for (const a of marketAdmissions(receipt, contracts, directoryId)) admitMarket(a, receipt)
         followAdmissions(receipt, contracts, directoryId)
       }
     } else {
@@ -116,11 +229,17 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
     // A crash can leave appended bytes without a committed cursor. Roll back only that suffix, then refetch it.
     await journal.truncate(cursor.eventLogBytes)
     await journal.sync()
+    cursor.marketCandidatesBytes ??= 0
+    await candidateJournal.truncate(cursor.marketCandidatesBytes)
+    await candidateJournal.sync()
+    candidateUndo = []
     await syncDirectory(dirname(config.eventLog))
+    await syncDirectory(dirname(candidatesFile))
     const replayedEventCount = cursor.eventCount
     const archiveApi = await detectArchiveApi(query)
     await persist({ ...cursor, archiveApi, replayedEventCount, status: 'catching-up', reason: null,
-      policyInitializations: Object.fromEntries(policies.status) })
+      policyInitializations: Object.fromEntries(policies.status), marketInitializations: Object.fromEntries(markets.status),
+      marketCandidatesAt: { height: cursor.scannedBlockHeight, hash: cursor.scannedBlockHash }, quarantine: Object.fromEntries(quarantine) })
     // The deployment block's events read like any scanned block: same ordinals and receipt ID.
     const blockEvents = async block => {
       const [events] = archiveApi === 'event-batch' ? await eventBatches(query, [block]) : await finalizedBlockEvents(query, [block])
@@ -147,24 +266,45 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         if (signal?.aborted) throw error
         result = { rejected: { code: 'lookup_failed', message: error.message } }
       }
-      if (result.rejected) {
-        // Fail closed: the API serves no configuration for this policy meanwhile. An archive that lacks
-        // the deployment yet, answers for another block or fails is asked again at 5 s, then four
-        // times as long each time, up to an hour.
-        const previous = policies.status.get(policy), attempts = (previous?.status === 'rejected' ? previous.attempts : 0) + 1
-        const retryAt = unavailableInitialization.has(result.rejected.code)
-          ? new Date(now() + Math.min(5_000 * 4 ** (attempts - 1), 3_600_000)).toISOString() : undefined
-        policies.status.set(policy, { status: 'rejected', ...result.rejected, attempts, ...(retryAt ? { retryAt } : {}) })
-        console.error(`Policy ${policy} initialization not authenticated: ${result.rejected.message}${retryAt ? `; retrying at ${retryAt}` : ''}`)
-        return
-      }
+      if (result.rejected) return rejectInitialization(policies, policy, result.rejected, 'Policy')
       entries.push(initializationRow(result, header, { source: archiveSource, chainId: config.chainId, directoryId, projectionOptions }))
       noteInitialization(result.initialization)
     }
+    // A marketplace's configuration before admission, from the transactions the scan retained: its
+    // initialization row once authenticated, or null with the rejection recorded.
+    const authenticateMarket = async (market, header) => {
+      let result
+      try {
+        const { record, txId, ordinal } = markets.admitted.get(market)
+        result = await fetchMarketInitialization({ query, blockEvents, market, record, candidate: candidates.get(market),
+          admission: { txId, ordinal }, driver: [...contracts.values()].find(c => c.key === 'marketplace')?.driver, directoryId, vaultId })
+      } catch (error) {
+        // Only this market waits; collection and every other projection go on.
+        if (signal?.aborted) throw error
+        result = { rejected: { code: 'lookup_failed', message: error.message } }
+      }
+      if (result.rejected) {
+        rejectInitialization(markets, market, result.rejected, 'Marketplace')
+        return null
+      }
+      noteMarketInitialization(result.initialization)
+      return initializationRow(result, header, { source: archiveSource, chainId: config.chainId, directoryId, projectionOptions })
+    }
+    const journalMarketInitialization = async (market, header, entries) => {
+      const row = await authenticateMarket(market, header)
+      if (row) entries.push(row)
+    }
     while (!signal?.aborted) {
+      // What the published cursor holds. A failure before this poll publishes its own restores it;
+      // once it has, even if syncing its directory then fails, its state is the committed one.
+      const committedCursor = cursor
       const committedContracts = new Map(contracts)
       const committedPolicies = clonePolicies(policies)
-      const committedEventCount = cursor.eventCount
+      const committedMarkets = clonePolicies(markets)
+      const committedQuarantine = new Map(quarantine)
+      candidateUndo = []
+      candidateLines = []
+      let scannedHeader = null
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
         const [currentBlockHeight] = pair?.last_block ?? []
@@ -177,9 +317,11 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         const entries = []
         // Admitted before this collector version or before a restart: journal at the committed block.
         for (const policy of pendingPolicies()) await journalInitialization(policy, committedHeader, entries)
+        for (const market of pendingMarkets()) await journalMarketInitialization(market, committedHeader, entries)
         let scannedBlockHeight = cursor.scannedBlockHeight
         let scannedBlockHash = cursor.scannedBlockHash
         let lastHeader = null
+        let stuck = null
         if (to > scannedBlockHeight) {
           const from = scannedBlockHeight + 1
           const fields = archiveApi === 'event-batch' ? '' : ' transactions{id}'
@@ -195,34 +337,65 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
           const batches = archiveApi === 'event-batch' ? await eventBatches(query, blocks) : await finalizedBlockEvents(query, blocks)
           for (const [i, events] of batches.entries()) {
             const { header } = blocks[i]
-            const receipts = new Map()
-            for (const [ordinal, raw] of events.entries()) {
-              hexHash(raw.source)
-              hexHash(raw.origin)
-              if (!receipts.has(raw.origin)) receipts.set(raw.origin, [])
-              receipts.get(raw.origin).push({ raw, ordinal })
-            }
-            for (const [txId, rawEvents] of receipts) {
-              const receipt = decodeReceipt(rawEvents, header, contracts, directoryId)
-              if (!receipt.events.length) continue
-              entries.push(jsonSafe({ event: { type: 'frozen_receipt', receipt: encodeReceipt(receipt), projectionOptions },
-                meta: { source: archiveSource, timeSource: 'block', chainId: config.chainId ?? null,
-                  observedAt: new Date(header.timestamp * 1000).toISOString(), blockHeight: header.height,
-                  blockHash: header.hash, txId, eventIndex: rawEvents[0].ordinal, eventId: receipt.id,
-                  contractKey: 'frozen', contractId: directoryId } }))
-              // A re-admission retries a rejected initialization against its new admission.
-              for (const a of policyAdmissions(receipt, contracts, directoryId)) {
-                admit(a, header.height, header.hash)
-                if (policies.status.get(a.id)?.status === 'rejected') policies.status.delete(a.id)
+            // A block whose events can't be accepted is never published, nor any block after it.
+            // The blocks before it are: projections stop exactly there, fail closed.
+            const mark = { entries: entries.length, contracts: new Map(contracts), policies: clonePolicies(policies),
+              markets: clonePolicies(markets), candidates: candidateUndo.length, candidateLines: candidateLines.length, quarantine: new Map(quarantine) }
+            try {
+              const receipts = new Map()
+              for (const [ordinal, raw] of events.entries()) {
+                hexHash(raw.source)
+                hexHash(raw.origin)
+                if (!receipts.has(raw.origin)) receipts.set(raw.origin, [])
+                receipts.get(raw.origin).push({ raw, ordinal })
               }
-              // The policy initialized before its admission: journal that directly after the admission.
-              for (const policy of pendingPolicies()) await journalInitialization(policy, header, entries, blocks)
+              for (const [txId, rawEvents] of receipts) {
+                const known = new Set(contracts.keys())
+                const decoding = beginReceipt(rawEvents, header, contracts, directoryId, { trust: trustOf })
+                retain(rawEvents, header, known, decoding.inScope)
+                // A market this transaction lists is authenticated before anything about its events is
+                // decided, and its initialization row follows the admitting receipt.
+                const listed = []
+                for (const a of decoding.admittedMarkets) {
+                  admitMarket(a, decoding)
+                  const row = await authenticateMarket(a.id, header)
+                  if (row) listed.push(row)
+                }
+                const receipt = decoding.finish({ trust: trustOf, quarantine: quarantined({ ...header, txId }) })
+                if (!receipt.events.length) continue
+                entries.push(jsonSafe({ event: { type: 'frozen_receipt', receipt: encodeReceipt(receipt), projectionOptions },
+                  meta: { source: archiveSource, timeSource: 'block', chainId: config.chainId ?? null,
+                    observedAt: new Date(header.timestamp * 1000).toISOString(), blockHeight: header.height,
+                    blockHash: header.hash, txId, eventIndex: rawEvents[0].ordinal, eventId: receipt.id,
+                    contractKey: 'frozen', contractId: directoryId } }))
+                entries.push(...listed)
+                // A re-admission retries a rejected initialization against its new admission.
+                for (const a of policyAdmissions(receipt, contracts, directoryId)) {
+                  admit(a, header.height, header.hash)
+                  if (policies.status.get(a.id)?.status === 'rejected') policies.status.delete(a.id)
+                }
+                for (const a of marketAdmissions(receipt, contracts, directoryId)) admitMarket(a, receipt)
+                // The policy initialized before its admission: journal that directly after the admission.
+                for (const policy of pendingPolicies()) await journalInitialization(policy, header, entries, blocks)
+                // The market's configuration before admission, likewise.
+                for (const market of pendingMarkets()) await journalMarketInitialization(market, header, entries)
+              }
+            } catch (error) {
+              if (signal?.aborted) throw error
+              entries.length = mark.entries
+              contracts.clear()
+              for (const [id, contract] of mark.contracts) contracts.set(id, contract)
+              policies = mark.policies
+              markets = mark.markets
+              undoCandidates(mark.candidates, mark.candidateLines)
+              quarantine = mark.quarantine
+              stuck = blockedAt(error, header)
+              break
             }
+            lastHeader = header
           }
-          if (batches.length) {
-            lastHeader = blocks[batches.length - 1].header
-            ;({ height: scannedBlockHeight, hash: scannedBlockHash } = lastHeader)
-          }
+          if (lastHeader) ({ height: scannedBlockHeight, hash: scannedBlockHash } = lastHeader)
+          scannedHeader = lastHeader
         } else {
           assert.equal(scannedBlockHash, finalizedHash, 'Finalized head hash mismatch')
         }
@@ -231,33 +404,62 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
           await journal.writeFile(text)
           await journal.sync()
         }
+        const candidateText = candidateLines.join('')
+        if (candidateText) {
+          await candidateJournal.writeFile(candidateText)
+          await candidateJournal.sync()
+        }
         const last = entries.at(-1)
         await persist({ ...cursor, currentBlockHeight, scannedBlockHeight, scannedBlockHash,
           eventCount: cursor.eventCount + entries.length, eventLogBytes: cursor.eventLogBytes + Buffer.byteLength(text),
           ...(last ? { lastEventAt: last.meta.observedAt, lastContract: last.meta.contractKey,
             lastEventName: last.event.type, lastTxId: last.meta.txId, lastBlockHeight: last.meta.blockHeight } : {}),
-          status: scannedBlockHeight === finalizedHeight ? 'running' : 'catching-up',
-          reason: scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null,
-          policyInitializations: Object.fromEntries(policies.status) })
+          status: stuck ? 'blocked' : scannedBlockHeight === finalizedHeight ? 'running' : 'catching-up',
+          reason: stuck ? stuck.message : scannedBlockHeight < to ? `Archive has not finalized block ${scannedBlockHeight + 1} yet` : null,
+          blocked: stuck ? blockedRecord(stuck) : undefined,
+          policyInitializations: Object.fromEntries(policies.status), marketInitializations: Object.fromEntries(markets.status),
+          marketCandidatesBytes: cursor.marketCandidatesBytes + Buffer.byteLength(candidateText),
+          marketCandidatesAt: { height: scannedBlockHeight, hash: scannedBlockHash }, quarantine: Object.fromEntries(quarantine) })
+        candidateUndo = []
+        candidateLines = []
+        if (stuck) console.error(`Collector blocked at block ${stuck.height}: ${stuck.message}`)
         if (lastHeader) committedHeader = lastHeader
         if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
       } catch (error) {
-        if (cursor.eventCount === committedEventCount) {
+        if (cursor === committedCursor) {
           contracts.clear()
           for (const [id, contract] of committedContracts) contracts.set(id, contract)
           policies = committedPolicies
+          markets = committedMarkets
+          quarantine = committedQuarantine
+          undoCandidates()
+        } else {
+          if (scannedHeader) committedHeader = scannedHeader
+          candidateUndo = []
+          candidateLines = []
         }
         // Never advance past a missing archive, invalid payload, or failed durable write.
         await journal.truncate(cursor.eventLogBytes)
         await journal.sync()
-        await persist({ ...cursor, status: 'blocked', reason: error.message })
-        console.error(error.message)
+        await candidateJournal.truncate(cursor.marketCandidatesBytes)
+        await candidateJournal.sync()
+        const failure = blockedAt(error, { height: cursor.scannedBlockHeight + 1, hash: null })
+        await persist({ ...cursor, status: 'blocked', reason: error.message, blocked: blockedRecord(failure) })
+        console.error(`Collector blocked at block ${failure.height}: ${error.message}`)
       }
       try { await wait(pollMs, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
     }
     await persist({ ...cursor, status: 'stopped' })
   } finally {
     await journal.close()
+    await candidateJournal.close()
+  }
+
+  // Where and why collection stopped: the first block not published, and since when.
+  function blockedRecord(failure) {
+    const { message, ...where } = failure, previous = cursor.blocked
+    const same = previous?.height === where.height && previous?.code === where.code
+    return { ...where, since: same ? previous.since : new Date(now()).toISOString(), attempts: same ? previous.attempts + 1 : 1 }
   }
 
   async function persist(next) {
@@ -349,4 +551,18 @@ function hexHash(value) {
 }
 async function readOptionalJson(path) {
   try { return JSON.parse(await readFile(path, 'utf8')) } catch (error) { if (error.code !== 'ENOENT') throw error; return null }
+}
+
+/**
+ * Why collection cannot pass `header`. An event or admission it cannot accept is a decoder
+ * problem; everything else is the archive's, the chain link's or the collector's own.
+ */
+function blockedAt(error, header) {
+  const tagged = error instanceof CollectorEventError
+  const code = tagged ? error.code
+    : /hash chain|hash mismatch|does not link|block hash changed/i.test(error.message) ? 'chain_mismatch'
+      : /^(?:Archive |Invalid archive )|block range|unavailable|Finalized head is behind/.test(error.message) ? 'archive_unavailable'
+        : 'collector_error'
+  return { code, height: header.height, blockHash: header.hash ?? null, txId: tagged ? error.txId : null,
+    emitter: tagged ? error.emitter : null, role: tagged ? error.role : null, topic: tagged ? error.topic : null, message: error.message }
 }

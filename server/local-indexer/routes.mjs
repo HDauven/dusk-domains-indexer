@@ -13,7 +13,7 @@ import {
   emptyTreasuryState,
   referralStateFor,
   commitmentKey,
-  emptyMarketplaceConfig,
+  unknownMarketplaceConfig,
   marketplaceOfferKey,
   marketplaceOrderIsEscrowed,
 } from './view-utils.mjs'
@@ -117,8 +117,21 @@ async function handleRequest(storeProvider, request, response, options) {
       reply(400, page.error)
       return
     }
+    const market = url.searchParams.get('marketplace')
+    // `marketplace=all` answers from every admitted market; rows name their market.
+    const allMarkets = market === 'all' && pathname.startsWith('/marketplace/')
+    if (allMarkets && (pathname === '/marketplace/config' || pathname === '/marketplace/refund')) {
+      reply(400, { error: 'invalid_marketplace', message: pathname === '/marketplace/refund'
+        ? 'Name one marketplace, or list every market\'s refunds with /marketplace/refunds.' : 'Name one marketplace.' })
+      return
+    }
+    // Order IDs are per market: across markets, the market keeps keys unique.
+    const pageKey = item => {
+      const key = listKey(pathname, item)
+      return allMarkets && item.orderId != null ? [...key.slice(0, -1), `${key.at(-1)}:${item.marketplaceContractId}`] : key
+    }
     const replyPage = (rows, map = (item) => item) => {
-      const result = paginate(rows, page, (item) => listKey(pathname, item))
+      const result = paginate(rows, page, pageKey)
       reply(200, { [LIST_FIELDS[pathname]]: result.items.map(map), nextCursor: result.nextCursor })
     }
     if (pathname === '/verify') {
@@ -137,13 +150,14 @@ async function handleRequest(storeProvider, request, response, options) {
     }
     let store = await resolveStore(storeProvider, pathname === '/health')
     const withVerification = item => item ? { ...item, verification: options.verification.read(store, item.node) } : item
-    const market = url.searchParams.get('marketplace')
-    if (market && pathname.startsWith('/marketplace/')) {
+    const refundRows = store.marketplaceRefunds ?? [...(store.marketplaceRefundsByAuthority?.values() ?? [])]
+    if (market && pathname.startsWith('/marketplace/') && !allMarkets) {
       const id = normalizeNode(market)
       if (!/^0x[0-9a-f]{64}$/.test(id)) { reply(400, { error: 'invalid_marketplace' }); return }
       const orders = (store.marketplaceOrders ?? []).filter(o => o.marketplaceContractId === id)
       store = { ...store,
-        marketplaceConfig: store.marketplaceConfigs?.[id] ?? { initialized: false, marketplaceContractId: id, tradingPaused: true, orderApiVersion: 1 },
+        marketplaceConfig: store.marketplaceConfigs?.[id] ?? { ...unknownMarketplaceConfig(id),
+          ...(store.marketplaceConfig?.marketplaces ? { marketplaces: store.marketplaceConfig.marketplaces } : {}) },
         marketplaceFixedSalesByNode: new Map(orders.filter(o => o.kind === 'Fixed').map(o => [o.node, o])),
         marketplaceAuctionsByNode: new Map(orders.filter(o => o.kind === 'Auction').map(o => [o.node, o])),
         marketplaceOffersByKey: new Map(orders.filter(o => o.kind === 'Offer').map(o => [marketplaceOfferKey(o.node, o.buyerAuthority), o])),
@@ -156,12 +170,20 @@ async function handleRequest(storeProvider, request, response, options) {
       && (!/^[0-9]{1,20}$/.test(orderId) || BigInt(orderId) > 18446744073709551615n || url.searchParams.getAll('orderId').length > 1)) {
       reply(400, { error: 'invalid_order_id' }); return
     }
+    // Snapshot stores hold the rows of the market they were written from, under every selector.
     const marketOrders = (kind, fallback) => store.frozen
-      ? filterRows(store.marketplaceOrders ?? [], o => o.kind === kind && o.marketplaceContractId === store.marketplaceConfig?.marketplaceContractId)
+      ? filterRows(store.marketplaceOrders ?? [], o => o.kind === kind && (allMarkets || o.marketplaceContractId === store.marketplaceConfig?.marketplaceContractId))
       : fallback?.values() ?? []
-    const singularOrder = (kind, fallback) => orderId === null ? fallback : [...marketOrders(kind)].find(o =>
-      o.node === routeParams.node && o.orderId === BigInt(orderId).toString()
-      && (!routeParams.buyerAuthority || o.buyerAuthority === routeParams.buyerAuthority)) ?? null
+    // Without an order ID: the latest indexed match, in one market or across all of them.
+    const singularOrder = (kind, fallback) => {
+      if (orderId === null && !allMarkets) return fallback
+      if (!store.frozen) return orderId === null ? fallback : null
+      let latest = null
+      for (const o of marketOrders(kind))
+        if (o.node === routeParams.node && (orderId === null || o.orderId === BigInt(orderId).toString())
+          && (!routeParams.buyerAuthority || o.buyerAuthority === routeParams.buyerAuthority)) latest = o
+      return latest
+    }
 
     if (pathname === '/health') {
       reply(200, publicHealth(store, page, logger, requestId))
@@ -283,7 +305,7 @@ async function handleRequest(storeProvider, request, response, options) {
     }
 
     if (pathname === '/marketplace/config') {
-      reply(200, store.marketplaceConfig ?? emptyMarketplaceConfig())
+      reply(200, store.marketplaceConfig ?? unknownMarketplaceConfig())
       return
     }
 
@@ -323,6 +345,13 @@ async function handleRequest(storeProvider, request, response, options) {
 
     if (pathname === '/marketplace/refund') {
       reply(200, store.marketplaceRefundsByAuthority?.get(routeParams.authority) ?? null)
+      return
+    }
+
+    if (pathname === '/marketplace/refunds') {
+      const only = market && !allMarkets ? normalizeNode(market) : null
+      replyPage(filterRows(refundRows, r => normalizeNode(r.authority) === routeParams.authority
+        && (!only || r.marketplaceContractId === only)))
       return
     }
 
@@ -390,11 +419,24 @@ function publicHealth(store, page, logger, requestId) {
   if (health.cursor) health.cursor = {
     ...health.cursor,
     reason: health.cursor.reason ? 'Collector is not ready; consult server logs.' : null,
+    // `collector` publishes where and why it is blocked.
+    blocked: undefined,
     // Status and code stay public; the collector logs each rejection's detail.
     ...(health.cursor.policyInitializations && typeof health.cursor.policyInitializations === 'object' ? {
       policyInitializations: Object.fromEntries(Object.entries(health.cursor.policyInitializations).map(([policy, row]) =>
         [policy, { status: row?.status, code: row?.code, retryAt: row?.retryAt, transaction: row?.transaction, blockHeight: row?.blockHeight }])),
     } : {}),
+    ...(health.cursor.marketInitializations && typeof health.cursor.marketInitializations === 'object' ? {
+      marketInitializations: Object.fromEntries(Object.entries(health.cursor.marketInitializations).map(([market, row]) =>
+        [market, { status: row?.status, code: row?.code, retryAt: row?.retryAt, transaction: row?.transaction, blockHeight: row?.blockHeight,
+          configTransaction: row?.configTransaction, configBlockHeight: row?.configBlockHeight }])),
+    } : {}),
+    // The collector's working set of unadmitted contracts is not part of the public API, and
+    // `collector` publishes its quarantine.
+    marketCandidates: undefined,
+    marketCandidatesAt: undefined,
+    marketCandidatesBytes: undefined,
+    quarantine: undefined,
   }
   if (health.durability) health.durability = {
     ...health.durability,

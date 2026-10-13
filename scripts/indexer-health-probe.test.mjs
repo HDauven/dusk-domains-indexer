@@ -116,6 +116,25 @@ describe('indexer health probe', () => {
     })
   })
 
+  it('fails a blocked collector with the block it is stuck at and the reason', async () => {
+    const collector = { status: 'blocked', blocked: true, stuckAtBlockHeight: 13, scannedBlockHeight: 12,
+      reason: { code: 'unsupported_event', role: 'resolver', topic: 'future_topic' } }
+    const result = await probeIndexerHealth({
+      healthUrl: 'http://indexer/health',
+      fetch: async () => Response.json({ ...healthyPayload(), ok: false, collector }),
+    })
+    expect(result.ok).toBe(false)
+    expect(result.checks.find((check) => check.id === 'collector')).toEqual({
+      id: 'collector', ok: false,
+      message: 'Collector is blocked at block 13 (unsupported_event: resolver future_topic); it publishes nothing from that block on.',
+    })
+    const running = await probeIndexerHealth({
+      healthUrl: 'http://indexer/health',
+      fetch: async () => Response.json({ ...healthyPayload(), collector: { status: 'running', blocked: false, scannedBlockHeight: 130 } }),
+    })
+    expect(running.checks.find((check) => check.id === 'collector')).toEqual({ id: 'collector', ok: true, message: 'Collector is not blocked.' })
+  })
+
   it('fails when source timestamps are older than the configured freshness window', async () => {
     const result = await probeIndexerHealth({
       healthUrl: 'http://indexer/health',
@@ -294,6 +313,7 @@ function healthyPayload() {
       '/marketplace/offers',
       '/marketplace/offer',
       '/marketplace/refund',
+      '/marketplace/refunds',
     ],
     lastEvent: {
       eventName: 'name_registered',

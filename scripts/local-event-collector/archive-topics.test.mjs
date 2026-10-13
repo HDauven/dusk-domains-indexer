@@ -8,6 +8,7 @@ import { topicsFor } from './frozen.mjs'
 import { createEventLog, moveHistory, envelope, receipt, admission, bytes, id, projectionOptions } from '../test-fixtures/frozen-events.mjs'
 import { decodeReceipt } from '../../server/local-indexer/receipt-codec.mjs'
 import { loadEventLogStore } from '../../server/local-indexer/event-log-store.mjs'
+import { startServer } from '../../server/local-indexer-test-helpers.mjs'
 const directorySyncFault = vi.hoisted(() => ({ armed: false }))
 vi.mock('node:fs/promises', async load => {
   const fs = await load()
@@ -168,4 +169,61 @@ it.each(['anchor', 'detect', 'head', 'range', 'events'])('keeps the committed jo
   expect(await h.run()).toMatchObject({ status: 'running', scannedBlockHeight: 14, eventCount: 5 })
   expect(h.retries).toHaveLength(1)
   expect(h.retries[0]).toMatchObject({ cursor: { scannedBlockHeight: 10, eventCount: 2 }, journal: before })
+})
+
+it('publishes the blocks before an event it cannot decode, stops at that block and reports it in /health', async () => {
+  const h = await harness(); h.setHead(10); await h.run()
+  // A known emitter emits a topic this indexer does not support, in the middle of the next batch.
+  h.blocks.set(13, [{ source: id(5), origin: hash(901), topic: 'future_topic', data: 'ff', reverted: false }])
+  h.setHead(20)
+  const cursor = await h.run()
+  expect(cursor).toMatchObject({ status: 'blocked', scannedBlockHeight: 12, scannedBlockHash: hash(12), eventCount: 4,
+    reason: expect.stringContaining('Unsupported resolver event'),
+    blocked: { code: 'unsupported_event', height: 13, blockHash: hash(13), txId: hash(901), emitter: id(5), role: 'resolver', topic: 'future_topic', attempts: 1 } })
+  // Blocks 11 and 12 are published; nothing at or after block 13 is.
+  expect((await h.rows()).map(row => row.meta.blockHeight)).toEqual([1, 10, 11, 12])
+  // Asked again, it stays at that block, keeps when it got stuck and counts the attempt.
+  const again = await h.run()
+  expect(again).toMatchObject({ status: 'blocked', scannedBlockHeight: 12, eventCount: 4,
+    blocked: { code: 'unsupported_event', height: 13, attempts: 2, since: cursor.blocked.since } })
+  // Serve the cursor as the running, blocked collector leaves it between attempts.
+  await writeFile(h.config.cursorFile, JSON.stringify(again))
+  const store = await loadEventLogStore(h.config.eventLog, h.config.cursorFile)
+  expect(store.warnings).toEqual([])
+  const server = await startServer(store)
+  try {
+    const health = await (await fetch(`${server.baseUrl}/health`)).json()
+    expect(health).toMatchObject({ ok: false, projectionBlockHeight: 12, degradedReason: { code: 'collector_blocked' },
+      collector: { status: 'blocked', blocked: true, stuckAtBlockHeight: 13, scannedBlockHeight: 12, since: cursor.blocked.since, attempts: 2,
+        reason: { code: 'unsupported_event', role: 'resolver', emitter: `0x${id(5)}`, topic: 'future_topic', txId: hash(901) } } })
+    // The collector logs the detail; public health carries codes and identifiers only.
+    expect(JSON.stringify(health)).not.toContain('upgrade the indexer')
+    // Reads keep serving the last complete publication, as of block 12, while health is unsafe.
+    const search = await fetch(`${server.baseUrl}/search?query=aurora`)
+    expect(search.status).toBe(200)
+    expect(await search.json()).toMatchObject({ canonical: 'aurora.dusk', status: 'registered' })
+  } finally { await server.close() }
+  // With a decoder that reads the event (here, the event turns out reverted), it resumes at block 13.
+  h.blocks.get(13)[0].reverted = true
+  const resumed = await h.run()
+  expect(resumed).toMatchObject({ status: 'running', scannedBlockHeight: 20, eventCount: 5 })
+  expect(resumed.blocked).toBeUndefined()
+})
+
+it.each([
+  ['missing', 'archive_unavailable'],
+  ['wrong-hash', 'archive_unavailable'],
+  ['range', 'archive_unavailable'],
+])('reports an archive %s failure as blocked at the next block', async (fault, code) => {
+  const h = await harness(); h.setHead(10); await h.run()
+  h.setHead(20); h.setFault(fault)
+  expect(await h.run()).toMatchObject({ status: 'blocked', scannedBlockHeight: 10, blocked: { code, height: 11, attempts: 1 } })
+})
+
+it('reports a malformed archive event as the archive\'s, at its block', async () => {
+  const h = await harness(); h.setHead(10); await h.run()
+  h.blocks.get(11)[0].origin = 'not a hash'
+  h.setHead(20)
+  expect(await h.run()).toMatchObject({ status: 'blocked', scannedBlockHeight: 10,
+    blocked: { code: 'archive_unavailable', height: 11, blockHash: hash(11), emitter: null, topic: null } })
 })

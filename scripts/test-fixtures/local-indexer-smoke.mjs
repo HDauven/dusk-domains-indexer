@@ -375,6 +375,7 @@ export function defaultRouteManifest() {
     '/marketplace/offers',
     '/marketplace/offer',
   '/marketplace/refund',
+    '/marketplace/refunds',
   ]
 }
 

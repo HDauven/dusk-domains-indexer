@@ -19,7 +19,7 @@ The collector reads the six frozen contract IDs, immutable driver filenames, sch
 version and first deployment block from `indexer.env`; retain that block on restart.
 The archive must serve `lastBlockPair`/`blocks` and either `contractEventBatch`
 or finalized `checkBlock`/`contractEvents`, plus `finalizedEvents` and `tx` to
-authenticate a policy admitted after launch. `npm run backfill:check -- --node-url <archive> --json`
+authenticate a policy admitted after launch, and `tx` for a marketplace listed after launch. `npm run backfill:check -- --node-url <archive> --json`
 probes the event-batch API; it does not probe `finalizedEvents` or `tx` and does not prove
 historical retention.
 
@@ -31,7 +31,9 @@ npm start -- --sqlite target/indexer.sqlite --event-log target/events.jsonl --cu
 
 One collector writes each journal; one API process writes its SQLite/WAL cache.
 The collector syncs the journal before its hash/byte cursor and refetches an
-uncommitted crash tail. Gaps or decoding failures stop progress. The API replays
+uncommitted crash tail. A gap or an event it cannot decode stops collection at that
+block, fail closed, after publishing the blocks before it; `/health` reports where and
+why ([stuck collector](docs/production-runbook.md#stuck-collector)). The API replays
 on startup, then applies appended lines; a replaced/shrunken journal is rebuilt.
 Snapshot mode is an explicit fixture/offline source, not finalized archive coverage.
 `npm test` includes the check for missing npm commands in tracked Markdown.
@@ -76,7 +78,11 @@ normal suite.
 units. Event projection comes from `@duskdomains/sdk/projection`, topic definitions from
 `@duskdomains/sdk/event-catalog`, and policy from the selected policy's initialization;
 a policy selected after launch is served only from its deployment initialization,
-authenticated against its admission ([policy replacement](docs/indexer-api.md#policy-replacement)).
+authenticated against its admission ([policy replacement](docs/indexer-api.md#policy-replacement)),
+and a marketplace listed after launch from its last configuration before admission,
+authenticated against its record; nothing it emits is served until then, its history
+included, and once it is rejected its events are quarantined rather than stopping collection
+([marketplace replacement](docs/indexer-api.md#marketplace-replacement)).
 
 For separate mainnet and testnet releases, see [the two-instance deployment guide](deploy/README.md).
 

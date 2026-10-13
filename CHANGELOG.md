@@ -5,6 +5,24 @@
 - Serve a policy selected by `SetPolicy` after launch at once: its prices, premium start, referral rates, reserved and denied lists, minimum length and open flag. The collector journals the policy's deployment initialization after the admitting receipt, authenticated like the deploy tool's admission evidence: contract ID from the deployed bytecode, nonce and owner, BLAKE3 code hash, and the init hash of the arguments actually deployed. Contract IDs don't bind init arguments, so the deployment's block must be the collected chain's at its height, linked by `prevBlockHash` to blocks the collector verified, and must list the deployment transaction; an orphan or other block hash is rejected even when its init matches the admission. Replay checks the row against the admission again and serves it only while the current admission pins the same hashes; the launch policy likewise only while the selected admission pins its genesis hashes. A mismatch or a failed lookup fails closed for that policy only, never stopping collection or other projections, and the cursor's `policyInitializations` records why; an archive that does not have the deployment yet, answers for another block or fails is asked again with backoff. A collector started on an older journal catches up a missing initialization without a rebuild.
 - Price `/search` by the selected policy's five length tiers; a root below the policy minimum stays at 0. Names registered under an earlier policy stay `registered` when a later policy denies their label or raises the minimum, and labels only a later policy reserves carry the reservation reason.
 - Apply the snapshot's selected policy in snapshot-mode `/search`, as replay does.
+- Serve a marketplace listed after launch with the configuration it reached before admission.
+- Serve `feeBps: null` for a market whose configuration is not authenticated, never a default.
+- Report `tradingPaused` for a market the directory no longer lists.
+- Serve nothing a marketplace listed after launch emits until its deployment authenticates.
+- Keep a marketplace's events out of name history until it authenticates, then add them in order.
+- Authenticate a newly listed marketplace before deciding on its listing transaction's events.
+- Quarantine a rejected marketplace's events instead of collecting them or stopping collection.
+- Quarantine a pending marketplace's frames that contradict another contract's; block when unclear.
+- Back up the market candidate journal, and refuse to start when it is missing or short.
+- Certify a backup only when its journals hold what its cursor commits, copying the cursor first.
+- Retain every contract that configures itself as a marketplace, without a limit.
+- Serve no fee and trading paused in snapshot mode without a market configuration.
+- Advertise `readModelSchemaVersion: 3`.
+- Read every admitted market with `marketplace=all`, and refunds with `/marketplace/refunds`.
+- List every admitted market's state and obligations in `/marketplace/config` `marketplaces`.
+- Publish the blocks before an event the collector cannot decode, and stop at that block.
+- Report a blocked collector in `/health` `collector`, with its block and reason.
+- Fail the `npm run health` and monitor `collector` check while the collector is blocked.
 
 - Serve `/holdings?authority=`: every root and subname an authority currently owns or manages, with its role, built from the same publication in event-log, SQLite and snapshot modes.
 - File renewals paid from a market listing (`escrow_renewed`) under the renewed name, with the payer.

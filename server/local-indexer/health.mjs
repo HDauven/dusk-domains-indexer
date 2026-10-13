@@ -45,6 +45,7 @@ export function healthResponseForStore(store) {
     lastEvent,
     routes: LOCAL_INDEXER_ROUTE_LIST,
     names: store.namesByCanonical.size,
+    ...(store?.cursor?.source === 'rusk-finalized-archive' ? { collector: collectorHealth(store.cursor) } : {}),
     ...(store.deployment ? { deployment: store.deployment } : {}),
     ...(store.sqlite ? { sqlite: store.sqlite } : {}),
     ...(store.durability ? { durability: store.durability } : {}),
@@ -52,6 +53,44 @@ export function healthResponseForStore(store) {
     ...(warnings.length || degradedReason ? { warnings: [...warnings, ...(degradedReason ? [degradedReason] : [])] } : {}),
     ...(store.cursor ? { cursor: store.cursor } : {}),
     ...(store.checkpoint ? { checkpoint: store.checkpoint } : {}),
+  }
+}
+
+/**
+ * The archive collector's state. A blocked collector publishes nothing from `stuckAtBlockHeight`
+ * on, fail closed, so every projection stays at the block before it until it is repaired.
+ * `reason` carries codes and on-chain identifiers; the collector logs the message. `quarantine`
+ * counts, per marketplace whose deployment has not authenticated, the events the collector set
+ * aside instead of collecting, with the last block and transaction.
+ */
+export function collectorHealth(cursor) {
+  const blocked = cursor.status === 'blocked', row = cursor.blocked && typeof cursor.blocked === 'object' ? cursor.blocked : {}
+  const scanned = Number.isSafeInteger(cursor.scannedBlockHeight) ? cursor.scannedBlockHeight : null
+  const hex = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value) ? `0x${value}` : null
+  return {
+    status: typeof cursor.status === 'string' ? cursor.status : null,
+    blocked,
+    stuckAtBlockHeight: !blocked ? null : Number.isSafeInteger(row.height) ? row.height : scanned === null ? null : scanned + 1,
+    scannedBlockHeight: scanned,
+    reason: !blocked ? null : {
+      code: typeof row.code === 'string' ? row.code : 'collector_error',
+      role: typeof row.role === 'string' ? row.role : null,
+      emitter: hex(row.emitter),
+      topic: typeof row.topic === 'string' ? row.topic : null,
+      txId: typeof row.txId === 'string' && /^[0-9a-f]{64}$/.test(row.txId) ? row.txId : null,
+    },
+    since: blocked && typeof row.since === 'string' ? row.since : null,
+    attempts: blocked && Number.isSafeInteger(row.attempts) ? row.attempts : null,
+    quarantine: Object.fromEntries(Object.entries(cursor.quarantine && typeof cursor.quarantine === 'object' ? cursor.quarantine : {})
+      .filter(([market, q]) => /^[0-9a-f]{64}$/.test(market) && q && typeof q === 'object')
+      .map(([market, q]) => [`0x${market}`, {
+        events: Number.isSafeInteger(q.events) ? q.events : null,
+        code: typeof q.code === 'string' ? q.code : null,
+        topic: typeof q.topic === 'string' ? q.topic : null,
+        firstBlockHeight: Number.isSafeInteger(q.firstBlockHeight) ? q.firstBlockHeight : null,
+        lastBlockHeight: Number.isSafeInteger(q.lastBlockHeight) ? q.lastBlockHeight : null,
+        lastTxId: typeof q.lastTxId === 'string' && /^[0-9a-f]{64}$/.test(q.lastTxId) ? q.lastTxId : null,
+      }])),
   }
 }
 
@@ -86,6 +125,10 @@ function healthDegradedReason(store) {
     return { code: 'history_unverified', message: 'Archive coverage is unverified; start the archive collector (legacy logs need new journal/cursor/SQLite paths).' }
   }
   if (cursor?.source === 'rusk-finalized-archive') {
+    if (cursor.status === 'blocked') {
+      const { stuckAtBlockHeight, reason } = collectorHealth(cursor)
+      return { code: 'collector_blocked', message: `Archive collector is blocked at block ${stuckAtBlockHeight} (${reason.code}).` }
+    }
     const age = Date.now() - Date.parse(cursor.updatedAt)
     const coverageKnown = Number.isSafeInteger(cursor.fromBlock) && cursor.fromBlock > 0
       && Number.isSafeInteger(cursor.scannedBlockHeight) && cursor.scannedBlockHeight >= cursor.fromBlock - 1

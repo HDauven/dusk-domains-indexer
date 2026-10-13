@@ -5,9 +5,10 @@ import { hex, contractId, encodeBase58, stringifyJson, authority } from '@duskdo
 import { createProjectionState, projectReceipt, slotStateKey, nameStateKey, effectiveMoveLock, moveLockEndsAt, assertRecordsDigest } from '@duskdomains/sdk/projection'
 import { indexHoldingsByAuthority, indexNamesByAuthority } from './name-authority-index.mjs'
 import { lifecycleClock } from './read-models/lifecycle.mjs'
-import { recordIndexKey, commitmentKey, marketplaceOfferKey, emptyMarketplaceConfig, emptyTreasuryState, appendRecordHistory } from './view-utils.mjs'
+import { recordIndexKey, commitmentKey, marketplaceOfferKey, unknownMarketplaceConfig, emptyTreasuryState, appendRecordHistory } from './view-utils.mjs'
 import { DEFAULT_FEE_CONFIG } from './constants.mjs'
 import { admitPolicyInitialization, admittedGenesisInitialization, admittedInitialization } from './policy-initialization.mjs'
+import { admitMarketInitialization, admittedMarketConfig } from './market-initialization.mjs'
 
 const h = v => `0x${typeof v === 'string' ? v.replace(/^0x/, '') : hex(v)}`
 const integer = v => v == null ? null : BigInt(v) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : String(v)
@@ -22,7 +23,11 @@ export function createReplayState() {
     slotRecords: new Map(), registrationByNode: new Map(), timestamps: new Map(), treasuryEvents: [], referralEvents: new Map(),
     // Policies outside the release scope initialize before admission; the SDK projection never
     // sees that event, and consumers must not write its maps. Only authenticated rows land here.
-    genesisPolicies: new Set(), policyInitializations: new Map() }
+    genesisPolicies: new Set(), policyInitializations: new Map(),
+    // Likewise a marketplace's configuration before its admission, and the height that admitted it.
+    // Release markets are authenticated by the release; every other one only by such a row.
+    // Until then its effects wait in `deferredHistory`, out of every name's history.
+    genesisMarkets: new Set(), marketInitializations: new Map(), marketAdmittedAt: new Map(), deferredHistory: new Map() }
 }
 
 export function applyReplayEvent(state, entry, warnings) {
@@ -43,9 +48,26 @@ export function applyReplayEvent(state, entry, warnings) {
       state.projection = createProjectionState({ ...event.projectionOptions, retainEffects: true })
       state.genesisPolicies = new Set(Object.entries(event.projectionOptions.contracts)
         .filter(([, role]) => role === 'policy').map(([id]) => contractId(id)))
+      state.genesisMarkets = new Set(Object.entries(event.projectionOptions.contracts)
+        .filter(([, role]) => role === 'marketplace').map(([id]) => contractId(id)))
     }
     assert.equal(JSON.stringify(event.projectionOptions), state.options, 'Deployment scope changed inside journal')
     const projection = state.projection
+    if (event.initialization?.role === 'marketplace') {
+      // A market's last configuration before admission, journaled at a later block once it is admitted.
+      const market = contractId(event.initialization.contractId)
+      const accepted = admitMarketInitialization(projection, decodeReceipt(r), event.initialization, meta.blockHeight, state.marketAdmittedAt.get(market))
+      const prior = state.marketInitializations.get(accepted.market)
+      assert(!prior || stringifyJson(prior.config) === stringifyJson(accepted.config), 'Conflicting marketplace initialization')
+      state.marketInitializations.set(accepted.market, accepted)
+      // Authenticated: its history so far joins each name's, in chain order.
+      if (authenticatedMarket(state, accepted.market)) {
+        for (const { e, meta: at, controller } of state.deferredHistory.get(accepted.market) ?? []) retainHistory(state, e, at, controller, undefined, true)
+        state.deferredHistory.delete(accepted.market)
+      }
+      state.newestEventHeight = meta.blockHeight
+      return
+    }
     if (event.initialization !== undefined) {
       // A historical deployment receipt, journaled at a later block once its policy is admitted.
       const accepted = admitPolicyInitialization(projection, decodeReceipt(r), event.initialization, meta.blockHeight)
@@ -58,7 +80,9 @@ export function applyReplayEvent(state, entry, warnings) {
     const alreadyApplied = Object.hasOwn(projection.receipts, r.id)
     const effectsStart = projection.effects.length
     if (alreadyApplied) return
+    const markets = new Set(Object.keys(projection.markets))
     projectReceipt(projection, decodeReceipt(r))
+    for (const market of Object.keys(projection.markets)) if (!markets.has(market)) state.marketAdmittedAt.set(market, meta.blockHeight)
     state.newestEventHeight = meta.blockHeight
     const effects = projection.effects.slice(effectsStart), controllers = new Map(), affected = new Map()
     const operation = e => `${e.emitter}:${e.operationOrdinal}:${e.data.op_seq}`
@@ -73,6 +97,11 @@ export function applyReplayEvent(state, entry, warnings) {
     }
     for (const e of effects) {
       const key = operation(e), controller = controllers.get(key)?.data.body
+      // A marketplace listed after launch enters public history only once authenticated.
+      if (projection.scope[e.emitter] === 'marketplace' && !authenticatedMarket(state, e.emitter)) {
+        push(state.deferredHistory, e.emitter, { e, meta, controller })
+        continue
+      }
       if (e.topic === 'controller_used') {
         for (const node of affected.get(key) ?? []) retainHistory(state, e, meta, controller, node)
       } else retainHistory(state, e, meta, controller)
@@ -91,13 +120,30 @@ function bodyNode(b) {
     // A renewal paid from a listing: the market's event names the payer.
     ?? b.renewal?.name?.key?.node
 }
-function retainHistory(state, e, meta, controller, affectedNode) {
+/** A market the release lists, or one whose initialization row its record still pins. */
+function authenticatedMarket(state, market) {
+  return state.genesisMarkets.has(market) || Boolean(admittedMarketConfig(state.projection, market, state.marketInitializations.get(market)))
+}
+/** Insert `row` among `rows`, kept in chain order: block height, then event ordinal. */
+function insertInOrder(rows, row) {
+  let at = rows.length
+  while (at > 0 && (rows[at - 1].blockHeight > row.blockHeight
+    || (rows[at - 1].blockHeight === row.blockHeight && rows[at - 1].eventIndex > row.eventIndex))) at--
+  rows.splice(at, 0, row)
+}
+/** `late`: an effect retained after newer ones, such as a market's before it authenticated. */
+function retainHistory(state, e, meta, controller, affectedNode, late = false) {
   const b = e.data.body, nodeBytes = bodyNode(b), node = affectedNode ?? (nodeBytes ? h(nodeBytes) : null)
   const base = { id: `${meta.eventId}:${e.ordinal}`, eventType: e.topic, node,
     contractId: h(e.emitter), timestamp: meta.observedAt ?? null, blockHeight: integer(e.height),
     txId: meta.txId ?? null, actor: b.actor ? h(b.actor) : null, eventIndex: e.ordinal, data: jsonSafe(b),
     ...(controller ? { via: h(controller.via), principal: jsonSafe(controller.principal), scope: controller.scope } : {}) }
-  if (node) {
+  if (node && late) {
+    if (!state.activityByNode.has(node)) state.activityByNode.set(node, [])
+    const rows = state.activityByNode.get(node)
+    insertInOrder(rows, base)
+    state.timestamps.set(node, rows.at(-1).timestamp)
+  } else if (node) {
     push(state.activityByNode, node, base)
     state.timestamps.set(node, meta.observedAt ?? null)
   }
@@ -152,7 +198,7 @@ export function emptyFrozenView() {
     marketplaceFixedSalesByNode: new Map(), marketplaceAuctionsByNode: new Map(), marketplaceOffersByKey: new Map(),
     marketplaceRefundsByAuthority: new Map(), referralsByReferrer: new Map(),
     activityByNode: new Map(), recordHistoryByNode: new Map(), recordHistoryByNodeKey: new Map(),
-    marketplaceConfig: emptyMarketplaceConfig(), treasuryState: emptyTreasuryState(), feeConfig: { ...DEFAULT_FEE_CONFIG },
+    marketplaceConfig: unknownMarketplaceConfig(), treasuryState: emptyTreasuryState(), feeConfig: { ...DEFAULT_FEE_CONFIG },
     poolState: { registrationsPaused: true }, referralRewardsSupported: false,
     nextLifecycleBoundary: null, nextLifecycleDateBoundary: null, policy: null, renewalSchedule: null,
     projectionBlockHeight: null, directory: null, admissions: {}, forwards: [], moves: [], frozen: true }
@@ -317,7 +363,7 @@ export function finalizeReplayState(state, now, chainHeight = null, warnings = [
     policy: view.policy, renewalSchedule: view.renewalSchedule, registrationsPaused: view.poolState.registrationsPaused, referralRewardBps: policy?.base_referral_bps ?? null,
     renewalReferralRewardBps: config?.renewal.referral_bps ?? null, premiumReferralRewardBps: policy?.premium_referral_bps ?? null, version: view.policy?.version ?? null }
   vaultView(view, state)
-  marketView(view, s)
+  marketView(view, s, state)
   view.namesByAuthority = indexNamesByAuthority(view.namesByCanonical, view.controllersByNode)
   view.holdingsByAuthority = indexHoldingsByAuthority(view, lifecycleClock(view))
   state.lastCompleteView = view
@@ -384,16 +430,30 @@ function vaultView(view, state) {
     if (r.beneficiary.kind === 'Contract') view.referralsByReferrer.set(h(r.beneficiary.bytes), row)
   }
 }
-function marketView(view, s) {
+function marketView(view, s, state) {
   const selected = s.directory ? (s.directory.preferred_marketplace ? contractId(s.directory.preferred_marketplace) : null) : Object.keys(s.marketConfigs)[0]
-  const config = s.marketConfigs[selected]
+  // A market the release lists is authenticated by it; one admitted after launch only by its
+  // deployment's initialization row, while its record pins that evidence. Nothing an
+  // unauthenticated market emits is served: no configuration, orders or refunds.
+  const authenticated = id => state.genesisMarkets.has(id) || Boolean(admittedMarketConfig(s, id, state.marketInitializations.get(id)))
+  // A market's configuration is its own last `market_configured`; for a market admitted after
+  // launch that has emitted none since, the one it reached before admission. Without either it is
+  // unknown: no fee is served, and trading is reported paused.
+  const configOf = id => authenticated(id) ? s.marketConfigs[id] ?? admittedMarketConfig(s, id, state.marketInitializations.get(id)) : undefined
+  // A market takes new orders only unpaused and while the directory lists it; a draining or
+  // retired market refuses them, whatever its own pause.
+  const paused = (id, c) => !c || c.new_orders_disabled || (s.directory && s.markets[id]?.state !== 'Listed')
+  const config = selected ? configOf(selected) : undefined
   const markets = jsonSafe(s.markets)
   view.marketplaceConfig = { initialized: Boolean(config), marketplaceContractId: selected ? h(selected) : null,
-    tradingPaused: config?.new_orders_disabled ?? true, feeBps: config?.fee_bps ?? 250, orderApiVersion: 1,
+    tradingPaused: Boolean(paused(selected, config)), feeBps: config?.fee_bps ?? null, orderApiVersion: 1,
     config: jsonSafe(config ?? null), markets }
-  view.marketplaceConfigs = Object.fromEntries(Object.entries(s.marketConfigs).map(([id, c]) => [h(id), { initialized: true, marketplaceContractId: h(id), tradingPaused: c.new_orders_disabled, feeBps: c.fee_bps, orderApiVersion: 1, config: jsonSafe(c), markets }]))
+  const configured = new Set([...Object.keys(s.marketConfigs), ...state.marketInitializations.keys()])
+  view.marketplaceConfigs = Object.fromEntries([...configured].map(id => [id, configOf(id)]).filter(([, c]) => c)
+    .map(([id, c]) => [h(id), { initialized: true, marketplaceContractId: h(id), tradingPaused: Boolean(paused(id, c)), feeBps: c.fee_bps, orderApiVersion: 1, config: jsonSafe(c), markets }]))
   for (const [key, order] of Object.entries(s.orders)) {
     const market = key.slice(0, 64), t = order.terms, node = h(t.name.key.node)
+    if (!authenticated(market)) continue
     const lifecycle = view.namesByNode.get(node)
     const row = { node, name: lifecycle?.canonicalName ?? null, marketplaceContractId: h(market), homeShard: h(t.store),
       orderId: String(t.id), saleId: String(t.id), auctionId: String(t.id), kind: t.kind, status: order.status,
@@ -414,6 +474,25 @@ function marketView(view, s) {
     if (t.kind === 'Auction') view.marketplaceAuctionsByNode.set(node, row)
     if (t.kind === 'Offer') view.marketplaceOffersByKey.set(marketplaceOfferKey(node, row.buyerAuthority), row)
   }
-  view.marketplaceRefunds = Object.entries(s.refunds).map(([key, r]) => ({ marketplaceContractId: h(key.slice(0, 64)), authority: h(r.authority), amountLux: r.amount_lux }))
+  view.marketplaceRefunds = Object.entries(s.refunds).filter(([key]) => authenticated(key.slice(0, 64)))
+    .map(([key, r]) => ({ marketplaceContractId: h(key.slice(0, 64)), authority: h(r.authority), amountLux: r.amount_lux }))
   for (const r of view.marketplaceRefunds) if (r.marketplaceContractId === h(selected ?? '')) view.marketplaceRefundsByAuthority.set(r.authority, r)
+  // Every admitted market, in admission order, with what it still holds: orders to settle,
+  // cancel or return, and refunds to claim, which outlive preference and draining.
+  const held = new Map(Object.keys(markets).map(id => [h(id), { orders: 0, refunds: 0, refundableLux: 0n }]))
+  for (const o of view.marketplaceOrders ?? []) if (held.has(o.marketplaceContractId)) held.get(o.marketplaceContractId).orders++
+  for (const r of view.marketplaceRefunds) if (held.has(r.marketplaceContractId)) {
+    const row = held.get(r.marketplaceContractId)
+    row.refunds++
+    row.refundableLux += BigInt(r.amountLux)
+  }
+  const marketplaces = Object.entries(markets).map(([id, m]) => {
+    const c = configOf(contractId(id)), row = held.get(h(id)), known = authenticated(contractId(id))
+    return { marketplaceContractId: h(id), state: m.state, preferred: contractId(id) === selected, authenticated: known, initialized: Boolean(c),
+      tradingPaused: Boolean(paused(contractId(id), c)), feeBps: c?.fee_bps ?? null, unsettledOrders: known ? row.orders : null,
+      refundAccounts: known ? row.refunds : null, refundableLux: known ? String(row.refundableLux) : null,
+      holdsObligations: known ? row.orders > 0 || row.refundableLux > 0n : null }
+  })
+  view.marketplaceConfig.marketplaces = marketplaces
+  for (const config of Object.values(view.marketplaceConfigs)) config.marketplaces = marketplaces
 }

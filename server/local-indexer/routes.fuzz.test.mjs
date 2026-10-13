@@ -136,7 +136,8 @@ it('paths: arbitrary path components on every route prefix', async () => {
 // Pagination for every list route: bounded pages, disjoint and complete traversal.
 const listRoutes = Object.keys(LIST_FIELDS).map(path => [path,
   ['/records', '/activity', '/record-history'].includes(path) ? { node: rootNode }
-    : path === '/subnames' ? { parentNode: rootNode } : path === '/holdings' ? { authority: `0x${id(10)}` } : {}])
+    : path === '/subnames' ? { parentNode: rootNode } : path === '/holdings' ? { authority: `0x${id(10)}` }
+      : path === '/marketplace/refunds' ? { authority: `0x${id(14)}` } : {}])
 async function traverse(path, filters, limit) {
   const rows = [], seen = new Set()
   let cursor = null, pages = 0

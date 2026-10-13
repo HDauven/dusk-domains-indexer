@@ -23,6 +23,7 @@ const urls = {
   '/marketplace/config': '', '/marketplace/fixed-sales': '', '/marketplace/fixed-sale': `?node=${rootNode}`,
   '/marketplace/auctions': '', '/marketplace/auction': `?node=${rootNode}`, '/marketplace/offers': '',
   '/marketplace/offer': `?node=${rootNode}&buyerAuthority=${prefixed(14)}`, '/marketplace/refund': `?authority=${prefixed(14)}`,
+  '/marketplace/refunds': `?authority=${prefixed(14)}`,
 }
 it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receipts from %s', async mode => {
   const entries = fixtures(), file = await writeEventLog(entries), cursorFile = await commitJournal(file, {
@@ -40,7 +41,7 @@ it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receip
     bodies[path] = await res.json()
     expect(bodies[path], path).not.toBeNull()
   }
-  expect(bodies['/health']).toMatchObject({ ok: true, readModelSchemaVersion: 2, deployment: { complete: true } })
+  expect(bodies['/health']).toMatchObject({ ok: true, readModelSchemaVersion: 3, deployment: { complete: true } })
   expect(bodies['/names'].names[0]).toMatchObject({ homeShard: prefixed(4), generation: '7', namespace: { descendantCount: 1 } })
   expect(bodies['/holdings'].holdings.map(row => [row.name, row.role])).toEqual([['aurora.dusk', 'owner'], ['x.aurora.dusk', 'owner']])
   expect(bodies['/name'].nameRef.incarnation).toEqual({ generation: '7', serial: '1' })
@@ -57,6 +58,7 @@ it.each(['event-log', 'sqlite'])('serves every frontend route over frozen receip
   expect(bodies['/marketplace/auctions'].auctions[0].orderId).toBe('2')
   expect(bodies['/marketplace/offers'].offers[0].order.terms.kind).toBe('Offer')
   expect(bodies['/marketplace/refund'].amountLux).toBe('9007199254740993')
+  expect(bodies['/marketplace/refunds'].refunds).toEqual([bodies['/marketplace/refund']])
   expect(bodies['/commitment'].commitmentStore).toBe(prefixed(4))
   for (const [path, type, text] of [
     ['/share/name/aurora.dusk', 'text/html', 'aurora.dusk'],
@@ -84,6 +86,13 @@ it.each(['event-log', 'sqlite'])('derives reclaimed beneficiaries and drained re
   expect(store.referralsByReferrer.has(prefixed(13))).toBe(false)
   expect(store.marketplaceRefundsByAuthority.has(prefixed(14))).toBe(false)
 })
+it('serves no market configuration before the journal holds one', async () => {
+  const file = await writeEventLog([]), cursorFile = await commitJournal(file, { scannedBlockHeight: 0, currentBlockHeight: 0 })
+  const server = await startServer(await loadEventLogStore(file, cursorFile)); servers.push(server)
+  expect(await (await fetch(`${server.baseUrl}/marketplace/config`)).json()).toMatchObject({ initialized: false, tradingPaused: true, feeBps: null })
+  expect((await (await fetch(`${server.baseUrl}/health`)).json()).pause).toMatchObject({ tradingPaused: true })
+})
+
 it('keeps an old-market refund accessible via marketplace selector', async () => {
   const entries = fixtures(), store = await loadFixture(entries)
   store.marketplaceConfig.marketplaceContractId = prefixed(20)

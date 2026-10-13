@@ -21,6 +21,20 @@ describe('local indexer snapshot API', () => {
     } finally { await close() }
   })
 
+  it('serves no market fee and reports trading paused for a snapshot without a market configuration', async () => {
+    for (const [marketplaceConfig, expected] of [
+      [undefined, { initialized: false, feeBps: null, tradingPaused: true, config: null }],
+      [{ initialized: true, feeBps: 300, tradingPaused: false }, { initialized: true, feeBps: 300, tradingPaused: false }],
+    ]) {
+      const snapshot = { ...createSnapshot({ owner: '0xowner' }), ...(marketplaceConfig ? { marketplaceConfig } : {}) }
+      const { baseUrl, close } = await startServer(await loadSnapshotStore(await writeSnapshot(snapshot)))
+      try {
+        expect(await expectJson(`${baseUrl}/marketplace/config`)).toMatchObject(expected)
+        expect((await expectJson(`${baseUrl}/health`)).pause.tradingPaused).toBe(expected.tradingPaused)
+      } finally { await close() }
+    }
+  })
+
   it('serves the local-live read routes from an E2E snapshot', async () => {
     const snapshotFile = await writeSnapshot(createSnapshot({ owner: '0xowner' }))
     const store = await loadSnapshotStore(snapshotFile)

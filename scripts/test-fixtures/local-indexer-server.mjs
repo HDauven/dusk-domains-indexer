@@ -35,6 +35,7 @@ export const expectedLocalIndexerRoutes = [
   '/marketplace/offers',
   '/marketplace/offer',
   '/marketplace/refund',
+  '/marketplace/refunds',
 ]
 
 export async function writeSnapshot(options = {}, context = {}) {

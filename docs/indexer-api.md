@@ -1,6 +1,6 @@
 # Dusk Domains indexer API — frozen layer
 
-The frozen deployment requires a **fresh event journal, cursor and SQLite database** replayed from `DUSK_DOMAINS_FROM_BLOCK`. Legacy router/core/treasury journals cannot be mixed with frozen receipts. Health advertises `apiVersion: "v1"`, `eventSchemaVersion: "1"`, `readModelSchemaVersion: 2`.
+The frozen deployment requires a **fresh event journal, cursor and SQLite database** replayed from `DUSK_DOMAINS_FROM_BLOCK`. Legacy router/core/treasury journals cannot be mixed with frozen receipts. Health advertises `apiVersion: "v1"`, `eventSchemaVersion: "1"`, `readModelSchemaVersion: 3`. Read model 3 changes marketplace responses: `feeBps` can be `null` and `config` `null`, never a default fee; `tradingPaused` also covers markets the directory no longer lists; `/marketplace/config` adds `marketplaces`; order routes take `marketplace=all`; `/marketplace/refunds` is new; and nothing a marketplace emits is served until its deployment authenticates ([marketplace replacement](#marketplace-replacement)). Read model 2 served 250 bps unpaused without a configuration.
 
 ## Encoding and compatibility
 
@@ -27,7 +27,7 @@ Suspension prevents controller execution and survives removal/re-admission.
 
 ## Names and identity
 
-- `/health`: existing readiness, cursor, checkpoint, deployment, package and pause fields. Deployment roles are `directory`, `policy`, `store`, `vault`, `resolver`, `marketplace`; plural admitted IDs appear in `deployment.contracts[role].contractIds`. `eventCount` counts receipt rows (not individual effects). `lastEvent.eventName` is `frozen_receipt`. `projectionBlockHeight` is the finalized scanned height used for lifecycle and premium reads (retained at the last complete publication after a replay failure, or `null` when cold reconstruction blocks), distinct from the observed live tip. Warnings mark replay degraded; an invalid receipt or malformed journal row retains the last complete publication and blocks further projection.
+- `/health`: existing readiness, cursor, checkpoint, deployment, package and pause fields. Deployment roles are `directory`, `policy`, `store`, `vault`, `resolver`, `marketplace`; plural admitted IDs appear in `deployment.contracts[role].contractIds`. `eventCount` counts receipt rows (not individual effects). `lastEvent.eventName` is `frozen_receipt`. `projectionBlockHeight` is the finalized scanned height used for lifecycle and premium reads (retained at the last complete publication after a replay failure, or `null` when cold reconstruction blocks), distinct from the observed live tip. Warnings mark replay degraded; an invalid receipt or malformed journal row retains the last complete publication and blocks further projection. With an archive cursor, `collector` reports the collector ([stuck collector](#stuck-collector)).
 - `/names?owner=<authority>` → `{names,nextCursor}`: roots held through grace, filtered by current owner/manager. Existing lifecycle, records, primary, namespace and activity-count fields remain.
 - `/holdings?authority=<authority>` → `{holdings,nextCursor}`: every name, root or subname, whose current owner or manager is the authority. Roots are listed through grace, as on `/names?owner=`; subnames while `/subname` serves them (active, under a held root). Rows are `{node,name,kind,role,root,parentNode,parentName,owner,manager,status,expiresAtBlockHeight,graceEndsAtBlockHeight,homeShard,generation,serial}`. `kind` is `root` or `subname`. `role` is `owner` when the authority owns the name (it may also manage it), otherwise `manager`. `status` is `active` or `grace` for roots and `active` for subnames, which have no grace of their own (`graceEndsAtBlockHeight: null`). `parentNode` and `parentName` are null for roots; `root` is the root node. `generation` and `serial` are decimal strings, null in snapshot mode, where `owner` or `manager` is also null when the snapshot doesn't carry it. Rows are ordered by name, then node, with the standard `limit` and `cursor`. The authority is the 32-byte owner/manager value of name rows: the domain-separated hash of a Moonlight key, or a contract ID. A listing makes the market contract both owner and manager, so a listed root appears under the market, not the seller; subnames the seller holds directly stay listed under the seller. Event-log, SQLite and snapshot stores build this index with each publication. A store without it returns HTTP 503 `holder_index_unavailable`; older indexers return 404 `not_found` and omit the route from `/health` `routes`.
 - `/name?node=<node>` → lifecycle plus premium and `namespace: {descendantCount,heldByOthersCount,subnames,ancestors}`. Stored expired root lifecycle remains inspectable. `/subname?node=<node>` returns an active child; `/subnames?parentNode=<node>` → `{subnames,nextCursor}` returns immediate active children. Stored descendants count toward namespace capacity even when expired. Inherited lifecycle updates come from SDK projection.
@@ -85,6 +85,64 @@ A failed reconstruction retains the last complete publication and its clock, inc
 Rejected rows of any JSON value kind, including `null`, remain diagnosable without interrupting retained reads. `/health` continues to return its diagnostic response with `ok: false`; a cold store returns HTTP 503 on data routes until repair provides a complete prefix.
 
 Retention lasts only for the provider/process lifetime; there is no durable publication checkpoint. A cold start without a complete committed prefix withholds all prefix data: data, crawler and share routes return HTTP 503 with `error: "incomplete_replay"` and `Cache-Control: no-store`. `/health` remains available with degraded status and `projectionBlockHeight: null`. Complete reconstruction restores serving. Legacy cursorless journals and JSON arrays do not establish finalized coverage; rebuild them with the archive collector into fresh JSONL/cursor/SQLite paths.
+
+## Stuck collector
+
+The collector accepts only events it can decode from the contracts it collects. A block
+holding one it cannot (an unsupported topic, an undecodable payload, a bad wire version or
+journal frame, an admission it cannot follow), or a block the archive cannot serve, stops
+collection there, fail closed: the blocks before it are published, that block and every
+later one are not, and every projection stays at the block before it. The collector asks
+again every 5 seconds. A marketplace whose authentication failed for good is the
+exception: its events are quarantined instead (below). `/health` then reports:
+
+```json
+"collector": {
+  "status": "blocked",
+  "blocked": true,
+  "stuckAtBlockHeight": 13,
+  "scannedBlockHeight": 12,
+  "reason": { "code": "unsupported_event", "role": "resolver", "emitter": "0x…", "topic": "future_topic", "txId": "…" },
+  "since": "2026-10-13T16:44:30.647Z",
+  "attempts": 17,
+  "quarantine": {}
+}
+```
+
+`ok` is `false` with `degradedReason.code: "collector_blocked"`, and `cursor.status` is
+`blocked`. Data routes keep serving the last complete publication, at
+`projectionBlockHeight`; show it as stale, not live, and do not treat it as confirming
+recent writes. `stuckAtBlockHeight` is the first block not published. `reason.code` is
+`unsupported_event`, `invalid_event` or `unsupported_admission` (the indexer needs a
+decoder that reads the event), `interference` (marketplaces not authenticated yet whose
+journal frames conflict), `archive_unavailable`, `chain_mismatch` (the archive's
+blocks do not link to the collected chain) or `collector_error`; `role`, `emitter`,
+`topic` and `txId` are null when unknown. `since` is when the collector first stopped at
+that block for that code, and `attempts` counts its tries. The collector logs the
+message. Otherwise `collector` is `{status, blocked: false, stuckAtBlockHeight: null,
+scannedBlockHeight, reason: null, since: null, attempts: null, quarantine}`. Recovery is in
+the [runbook](production-runbook.md#stuck-collector).
+
+`quarantine` maps each marketplace whose events the collector set aside instead of collecting
+to `{events,code,topic,firstBlockHeight,lastBlockHeight,lastTxId}`. A marketplace listed after
+launch is authenticated (below) before the transaction that lists it is decided, so its trust
+is known when its events are:
+
+- authenticated, or listed by the release: its events are collected, and one the reviewed
+  driver cannot read stops collection, as for every collected contract;
+- rejected for good: none of its events is collected (`unauthenticated`, with the `topic` of an
+  unreadable one); they never stop collection;
+- not authenticated yet, while a failed lookup waits to be asked again: its readable,
+  well-framed events are collected. If its journal frames change what a trusted contract (one
+  the release lists, an admitted store, resolver or policy, or an authenticated marketplace)
+  committed in the same transaction, they contradict it, and its events in that transaction are
+  set aside (`interference`). An event of it no reviewed driver reads, invalid frames, or frames
+  that conflict with another such market's cannot be attributed to the market at fault, so
+  collection stops at that block (`reason.code` `unsupported_event`, `invalid_event` or
+  `interference`) until its authentication settles, and nothing of a market that may still
+  authenticate is dropped.
+
+Collection and every other projection go on past quarantined events.
 
 ## Website verification
 
@@ -144,13 +202,14 @@ Cession and successor registration publish together as one committed receipt.
 - `/fee-config` → `{directory,admissions,threeCharYearLux,fourCharYearLux,fivePlusYearLux,premiumStartLux,policy,renewalSchedule,registrationsPaused}`. `policy` is `{contractId,version,config}` or null; `config` is null while the selected policy's initialization is unavailable or not authenticated ([policy replacement](#policy-replacement)); `renewalSchedule` is the canonical directory schedule `{version,effective_at,annual_lux,referral_bps}` or null. `directory` is the projected canonical DirectoryConfig, including decimal-string `recipient_version`; `admissions` maps unprefixed contract IDs to canonical Admission objects, including decimal-string `governance_version`. Both counters start at 1. Each store's two governance flags share one version; recipient version also advances on operator acceptance, even with the same recipient. Missing policy prices are null. Launch registration is 150/50/10 DUSK for 3/4/5+ characters, with 3-character roots; renewal uses the complete five-entry table independently. Premium/referral rates follow published policy.
 - `/treasury` now reports the vault: `{initialized,source:"vault",protocolAccruedLux,referralLiabilityLux,protocolLux,liabilityLux,accountedLux,reservedBeneficiaries,sourceVersion,actualLux:null,surplusLux:null,operator,sources,events}`. `protocolAccruedLux` and `availableLux` alias the current claimable protocol balance. `operator` remains a TypedPrincipal; `operatorRecipient` is base58 and `operatorAuthority` is hex. The response retains `allowedFeeSources`, `totalReceivedLux`, `registrationReceivedLux`, `renewalReceivedLux`, `otherReceivedLux` (marketplace fees), `premiumReceivedLux`, `premiumAccountingError`, `referralClaimableLux`, `referralClaimedLux`, `referralCount`, `lastFeeSourceContract`, `lastFeeReason`, `lastFeeNode`, `lastEventType` and `claims`. Lifetime received totals sum vault receipts; the premium subtotal sums root-registration premium fields and is never added again to vault balances. `claims` has at most 12 protocol claims, with `amountLux` and `remainingLux`; `events` has the latest 12 vault receipt/claim effects. Only vault receipts/claims drive money. Actual balance and unsolicited surplus cannot be reconstructed from domain events and are explicitly unknown.
 - `/referrals?referrer=<key>` → `{supported,referrer,beneficiary,claimableLux,claimedLux,accruedLux,events}`. Key is `Moonlight:<192 hex>` or `Contract:<64 hex>` (no `0x`); Moonlight base58 and `0x` contract aliases also work. Absent rows have zero amounts and no beneficiary. `accruedLux = claimableLux + claimedLux`. `referralCount` counts attributed registrations across generations; `recentActivity` retains the last 12 accrual/claim effects with `amountLux` and canonical `counterparty` (payer or null). `events` is also capped at 12.
-- `/marketplace/config` → `{initialized,marketplaceContractId,tradingPaused,feeBps,orderApiVersion:1,config,markets}`. `config` and `markets` retain canonical SDK objects. Launch fee is 250 bps (2.5%).
+- `/marketplace/config` → `{initialized,marketplaceContractId,tradingPaused,feeBps,orderApiVersion:1,config,markets,marketplaces}`. `config` and `markets` retain canonical SDK objects. Launch fee is 250 bps (2.5%). A market whose configuration the indexer has not authenticated, or no market when none is preferred or the journal holds no configuration yet, has `initialized: false`, `config: null`, `feeBps: null` and `tradingPaused: true`, never a default fee ([marketplace replacement](#marketplace-replacement)). `tradingPaused` is true while the market takes no new orders: it is paused itself (`config.new_orders_disabled`), or the directory no longer lists it (`Draining`, `Retired`); its open orders stay settleable either way. `marketplaces` lists every admitted market in admission order as `{marketplaceContractId,state,preferred,authenticated,initialized,tradingPaused,feeBps,unsettledOrders,refundAccounts,refundableLux,holdsObligations}`: `state` is the directory's `Listed`, `Draining` or `Retired`, `authenticated` whether the release or its deployment's initialization row vouches for it, `unsettledOrders` counts its open and return-pending orders, `refundAccounts` its refund rows, and `holdsObligations` is true while it holds an order or a positive refund. For a market that is not authenticated the four counts are `null`, and its orders and refunds are on no route.
 - `/marketplace/fixed-sales` → `{fixedSales,nextCursor}`; `/marketplace/fixed-sale?node=...` → order|null.
 - `/marketplace/auctions` → `{auctions,nextCursor}`; `/marketplace/auction?node=...` → order|null.
 - `/marketplace/offers?node=<optional>&buyerAuthority=<optional>` → `{offers,nextCursor}`; `/marketplace/offer?node=...&buyerAuthority=...` → order|null.
 - `/marketplace/refund?authority=...` → `{marketplaceContractId,authority,amountLux}` or null.
+- `/marketplace/refunds?authority=...` → `{refunds,nextCursor}`: the authority's refund row in every market, ordered by market, with optional `marketplace=<contract ID>`.
 
-All order/refund paths accept optional `marketplace=<contract ID>` to read admitted older markets during wind-down. Default is the directory's preferred market; if there is none, defaults return empty lists/null and an uninitialized config. All list routes retain separate order IDs, including older return-pending orders for the same node. Singular order routes accept `orderId=<u64 decimal>` in addition to their existing node/buyer parameters; without it they select the latest indexed order for that node/buyer. List ordering is node then numeric order ID (offers: node, buyer, numeric order ID), so pagination cannot skip equal-node orders. Restart pagination after this schema upgrade. Order rows retain node/name, seller/buyer, fee, price/reserve/amount, duration/deadline/start/end/bid fields; add `orderId`, `homeShard`, `generation`, `serial`, `custodyNonce`, `kind` (`Fixed`,`Auction`,`Offer`), `status` (`Open`,`ReturnPending`) and **`order` containing the complete canonical SDK Order**. `saleId` and `auctionId` alias `orderId`. `highestBid` is now canonical `Bid|null`. Use `wireValue('Order', parseJson(row.orderJson))` and fresh SDK reads for writes. Listing identity is marketplace + order ID + home + incarnation + custody nonce; owner equality alone no longer proves escrow. Cancelled/expired return-pending custody remains visible until returned. Closed sold orders disappear while activity stays.
+All order/refund paths accept optional `marketplace=<contract ID>` to read admitted older markets during wind-down. Default is the directory's preferred market; if there is none, defaults return empty lists/null and an uninitialized config. `marketplace=all` reads every admitted market: after `SetPreferredMarketplace`, or while a market drains, its open orders, bids, offers and return-pending orders stay settleable, cancellable and claimable, so list them across markets. List routes then return each market's rows, ordered as below with the market ID breaking ties between equal order IDs, and singular order routes return the latest indexed match across markets (name the market to select another). Every row carries its `marketplaceContractId`; build calls against that market, not the preferred one. `marketplace=all` on `/marketplace/config` or `/marketplace/refund` is HTTP 400 `invalid_marketplace`; use `marketplaces` and `/marketplace/refunds`. Snapshot mode serves the rows its snapshot holds by default and under `marketplace=all`, and none under `marketplace=<id>`. All list routes retain separate order IDs, including older return-pending orders for the same node. Singular order routes accept `orderId=<u64 decimal>` in addition to their existing node/buyer parameters; without it they select the latest indexed order for that node/buyer. List ordering is node then numeric order ID (offers: node, buyer, numeric order ID), so pagination cannot skip equal-node orders. Restart pagination after this schema upgrade. Order rows retain node/name, seller/buyer, fee, price/reserve/amount, duration/deadline/start/end/bid fields; add `orderId`, `homeShard`, `generation`, `serial`, `custodyNonce`, `kind` (`Fixed`,`Auction`,`Offer`), `status` (`Open`,`ReturnPending`) and **`order` containing the complete canonical SDK Order**. `saleId` and `auctionId` alias `orderId`. `highestBid` is now canonical `Bid|null`. Use `wireValue('Order', parseJson(row.orderJson))` and fresh SDK reads for writes. Listing identity is marketplace + order ID + home + incarnation + custody nonce; owner equality alone no longer proves escrow. Cancelled/expired return-pending custody remains visible until returned. Closed sold orders disappear while activity stays.
 
 ## Public pages
 
@@ -227,6 +286,80 @@ only from the directory renewal schedule, which `SetPolicy` does not change. The
 frontend must still obtain a fresh SDK quote before signing. New stores/resolvers
 continue to project from their admissions; retired emitters continue to serve history
 and claims.
+
+## Marketplace replacement
+
+A new marketplace is deployed, and its operator can configure it (`set_fee`), before
+`SetMarketplace` lists it, outside the collected scope. Marketplace v1 initializes paused
+at 250 bps and can be unpaused only once listed; each `market_configured` carries its
+complete configuration. So the market's state at admission is the last
+`market_configured` it committed before admission, and from its admission on the
+collector reads its events like any other.
+
+While it scans every block, the collector retains, for every contract outside the scope
+that commits a `market_configured`, however many there are, the first and the last
+scanned transaction that did, and whether it emitted anything else. Each contract costs
+its deployer gas, and keeps only those two. They are appended to their own journal beside
+the cursor (`<cursor>.market-candidates.jsonl`), whose committed length the cursor counts
+(`marketCandidatesBytes`) with the block it holds for (`marketCandidatesAt`); a crash
+leaves no uncounted bytes. A cursor scanned past that block without them, as by an older
+collector on the same paths, has them dropped on start: a market deployed before then is
+`initialization_not_collected`. When a committed
+`SetMarketplace` lists a market, the collector journals the receipt of its last
+pre-admission configuration (in the admitting transaction, only what precedes the
+admission) directly after the admitting receipt, but only when:
+
+- its first retained configuration is its deployment, so the scan saw all of its history:
+  the node places the transaction in the scanned block, and the deployed bytecode, nonce
+  and owner derive the market's ID;
+- BLAKE3 of the bytecode equals the record's `code_hash`, and
+  `H("duskds:init:v1" || init archive)` over the init arguments actually deployed equals
+  its `init_hash`;
+- the configuration its initialization committed, re-encoded as init arguments with the
+  reviewed marketplace data driver, is exactly that init archive;
+- the receipts, read by the scanned blocks' hashes from blocks that list their
+  transactions, commit nothing but `market_configured` under the market's journal frame,
+  and the market emitted nothing else before admission;
+- its binding is this deployment's directory, vault and network.
+
+The row is a `frozen_receipt` row with `event.initialization`
+(`{role:"marketplace",contractId,transaction,blockHeight,blockHash,codeHash,initArchive,deployNonce,deploymentOwner,configTransaction,configBlockHeight,configBlockHash}`):
+the deployment's transaction and block, and those of the configuration its receipt holds.
+Replay accepts it only for an admitted market, for a configuration after its deployment
+and at or before its admission, with its journal frame and binding checked, and only while
+the market's record pins the row's code hash and the hash of its init archive. Event-log,
+SQLite and incremental SQLite replay the same rows.
+
+From the block that executes `SetMarketplace`, `/marketplace/config` (with the market
+selected or preferred), its `marketplaces` row and `/health` `pause.tradingPaused` serve
+that configuration, until the market emits its own: `set_pause(false)`, which must follow
+the listing, emits the complete configuration. Authentication gates everything the market
+emits: until its initialization row is replayed, and for good when it is rejected, no
+configuration it emits is served (`initialized: false`, `feeBps: null`, `tradingPaused:
+true`), nor its orders or refunds, nor its events in any name's `/activity`, `lastEventType`
+or `updatedAt`. Once the row is replayed, its history so far joins each name's in chain
+order. A rejected market's events are quarantined, not journaled ([stuck
+collector](#stuck-collector)). The cursor's `marketInitializations`
+records each market listed after launch as `authenticated` (deployment `transaction` and
+`blockHeight`, `configTransaction` and `configBlockHeight`) or `rejected` with a `code`,
+`message` and `attempts`; public `/health` `cursor` shows the status, code, any `retryAt`
+and the transactions and heights, and the collector logs the message. A rejection fails
+closed for that market only: `initialized: false`, `config: null`, `feeBps: null`,
+`tradingPaused: true`, while collection and every other route go on.
+`deployment_not_found`, `deployment_not_canonical`, `deployment_not_included` and
+`lookup_failed` are asked again with the policy backoff; `code_hash_mismatch`,
+`init_hash_mismatch`, `contract_id_mismatch`, `deployment_invalid`,
+`initialization_event_mismatch`, `initialization_receipt_invalid`, `binding_mismatch`,
+`pre_admission_activity` and `initialization_not_collected` are facts, retried on restart.
+`initialization_not_collected` means the scan did not see the market's deployment: it was
+deployed before the journal's first block or before this collector version, or an older
+collector scanned on the same paths since. Replay the journal from the deployment's first
+block into new paths ([archive replay](archive-migration.md)). A rejection is final for
+that market ID: the directory never changes a listed market's interface version, code hash
+or init hash, only moves it from `Listed` to `Draining` to `Retired`.
+
+Snapshot mode serves the market configuration its snapshot carries and, without one, the
+same `initialized: false`, `feeBps: null` and `tradingPaused: true`.
 
 ## Pagination and public HTTP policy
 

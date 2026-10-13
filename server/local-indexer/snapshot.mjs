@@ -6,7 +6,7 @@ import {
   appendRecordHistory,
   collectSnapshotControllers,
   rebuildCurrentRecordIndexes,
-  emptyMarketplaceConfig,
+  unknownMarketplaceConfig,
   marketplaceOfferKey,
   assertSafeNumericTree,
 } from './view-utils.mjs'
@@ -60,8 +60,9 @@ export async function loadSnapshotStore(snapshotFile) {
   const marketplaceAuctionsByNode = new Map()
   const marketplaceOffersByKey = new Map()
   const marketplaceRefundsByAuthority = new Map()
+  // A snapshot serves the market configuration it carries; without one, no fee and no new orders.
   const marketplaceConfig = {
-    ...emptyMarketplaceConfig(),
+    ...unknownMarketplaceConfig(),
     ...(snapshot.marketplaceConfig ?? {}),
   }
   const treasuryState = normalizeTreasuryState(snapshot.treasury ?? snapshot.treasuryState)

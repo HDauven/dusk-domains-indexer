@@ -55,12 +55,15 @@ the existing journal and database.
    queries finalized archive history (`lastBlockPair`, `blocks`, `checkBlock`,
    `contractEvents`) and verifies its cursor's anchor block at startup. It detects
    `contractEventBatch` when available. A policy admitted after launch also needs
-   `finalizedEvents` and `tx`, which Rusk 1.7.0 and 1.7.1 archives serve. HTTP 429
+   `finalizedEvents` and `tx`, and a marketplace listed after launch `tx`, which Rusk
+   1.7.0 and 1.7.1 archives serve. HTTP 429
    and 5xx responses retry the same request with exponential delays, honoring
    `Retry-After`. After six retries, startup fails for systemd to restart, or polling
    records a blocked cursor and retries the batch. No failed query advances the
-   journal or cursor. A failed lookup of a policy's deployment is the exception: it
-   withholds only that policy's configuration and is asked again with backoff, while
+   journal or cursor, and `/health` reports a blocked collector with the block it
+   stopped at ([stuck collector](../docs/production-runbook.md#stuck-collector)). A
+   failed lookup of a policy's or marketplace's deployment is the exception: it
+   withholds only that contract's configuration and is asked again with backoff, while
    collection continues.
 
 3. Install the templates, then load them:
@@ -259,7 +262,11 @@ collector restart.
 Rolling back below this version: an earlier API stops replay at the first
 initialization row and keeps its last publication, or returns 503 after a restart.
 Roll back the collector and API together and rebuild their journal from
-`DUSK_DOMAINS_FROM_BLOCK` with the earlier collector.
+`DUSK_DOMAINS_FROM_BLOCK` with the earlier collector. Rolling forward onto paths an
+earlier collector scanned keeps its journal: a marketplace deployed meanwhile and listed
+later reports `initialization_not_collected` until the journal is replayed into new paths.
+The collector keeps `<cursor>.market-candidates.jsonl` beside its cursor; back it up, move
+it and delete it together with the cursor.
 
 At cutover stop the old services, retain their state as an archive, and configure
 new JSONL/cursor/SQLite paths for both mainnet and testnet. Start each collector

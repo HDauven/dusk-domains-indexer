@@ -29,6 +29,7 @@ export const LOCAL_INDEXER_ROUTES = new Set([
   '/marketplace/offers',
   '/marketplace/offer',
   '/marketplace/refund',
+  '/marketplace/refunds',
 ])
 
 export const LOCAL_INDEXER_ROUTE_LIST = Object.freeze([...LOCAL_INDEXER_ROUTES])
@@ -69,7 +70,7 @@ export function routeParameters(pathname, url) {
     const authority = optionalAuthorityParameter(url, 'buyerAuthority')
     return authority.error ? authority : { ...node, ...authority }
   }
-  if (pathname === '/marketplace/refund' || pathname === '/holdings') {
+  if (pathname === '/marketplace/refund' || pathname === '/marketplace/refunds' || pathname === '/holdings') {
     return requiredAuthorityParameter(url, 'authority')
   }
   return {}

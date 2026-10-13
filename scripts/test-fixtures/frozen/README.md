@@ -23,8 +23,9 @@ Refresh fixtures from reviewed protocol output; never download deployment driver
 inside the test suite. Production drivers always come from the release manifest
 and are hash-verified before instantiation.
 
-`policy.wasm.gz` is the policy data driver from the same build (its SHA-256 is the
-`policy` entry of `drivers.json`); tests use it as the canonical init archive encoder.
+`policy.wasm.gz` and `marketplace.wasm.gz` are the policy and marketplace data drivers
+from the same build (their SHA-256 values are the `policy` and `marketplace` entries of
+`drivers.json`); tests use them as the canonical init archive encoders.
 
 `policy-deployment.json.gz` holds archive responses recorded from a local Rusk 1.7.1
 (`2e40199`) archive node, chain `dusk:0`, for a frozen policy that protocol

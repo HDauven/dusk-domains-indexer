@@ -36,6 +36,7 @@ export const expectedLocalIndexerRoutes = [
   '/marketplace/offers',
   '/marketplace/offer',
   '/marketplace/refund',
+  '/marketplace/refunds',
 ]
 
 const tempDirs = []

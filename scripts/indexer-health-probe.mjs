@@ -57,6 +57,13 @@ export async function probeIndexerHealth(options = {}) {
     push('event_count', Number(health.eventCount ?? 0) >= args.minEvents, Number(health.eventCount ?? 0) >= args.minEvents
       ? `Health reports ${health.eventCount ?? 0} event(s).`
       : `Health reports fewer than ${args.minEvents} event(s).`)
+    if (health.collector && typeof health.collector === 'object') {
+      const { blocked, stuckAtBlockHeight, reason } = health.collector
+      const detail = [reason?.role, reason?.topic].filter(Boolean).join(' ')
+      push('collector', blocked !== true, blocked === true
+        ? `Collector is blocked at block ${stuckAtBlockHeight ?? 'unknown'} (${reason?.code ?? 'unknown'}${detail ? `: ${detail}` : ''}); it publishes nothing from that block on.`
+        : 'Collector is not blocked.')
+    }
     const lag = Number.isFinite(Number(health.lagBlocks)) ? Number(health.lagBlocks) : null
     push('lag', lag !== null && lag <= args.maxLagBlocks, lag !== null && lag <= args.maxLagBlocks
       ? `Indexer lag is ${lag} block(s).`

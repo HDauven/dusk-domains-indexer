@@ -4,7 +4,9 @@ export const recordIndexKey = (node, key) => `${node}:${key}`
 export const commitmentKey = (controller, commitment) => `${controller}:${commitment}`
 export const marketplaceOfferKey = (node, buyer) => `${node}:${buyer}`
 export const emptyPoolState = () => ({ registrationsPaused: false })
-export const emptyMarketplaceConfig = () => ({ initialized: false, tradingPaused: false, feeBps: 250 })
+// A market whose configuration the indexer does not hold: no fee, and no new orders.
+export const unknownMarketplaceConfig = (marketplaceContractId = null) =>
+  ({ initialized: false, marketplaceContractId, tradingPaused: true, feeBps: null, orderApiVersion: 1, config: null })
 export const emptyTreasuryState = () => ({ initialized: false, protocolAccruedLux: '0', referralLiabilityLux: '0', accountedLux: '0', events: [] })
 export const normalizeFeeConfig = value => ({ ...DEFAULT_FEE_CONFIG, ...value })
 export const normalizeTreasuryState = value => ({ ...emptyTreasuryState(), ...value })

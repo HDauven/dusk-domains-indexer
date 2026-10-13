@@ -40,6 +40,8 @@ describe('indexer backup', () => {
       'browser.json',
       '--sqlite',
       'indexer.sqlite',
+      '--market-candidates',
+      'cursor.market-candidates.jsonl',
       '--require-sqlite',
       '--verify-sqlite-boot',
     ])).toEqual({
@@ -56,8 +58,64 @@ describe('indexer backup', () => {
       deploymentProof: 'proof.json',
       browserWriteProof: 'browser.json',
       sqliteDb: 'indexer.sqlite',
+      marketCandidates: 'cursor.market-candidates.jsonl',
       requireSqlite: true,
       verifySqliteBoot: true,
+    })
+  })
+
+  it('copies the cursor first, and certifies no backup whose event log is shorter than the cursor commits', async () => {
+    const dir = await tempDir()
+    const fixture = await writeBackupFixture(dir)
+    await writeFile(fixture.eventLog, '{"row":1}\n{"row":2}\n')
+    const options = { outputDir: join(dir, 'backups'), eventLog: fixture.eventLog, cursor: fixture.cursor, checkpoint: fixture.checkpoint,
+      envFile: fixture.envFile, deploymentProof: fixture.deploymentProof }
+    const backup = async (backupId, cursor) => {
+      await writeFile(fixture.cursor, JSON.stringify({ version: 2, ...cursor }))
+      const created = await createIndexerBackup({ ...options, backupId })
+      return { created, verified: await verifyIndexerBackup({ manifest: join(created.outputDir, 'manifest.json') }) }
+    }
+    // As when the log was copied before the collector appended rows and published a later cursor.
+    for (const cursor of [{ eventLogBytes: 999, eventCount: 3 }, { eventLogBytes: 20, eventCount: 3 }]) {
+      const { created, verified } = await backup(`race-${cursor.eventLogBytes}`, cursor)
+      expect(created.ok).toBe(false)
+      expect(created.consistency).toEqual([expect.objectContaining({ id: 'event_log_covers_cursor', ok: false })])
+      expect(verified.ok).toBe(false)
+      expect(verified.checks.find((check) => check.id === 'event_log_covers_cursor')).toMatchObject({ ok: false })
+    }
+    const { created, verified } = await backup('consistent', { eventLogBytes: 20, eventCount: 2 })
+    expect(created.ok).toBe(true)
+    expect(created.copied.map((file) => file.key).slice(0, 2)).toEqual(['cursor', 'eventLog'])
+    expect(verified.ok).toBe(true)
+    expect(verified.checks.find((check) => check.id === 'event_log_covers_cursor')).toMatchObject({ ok: true })
+  })
+
+  it('backs up the market candidate journal its cursor commits, and verifies it covers that length', async () => {
+    const dir = await tempDir()
+    const fixture = await writeBackupFixture(dir)
+    // A collector cursor that commits 12 bytes of the candidate journal beside it.
+    await writeFile(fixture.cursor, JSON.stringify({ version: 2, marketCandidatesBytes: 12 }))
+    const candidates = join(dir, 'cursor.market-candidates.jsonl')
+    await writeFile(candidates, 'x'.repeat(12))
+    const options = { outputDir: join(dir, 'backups'), eventLog: fixture.eventLog, cursor: fixture.cursor, checkpoint: fixture.checkpoint,
+      envFile: fixture.envFile, deploymentProof: fixture.deploymentProof }
+    const backup = await createIndexerBackup({ ...options, backupId: 'with-candidates' })
+    expect(backup.ok).toBe(true)
+    expect(backup.copied).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'marketCandidates', source: candidates, bytes: 12, required: true })]))
+    expect((await verifyIndexerBackup({ manifest: join(backup.outputDir, 'manifest.json') })).checks)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ id: 'market_candidates_present', ok: true })]))
+    // Without it the backup is incomplete, and a manifest that lacks it does not verify.
+    await rm(candidates)
+    const missing = await createIndexerBackup({ ...options, backupId: 'without-candidates' })
+    expect(missing.ok).toBe(false)
+    expect(missing.missing).toEqual([expect.objectContaining({ key: 'marketCandidates', required: true })])
+    const manifest = join(backup.outputDir, 'manifest.json'), edited = JSON.parse(await readFile(manifest, 'utf8'))
+    edited.copied = edited.copied.filter((file) => file.key !== 'marketCandidates')
+    await writeFile(manifest, JSON.stringify(edited))
+    const verified = await verifyIndexerBackup({ manifest })
+    expect(verified.ok).toBe(false)
+    expect(verified.checks.find((check) => check.id === 'market_candidates_present')).toMatchObject({
+      ok: false, message: expect.stringContaining('--market-candidates'),
     })
   })
 

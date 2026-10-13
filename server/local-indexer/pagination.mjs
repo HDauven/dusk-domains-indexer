@@ -11,6 +11,7 @@ export const LIST_FIELDS = Object.freeze({
   '/marketplace/fixed-sales': 'fixedSales',
   '/marketplace/auctions': 'auctions',
   '/marketplace/offers': 'offers',
+  '/marketplace/refunds': 'refunds',
 })
 
 export function pageParameters(pathname, url) {
@@ -91,6 +92,7 @@ export function listKey(pathname, item) {
   if (pathname === '/holdings') return [item.name, item.node]
   if (pathname === '/records') return [item.key]
   if (pathname === '/subnames') return [item.name, item.node]
+  if (pathname === '/marketplace/refunds') return [item.marketplaceContractId]
   const orderSuffix = item.orderId == null ? '' : `:${String(item.orderId).padStart(20, '0')}`
   if (pathname === '/marketplace/offers') return [item.node, `${item.buyerAuthority}${orderSuffix}`]
   if (pathname.startsWith('/marketplace/')) return [`${item.node}${orderSuffix}`]

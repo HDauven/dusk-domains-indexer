@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createReadStream, existsSync } from 'node:fs'
+import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { isMain } from './is-main.mjs'
+import { committedCandidateBytes, marketCandidatesFile } from './local-event-collector/candidates-file.mjs'
 import {
   healthResponseForStore,
   loadSqliteStore,
@@ -41,7 +42,7 @@ export async function createIndexerBackup(options = {}) {
   const args = normalizeOptions(options)
   const backupId = args.backupId ?? timestampId(new Date())
   const outputDir = resolve(args.outputDir, backupId)
-  const files = backupFiles(args)
+  const files = await backupFiles(args)
   const copied = []
   const missing = []
 
@@ -67,16 +68,22 @@ export async function createIndexerBackup(options = {}) {
     })
   }
 
+  // The copies must restore together: journals cover what the copied cursor commits.
+  const consistency = await cursorConsistency(Object.fromEntries(copied.map((file) => [file.key, file.destination])))
+  const consistent = consistency.every((check) => check.ok)
   const manifest = {
-    ok: missing.length === 0,
+    ok: missing.length === 0 && consistent,
     backupId,
     generatedAt: new Date().toISOString(),
     outputDir,
     copied,
     missing: missing.map((file) => ({ key: file.key, path: resolve(file.path), required: file.required })),
-    nextStep: missing.length === 0
-      ? 'Checksummed backup manifest is complete. Store this directory with the archive-node snapshot for replay recovery.'
-      : 'Backup is incomplete. Recreate it after the missing required files exist.',
+    consistency,
+    nextStep: missing.length !== 0
+      ? 'Backup is incomplete. Recreate it after the missing required files exist.'
+      : !consistent
+        ? 'Backup is inconsistent: a journal is shorter than its cursor commits. Stop the collector and API, or take a coherent filesystem snapshot, and recreate it.'
+        : 'Checksummed backup manifest is complete. Store this directory with the archive-node snapshot for replay recovery.',
   }
   await writeFile(resolve(outputDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   return manifest
@@ -105,6 +112,10 @@ export async function verifyIndexerBackup(options = {}) {
     push('copied_files', copied.length > 0, copied.length > 0
       ? `Backup manifest lists ${copied.length} copied file(s).`
       : 'Backup manifest does not list copied files.')
+    // The collector refuses a cursor whose committed journals are missing or short.
+    const paths = {}
+    for (const file of copied) if (file?.key) paths[file.key] = await resolveBackupFile(manifestFile, file)
+    for (const check of await cursorConsistency(paths)) push(check.id, check.ok, check.message)
     if (args.requireSqlite) {
       const hasSqlite = copied.some((file) => file?.key === 'sqliteDb')
       push('sqlite_backup_present', hasSqlite, hasSqlite
@@ -194,6 +205,7 @@ export function parseArgs(argv) {
     else if (arg === '--deployment-proof') parsed.deploymentProof = requiredValue(argv, ++index, arg)
     else if (arg === '--browser-write-proof') parsed.browserWriteProof = requiredValue(argv, ++index, arg)
     else if (arg === '--sqlite') parsed.sqliteDb = requiredValue(argv, ++index, arg)
+    else if (arg === '--market-candidates') parsed.marketCandidates = requiredValue(argv, ++index, arg)
     else if (arg === '--require-sqlite') parsed.requireSqlite = true
     else if (arg === '--verify-sqlite-boot') parsed.verifySqliteBoot = true
     else throw new Error(`Unknown option: ${arg}`)
@@ -215,17 +227,29 @@ function normalizeOptions(options = {}) {
     deploymentProof: options.deploymentProof,
     browserWriteProof: options.browserWriteProof,
     sqliteDb: options.sqliteDb,
+    marketCandidates: options.marketCandidates,
     requireSqlite: Boolean(options.requireSqlite),
     verifySqliteBoot: Boolean(options.verifySqliteBoot),
     loadSqliteStore: options.loadSqliteStore,
   }
 }
 
-function backupFiles(args) {
+async function backupFiles(args) {
   const files = defaultFiles.map((file) => ({
     ...file,
     path: args[file.key] ?? file.path,
   }))
+  // The collector's market candidate journal beside its cursor, required once the cursor commits any.
+  const cursor = files.find((file) => file.key === 'cursor').path
+  files.push({
+    key: 'marketCandidates',
+    path: args.marketCandidates ?? marketCandidatesFile(cursor),
+    required: (await committedCandidateBytes(cursor)) > 0,
+  })
+  // The cursor first, then the append-only journals: a running collector only lengthens them,
+  // so copies taken after the cursor cover what it commits. The rest follow.
+  const order = ['cursor', 'eventLog', 'marketCandidates']
+  files.sort((a, b) => (order.indexOf(a.key) + 1 || order.length + 1) - (order.indexOf(b.key) + 1 || order.length + 1))
   if (args.sqliteDb) {
     files.push(
       { key: 'sqliteDb', path: args.sqliteDb, required: true },
@@ -234,6 +258,51 @@ function backupFiles(args) {
     )
   }
   return files
+}
+
+/**
+ * Whether the files at `paths` (by backup key) restore together: the event log holds the bytes,
+ * and complete rows, the cursor commits, and the market candidate journal the bytes it commits.
+ * A cursor that records neither, such as a legacy or non-collector cursor, has nothing to check.
+ */
+async function cursorConsistency(paths) {
+  let cursor = null
+  try { cursor = JSON.parse(await readFile(paths.cursor, 'utf8')) } catch { return [] }
+  if (!cursor || typeof cursor !== 'object') return []
+  const checks = []
+  if (Number.isSafeInteger(cursor.eventLogBytes) && cursor.eventLogBytes >= 0) {
+    const bytes = cursor.eventLogBytes
+    const held = paths.eventLog ? (await stat(paths.eventLog).catch(() => null))?.size ?? 0 : 0
+    let problem = held < bytes ? `holds ${held} of the ${bytes} bytes the cursor commits` : null
+    if (!problem && bytes > 0) {
+      const { rows, last } = await countRows(paths.eventLog, bytes)
+      if (last !== 0x0a) problem = 'splits a row at the length the cursor commits'
+      else if (Number.isSafeInteger(cursor.eventCount) && rows !== cursor.eventCount)
+        problem = `holds ${rows} rows where the cursor commits ${cursor.eventCount}`
+    } else if (!problem && Number.isSafeInteger(cursor.eventCount) && cursor.eventCount !== 0)
+      problem = `holds no rows where the cursor commits ${cursor.eventCount}`
+    checks.push({ id: 'event_log_covers_cursor', ok: !problem, message: problem
+      ? `The event log ${problem}: it was copied before the cursor, or is damaged. Recreate the backup from a stopped collector or a coherent snapshot.`
+      : `The event log holds the ${bytes} bytes the cursor commits.` })
+  }
+  const committed = Number.isSafeInteger(cursor.marketCandidatesBytes) && cursor.marketCandidatesBytes > 0 ? cursor.marketCandidatesBytes : 0
+  if (committed > 0) {
+    const held = paths.marketCandidates ? (await stat(paths.marketCandidates).catch(() => null))?.size ?? 0 : 0
+    checks.push({ id: 'market_candidates_present', ok: held >= committed, message: held >= committed
+      ? `Backup includes the ${committed} market candidate journal bytes the cursor commits.`
+      : `The cursor commits ${committed} market candidate journal bytes the backup lacks (${held} held). Recreate it with --market-candidates <cursor>.market-candidates.jsonl.` })
+  }
+  return checks
+}
+
+/** Newline-terminated rows in the first `bytes` bytes of `file`, and the last byte read. */
+async function countRows(file, bytes) {
+  let rows = 0, last = null
+  for await (const chunk of createReadStream(file, { start: 0, end: bytes - 1 })) {
+    for (const byte of chunk) if (byte === 0x0a) rows++
+    last = chunk[chunk.length - 1]
+  }
+  return { rows, last }
 }
 
 function manifestPathFromOptions(args) {
@@ -301,6 +370,8 @@ Options:
   --deployment-proof <file>       Deployment proof JSON.
   --browser-write-proof <file>    Optional installed-wallet browser proof JSON.
   --sqlite <file>                 Optional SQLite database; matching -wal and -shm sidecars are included when present.
+  --market-candidates <file>      Collector market candidate journal. Default: <cursor>.market-candidates.jsonl;
+                                  required once the cursor commits any of it.
   --require-sqlite                Verification fails unless the manifest includes the SQLite database.
   --verify-sqlite-boot            With --verify and --restore-dir, boot the restored SQLite DB and check schema.
   --help                          Show this message.`

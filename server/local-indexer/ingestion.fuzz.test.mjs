@@ -15,6 +15,8 @@ import { commitJournal } from '../../scripts/test-fixtures/committed-cursor.mjs'
 import { decodeReceipt as archiveReceipt, topicsFor } from '../../scripts/local-event-collector/frozen.mjs'
 import { decodeReceipt } from './receipt-codec.mjs'
 import { check, count, testTimeout } from '../../scripts/test-fixtures/fuzz-support.mjs'
+import { initializationEntry, policyDeployment, setPolicy } from '../../scripts/test-fixtures/policy-replacement.mjs'
+import { jsonSafe } from './frozen-view.mjs'
 
 // Every property builds the same committed journal three ways: the event-log
 // reload store, the SQLite reload store and the incremental SQLite store used
@@ -247,6 +249,49 @@ it('ingestion: adversarial archive rows never corrupt published state in any sto
         const repaired = await reload(stores)
         expect(agree(repaired)).toBe(false)
         expect(repaired.eventLog.projectionBlockHeight).toBe(112)
+      })
+    }), { weight: 0.2, metrics })
+})
+
+// A policy replacement journals a SetPolicy row and the policy's deployment initialization
+// after it. Mutating, reordering, duplicating or dropping either row keeps every mode in
+// agreement; a rejection retains the last publication and an accepted view serves only the
+// selected policy's authenticated configuration or none.
+it('ingestion: mutated policy replacement rows never corrupt published state in any storage mode', async () => {
+  const metrics = {}, replacement = policyDeployment(), authenticated = jsonSafe(replacement.args.config)
+  await check('ingestion/policy-replacement-rows', fc.asyncProperty(edits, fc.array(step, { minLength: 1, maxLength: 4 }), fc.boolean(), fc.boolean(),
+    async (values, steps, append, commit) => {
+      const rows = journal(values)
+      await withStores(rows, async ({ stores, eventLogFile, cursorFile, before, restart }) => {
+        const candidates = [envelope(receipt(110, [setPolicy(110, replacement)], 'set-policy')),
+          initializationEntry(replacement, { deployedAt: 105, journaledAt: 110 })]
+        const tail = adversarial(rows, candidates, steps)
+        if (append) await appendFile(eventLogFile, jsonl(tail))
+        else await writeFile(eventLogFile, jsonl([...rows, ...tail]))
+        if (commit) await commitJournal(eventLogFile, { scannedBlockHeight: 111, currentBlockHeight: 111 }, cursorFile)
+        const retained = structuredClone(published(before.eventLog))
+        const views = await reload(stores)
+        const rejected = agree(views, retained, 100)
+        count(metrics, `${commit ? 'committed' : 'uncommitted'}:${rejected ? 'rejected' : 'accepted'}`)
+        if (!commit) for (const view of Object.values(views)) expect(published(view)).toEqual(retained)
+        if (!rejected) {
+          const policy = views.eventLog.policy
+          if (policy?.contractId === `0x${replacement.policy}` && policy.config) {
+            count(metrics, 'served-replacement')
+            // The receipt's arguments are collector-decoded, as for every journaled event.
+            const served = views.eventLog.feeConfig
+            expect(served.policy).toEqual(policy)
+            if (stringifyJson(policy.config) !== stringifyJson(authenticated)) count(metrics, 'served-journaled-arguments')
+          }
+          const { cold, coldLog } = await restart()
+          expect(published(cold)).toEqual(published(views.eventLog))
+          expect(published(coldLog)).toEqual(published(views.eventLog))
+        }
+        await replaceJournal(eventLogFile, jsonl([...rows, ...candidates]))
+        await commitJournal(eventLogFile, { scannedBlockHeight: 112, currentBlockHeight: 112 }, cursorFile)
+        const repaired = await reload(stores)
+        expect(agree(repaired)).toBe(false)
+        expect(repaired.eventLog.feeConfig.policy).toMatchObject({ contractId: `0x${replacement.policy}`, config: authenticated })
       })
     }), { weight: 0.2, metrics })
 })

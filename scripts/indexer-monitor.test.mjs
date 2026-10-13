@@ -208,6 +208,7 @@ function healthyPayload() {
       '/marketplace/offers',
       '/marketplace/offer',
       '/marketplace/refund',
+      '/marketplace/refunds',
     ],
     lastEvent: {
       eventName: 'name_registered',

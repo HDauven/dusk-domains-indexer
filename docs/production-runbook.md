@@ -12,6 +12,16 @@ This service is the Dusk Domains read API. It is not the archive node and it doe
 
 The indexer can be rebuilt from the event journal and the archive-node snapshot that covers the deployment start height.
 
+After a governance fee change (`SetPolicy`), confirm `/fee-config` serves the new
+policy's prices and `/health` → `cursor.policyInitializations` marks it
+`authenticated`. Until then the API shows registrations as paused with no prices for
+that policy; every other route stays current. A `rejected` entry with a `retryAt` means
+the archive did not have the deployment yet, answered for a block the collected chain
+does not hold (`deployment_not_canonical`, `deployment_not_included`), or a lookup failed
+(`lookup_failed`), and the collector asks again; check the archive node if it persists.
+Any other `rejected` code means the deployment does not match its admission and stays
+fail-closed. See [policy replacement](indexer-api.md#policy-replacement).
+
 `/health` must be treated as the SDK/indexer handshake. It exposes the indexer package version, pinned SDK dependency, API version, event schema version, read-model schema version, SQLite schema version, and the deployment binding derived from indexed event metadata.
 
 ## Public HTTP configuration
@@ -155,7 +165,12 @@ the journal, cursor, checkpoint and SQLite database/WAL sidecars. The backup com
 copies files; it does not quiesce running writers. Keep deployment env/proof and
 archive-retention evidence with the bundle. Do not serve these files from the web root.
 
-Create a checksummed backup:
+Create a checksummed backup. It includes the collector's market candidate journal beside the
+cursor (`cursor.market-candidates.jsonl`, or `--market-candidates <file>`), and is incomplete
+without it once the cursor commits any of it. It copies the cursor before the journals, and
+creation and `--verify` both fail (`event_log_covers_cursor`, `market_candidates_present`) when
+the event log or candidate journal holds less than the cursor commits, as when files were copied
+while the collector ran:
 
 ```bash
 npm run backup -- \
@@ -192,10 +207,69 @@ npm run backup -- \
 ## Incident Checklist
 
 - If `/health` is unsafe, remove the API from write-confirmation paths.
+- If `/health` reports `collector.blocked`, follow [stuck collector](#stuck-collector).
+- If `/health` reports entries in `collector.quarantine`, see the end of [stuck collector](#stuck-collector).
 - Check collector freshness, cursor, checkpoint and archive node sync.
 - Verify disk budget with `npm run disk`.
 - Rebuild SQLite from the event journal if the database is corrupt.
 - Restore from the latest verified backup only if replay from the event journal is not viable.
+
+## Stuck collector
+
+A block the collector cannot accept stops collection there, fail closed: `/health` reports
+`collector.blocked: true` with `stuckAtBlockHeight`, `reason`, `since` and `attempts`,
+`ok: false` with `degradedReason.code: "collector_blocked"`, and `npm run health` and the
+monitor fail their `collector` check with that block and reason. Every projection stays at
+the block before `stuckAtBlockHeight`. Reads keep serving that publication, which the site
+shows as not updating; indexed write confirmations wait. The collector retries every 5
+seconds and publishes nothing at or after that block until it can accept it. Never edit the
+journal or cursor to skip a block.
+
+1. Read the reason. The collector logs `Collector blocked at block <height>: <message>`
+   (`journalctl -u dusk-domains-collector`); `collector.reason` names the code, and the role,
+   emitter, topic and transaction when known.
+2. `archive_unavailable`: the archive is behind, lacks the block's events or fails queries.
+   Repair or resync it, or point `DUSK_DOMAINS_COLLECTOR_NODE_URL` at a healthy archive of
+   the same chain and restart the collector. It resumes at the stuck block by itself.
+3. `chain_mismatch`: the archive's blocks do not link to the journal's committed chain.
+   Check that the archive serves this network's finalized chain. If a healthy archive
+   still disagrees, rebuild into new paths ([archive replay](archive-migration.md)).
+4. `unsupported_event`, `invalid_event` or `unsupported_admission`: a collected contract
+   emitted an event, payload or admission this indexer version cannot read, typically from
+   a contract implementation or protocol release newer than its SDK and drivers. Roll out a
+   decoder that reads it:
+   - Release an indexer pinning the SDK, and for a new implementation the reviewed data
+     driver from the deployment's release, that decodes it. Run `npm test`, and
+     `npm run production:check` against a copy of the current journal.
+   - If the six driver files and their hashes in the deployment env are unchanged, deploy
+     that commit with the [upgrade procedure](#upgrade) and restart both units
+     (`sudo systemctl restart dusk-domains-collector dusk-domains-indexer`). The collector
+     resumes from its committed cursor at the stuck block; nothing before it is collected
+     again, and the API applies the new rows.
+   - If a driver changed, the collector refuses its cursor (`Collector contract scope
+     changed`): replay from the deployment's first block into new journal, cursor and
+     SQLite paths with the new release ([archive replay](archive-migration.md)), keep the
+     current API serving its publication meanwhile, and switch once the new one is healthy.
+   - An `invalid_event` that the reviewed decoder also rejects is a malformed event from a
+     collected contract. Compare that block's events with a second archive. If the chain
+     holds it, treat it as a protocol incident: the indexer cannot publish past it.
+5. Confirm `collector.blocked: false`, `ok: true`, and a `projectionBlockHeight` at or past
+   the old `stuckAtBlockHeight`.
+
+A marketplace listed after launch is authenticated before the transaction that lists it is
+collected. Once its authentication failed for good, none of its events is collected: they are
+quarantined, logged as `Quarantined <n> events of unauthenticated marketplace <id>` and counted
+in `/health` `collector.quarantine` (`unauthenticated`), and never stop collection. The API serves
+nothing of that market. Check its `cursor.marketInitializations` row: the rejection is final for
+that market ID, so raise it with governance.
+
+While a market's lookup is asked again (`retryAt`), its readable events are collected, and frames
+of it that contradict a trusted contract's are quarantined (`interference`). An event of
+it no reviewed driver reads, or frames that conflict with another such market's, stop collection
+at that block with `unsupported_event`, `invalid_event` or `interference`, since the market may
+still authenticate: repair the archive's lookups (step 2) and it resumes once the market's
+authentication settles. If it authenticates, an unreadable event of it needs a decoder (step 4);
+if it is rejected, its events are quarantined and collection goes on.
 
 ## Monitoring and disk
 
@@ -206,8 +280,8 @@ npm run disk -- --live-dir /var/lib/dusk-domains --backup-dir /var/backups/dusk-
 
 Run monitoring from the host supervisor/scheduler. The monitor exits nonzero for
 unsafe health. `DUSK_DOMAINS_INDEXER_ALERT_WEBHOOK_URL` and `--require-alert-webhook`
-configure its optional alert delivery. Missing routes, lag, stale cursor/checkpoint,
-replay warnings and deployment conflicts invalidate indexed confirmation.
+configure its optional alert delivery. Missing routes, lag, a blocked collector, stale
+cursor/checkpoint, replay warnings and deployment conflicts invalidate indexed confirmation.
 The disk command's default warning threshold is 70%; retain verified backups off-host
 and preserve the journal/archive coverage needed to rebuild.
 
@@ -216,8 +290,13 @@ and preserve the journal/archive coverage needed to rebuild.
 1. Stop the collector and API before replacing their inputs. Preserve the current files.
 2. Verify the selected backup into an empty staging directory using the command above.
    Include `--require-sqlite --verify-sqlite-boot` for a SQLite restore check.
-3. Move the verified journal, cursor, checkpoint and matching SQLite/WAL sidecars
-   into the configured data paths. Restart the collector with the same start height.
+3. Move the verified journal, cursor, market candidate journal, checkpoint and matching
+   SQLite/WAL sidecars into the configured data paths; the candidate journal goes beside the
+   cursor as `<cursor>.market-candidates.jsonl`. Restart the collector with the same start
+   height. A collector whose candidate journal is missing or shorter than its cursor commits
+   refuses to start (`Market candidate journal … holds … of the … bytes its cursor committed`):
+   restore it from the cursor's backup, or replay into new paths
+   ([archive replay](archive-migration.md)).
 4. Start the API, wait for finalized catch-up, and run the health/production checks
    against these exact paths. A quiesced backup can have valid checksums without
    meeting live freshness requirements.

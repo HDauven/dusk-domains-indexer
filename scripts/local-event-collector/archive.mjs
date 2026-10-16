@@ -12,7 +12,13 @@ import { marketCandidatesFile } from './candidates-file.mjs'
 
 export const archiveSource = 'rusk-finalized-archive'
 const pollMs = 5_000
-const batchSize = 100
+// Blocks per archive read while catching up, and the pause between those reads. Rusk 1.7.1 serves
+// at most 200 blocks per `blocks(range:)`. A pause no longer than the poll interval keeps catch-up at
+// least as fast as polling at the head, which outpaces the chain even at one block per poll.
+export const defaultBatchSize = 100
+export const maxBatchSize = 200
+export const defaultCatchUpPauseMs = 1_000
+export const maxCatchUpPauseMs = pollMs
 const frameTopics = new Set(['operation_begin', 'operation_end'])
 
 export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wait = sleep } = {}) {
@@ -39,6 +45,10 @@ export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wa
 export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep, loadDriver = loadDataDriver, now = Date.now } = {}) {
   integer(config.fromBlock)
   assert(config.fromBlock > 0, '--from-block must be positive')
+  const { batchSize = defaultBatchSize, catchUpPauseMs = defaultCatchUpPauseMs } = config
+  assert(Number.isSafeInteger(batchSize) && batchSize >= 1 && batchSize <= maxBatchSize, `Collector batch size must be 1-${maxBatchSize} blocks`)
+  assert(Number.isSafeInteger(catchUpPauseMs) && catchUpPauseMs >= 0 && catchUpPauseMs <= maxCatchUpPauseMs,
+    `Collector catch-up pause must be 0-${maxCatchUpPauseMs} ms`)
   const query = text => queryArchive(config.nodeUrl, text, fetcher, { signal, wait })
   const contracts = new Map()
   for (const contract of config.contracts) {
@@ -304,7 +314,7 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
       const committedQuarantine = new Map(quarantine)
       candidateUndo = []
       candidateLines = []
-      let scannedHeader = null
+      let scannedHeader = null, catchingUp = false
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
         const [currentBlockHeight] = pair?.last_block ?? []
@@ -324,8 +334,9 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         let stuck = null
         if (to > scannedBlockHeight) {
           const from = scannedBlockHeight + 1
-          const fields = archiveApi === 'event-batch' ? '' : ' transactions{id}'
-          const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash timestamp}${fields}}}`)).blocks
+          // Without contractEventBatch, a block's transactions and transaction root decide whether its events are read.
+          const [headerFields, fields] = archiveApi === 'event-batch' ? ['', ''] : [' txRoot', ' transactions{id}']
+          const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash timestamp${headerFields}}${fields}}}`)).blocks
           assert(Array.isArray(blocks) && blocks.length === to - from + 1, 'Incomplete block range')
           for (const [i, block] of blocks.entries()) {
             assert.equal(block.header?.height, from + i, 'Out-of-order block range')
@@ -424,7 +435,8 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         candidateLines = []
         if (stuck) console.error(`Collector blocked at block ${stuck.height}: ${stuck.message}`)
         if (lastHeader) committedHeader = lastHeader
-        if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
+        // A whole batch done and the finalized head further on: read the next batch after the pause.
+        catchingUp = scannedBlockHeight < finalizedHeight && scannedBlockHeight === to
       } catch (error) {
         if (cursor === committedCursor) {
           contracts.clear()
@@ -447,7 +459,9 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         await persist({ ...cursor, status: 'blocked', reason: error.message, blocked: blockedRecord(failure) })
         console.error(`Collector blocked at block ${failure.height}: ${error.message}`)
       }
-      try { await wait(pollMs, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
+      // At the finalized head, after a partial batch or a failure, poll again as before.
+      const pause = catchingUp ? catchUpPauseMs : pollMs
+      if (pause) try { await wait(pause, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
     }
     await persist({ ...cursor, status: 'stopped' })
   } finally {
@@ -487,8 +501,8 @@ export async function linkedHash(query, height, verified) {
   assert(anchor !== null, `No collected block at or above ${height}`)
   if (anchor === height) return verified.get(height)
   let previous = null, found = null
-  for (let from = height; from <= anchor; from += batchSize) {
-    const to = Math.min(from + batchSize - 1, anchor)
+  for (let from = height; from <= anchor; from += defaultBatchSize) {
+    const to = Math.min(from + defaultBatchSize - 1, anchor)
     const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash}}}`)).blocks
     assert(Array.isArray(blocks) && blocks.length === to - from + 1, 'Incomplete block range')
     for (const [i, block] of blocks.entries()) {
@@ -520,23 +534,37 @@ async function eventBatches(query, blocks) {
 
 // Without contractEventBatch, an empty contractEvents list can also mean the archive lacks the block.
 // Rusk 1.7 writes a block's finalized marker and its events in one transaction, so read events only
-// for the leading blocks checkBlock confirms. Finalizing regroups events by transaction hash; put them
-// back in the block's transaction order, with block-level events (rewards, slashes) last. Slashes
-// run first in Rusk 1.7, so their block's eventIndex values differ from contractEventBatch's.
+// for the leading blocks checkBlock confirms, empty blocks included in the check. Finalizing regroups
+// events by transaction hash; put them back in the block's transaction order, with block-level events
+// (rewards, slashes) last. Slashes run first in Rusk 1.7, so their block's eventIndex values differ
+// from contractEventBatch's.
 async function finalizedBlockEvents(query, blocks) {
   const aliased = (list, field) => '{' + list.map(({ header }, i) => `b${i}:${field(header)}`).join(' ') + '}'
   const checks = await query(aliased(blocks, ({ height, hash }) => `checkBlock(height:${height},hash:"${hash}",onlyFinalized:true)`))
   const missing = blocks.findIndex((_, i) => checks[`b${i}`] !== true)
   const archived = missing === -1 ? blocks : blocks.slice(0, missing)
   if (!archived.length) return []
-  const events = await query(aliased(archived, ({ hash }) => `contractEvents(hash:"${hash}"){json}`))
-  return archived.map(({ header, transactions }, i) => {
-    const json = events[`b${i}`]?.json
+  const read = archived.filter(block => !withoutTransactions(block))
+  const events = read.length ? await query(aliased(read, ({ hash }) => `contractEvents(hash:"${hash}"){json}`)) : {}
+  return archived.map(block => {
+    if (withoutTransactions(block)) return []
+    const { header, transactions } = block, json = events[`b${read.indexOf(block)}`]?.json
     assert(Array.isArray(json) && Array.isArray(transactions), `Archive events unavailable at ${header.height}`)
     const position = new Map(transactions.map(({ id }, index) => [id, index]))
     for (const { origin } of json) assert(position.has(origin) || origin === header.hash, `Archive event from unknown origin at ${header.height}`)
     return json.toSorted((a, b) => (position.get(a.origin) ?? position.size) - (position.get(b.origin) ?? position.size))
   })
+}
+
+// Outside its transactions a Rusk 1.7 block runs only the genesis stake and transfer contracts
+// (slashes, rewards, the transfer root update), so a block without transactions holds no event of
+// the collected contracts and no market configuration. Its events are skipped only when two sources
+// agree it has none: its transaction list (every executed transaction, failed ones included) and its
+// header's transaction root (checked by consensus, zero only without transactions). Anything else,
+// a missing or malformed field included, is read as before.
+const emptyTxRoot = '0'.repeat(64)
+function withoutTransactions({ header, transactions }) {
+  return Array.isArray(transactions) && transactions.length === 0 && header?.txRoot === emptyTxRoot
 }
 
 async function syncDirectory(path) {

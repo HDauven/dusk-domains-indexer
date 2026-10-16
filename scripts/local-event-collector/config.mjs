@@ -1,4 +1,5 @@
 import { roles, topicsFor } from './frozen.mjs'
+import { defaultBatchSize, defaultCatchUpPauseMs, maxBatchSize, maxCatchUpPauseMs } from './archive.mjs'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -43,7 +44,15 @@ export async function loadCollectorConfig(options = {}, runtimeEnv = process.env
     eventLog: resolve(rootDir, options.eventLog ?? 'target/dusk-domains-local-indexer.events.jsonl'),
     cursorFile: resolve(rootDir, options.cursorFile ?? 'target/dusk-domains-local-indexer.cursor.json'),
     durationMs: options.durationMs, truncate: Boolean(options.truncate), contractStack: 'frozen', contracts,
+    // Flags win over the environment (an instance env file under systemd), then the defaults.
+    batchSize: options.batchSize ?? tuning(env, 'DUSK_DOMAINS_COLLECTOR_BATCH_SIZE', defaultBatchSize, 1, maxBatchSize),
+    catchUpPauseMs: options.catchUpPauseMs ?? tuning(env, 'DUSK_DOMAINS_COLLECTOR_CATCH_UP_PAUSE_MS', defaultCatchUpPauseMs, 0, maxCatchUpPauseMs),
   }
+}
+
+// An unset or empty variable keeps the default.
+function tuning(env, key, fallback, min, max) {
+  return env[key] === undefined || env[key] === '' ? fallback : boundedInteger(env[key], key, min, max)
 }
 
 export function parseArgs(argv) {
@@ -68,6 +77,8 @@ export function parseArgs(argv) {
     else if (arg === '--rusk-dir') parsed.ruskDir = requiredValue(argv, ++index, arg)
     else if (arg === '--node-url') parsed.nodeUrl = requiredValue(argv, ++index, arg)
     else if (arg === '--duration-ms') parsed.durationMs = parseNonNegativeInteger(requiredValue(argv, ++index, arg), arg)
+    else if (arg === '--batch-size') parsed.batchSize = boundedInteger(requiredValue(argv, ++index, arg), arg, 1, maxBatchSize)
+    else if (arg === '--catch-up-pause-ms') parsed.catchUpPauseMs = boundedInteger(requiredValue(argv, ++index, arg), arg, 0, maxCatchUpPauseMs)
     else if (arg === '--from-block') {
       parsed.fromBlock = parseNonNegativeInteger(requiredValue(argv, ++index, arg), arg)
       if (parsed.fromBlock < 1) throw new Error('--from-block must be positive')
@@ -99,6 +110,10 @@ Options:
   --node-url <url>       Archive node; requires lastBlockPair, blocks, contractEventBatch or checkBlock/contractEvents,
                          and finalizedEvents and tx for policies admitted after launch.
   --from-block <n>       First block to replay (at/before deployment). Default: DUSK_DOMAINS_FROM_BLOCK; retain on restart.
+  --batch-size <n>       Blocks per archive read, 1-200. Default: DUSK_DOMAINS_COLLECTOR_BATCH_SIZE, else 100.
+  --catch-up-pause-ms <n>
+                         Pause between batches while catching up, 0-5000. Default:
+                         DUSK_DOMAINS_COLLECTOR_CATCH_UP_PAUSE_MS, else 1000. At the finalized head it polls every 5 s.
   --duration-ms <n>      Stop automatically after n milliseconds. Default: run until SIGINT/SIGTERM.
   --truncate             Discard the journal/cursor and replay again from --from-block.
   --help                 Show this message.
@@ -121,6 +136,12 @@ function requiredValue(argv, index, label) {
   const value = argv[index]
   if (!value || value.startsWith('--')) throw new Error(`${label} requires a value`)
   return value
+}
+
+function boundedInteger(value, label, min, max) {
+  const number = parseNonNegativeInteger(value, label)
+  if (number < min || number > max) throw new Error(`${label} must be ${min}-${max}`)
+  return number
 }
 
 function parseNonNegativeInteger(value, label) {

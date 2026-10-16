@@ -12,7 +12,13 @@ import { marketCandidatesFile } from './candidates-file.mjs'
 
 export const archiveSource = 'rusk-finalized-archive'
 const pollMs = 5_000
-const batchSize = 100
+// Blocks per archive read while catching up, and the pause between those reads. Rusk 1.7.1 serves
+// at most 200 blocks per `blocks(range:)`. A pause no longer than the poll interval keeps catch-up at
+// least as fast as polling at the head, which outpaces the chain even at one block per poll.
+export const defaultBatchSize = 100
+export const maxBatchSize = 200
+export const defaultCatchUpPauseMs = 1_000
+export const maxCatchUpPauseMs = pollMs
 const frameTopics = new Set(['operation_begin', 'operation_end'])
 
 export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wait = sleep } = {}) {
@@ -39,6 +45,10 @@ export async function queryArchive(nodeUrl, query, fetcher = fetch, { signal, wa
 export async function collectArchive(config, { signal, fetcher = fetch, wait = sleep, loadDriver = loadDataDriver, now = Date.now } = {}) {
   integer(config.fromBlock)
   assert(config.fromBlock > 0, '--from-block must be positive')
+  const { batchSize = defaultBatchSize, catchUpPauseMs = defaultCatchUpPauseMs } = config
+  assert(Number.isSafeInteger(batchSize) && batchSize >= 1 && batchSize <= maxBatchSize, `Collector batch size must be 1-${maxBatchSize} blocks`)
+  assert(Number.isSafeInteger(catchUpPauseMs) && catchUpPauseMs >= 0 && catchUpPauseMs <= maxCatchUpPauseMs,
+    `Collector catch-up pause must be 0-${maxCatchUpPauseMs} ms`)
   const query = text => queryArchive(config.nodeUrl, text, fetcher, { signal, wait })
   const contracts = new Map()
   for (const contract of config.contracts) {
@@ -304,7 +314,7 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
       const committedQuarantine = new Map(quarantine)
       candidateUndo = []
       candidateLines = []
-      let scannedHeader = null
+      let scannedHeader = null, catchingUp = false
       try {
         const pair = (await query('{lastBlockPair{json}}')).lastBlockPair?.json
         const [currentBlockHeight] = pair?.last_block ?? []
@@ -424,7 +434,8 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         candidateLines = []
         if (stuck) console.error(`Collector blocked at block ${stuck.height}: ${stuck.message}`)
         if (lastHeader) committedHeader = lastHeader
-        if (scannedBlockHeight < finalizedHeight && scannedBlockHeight === to) continue
+        // A whole batch done and the finalized head further on: read the next batch after the pause.
+        catchingUp = scannedBlockHeight < finalizedHeight && scannedBlockHeight === to
       } catch (error) {
         if (cursor === committedCursor) {
           contracts.clear()
@@ -447,7 +458,9 @@ export async function collectArchive(config, { signal, fetcher = fetch, wait = s
         await persist({ ...cursor, status: 'blocked', reason: error.message, blocked: blockedRecord(failure) })
         console.error(`Collector blocked at block ${failure.height}: ${error.message}`)
       }
-      try { await wait(pollMs, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
+      // At the finalized head, after a partial batch or a failure, poll again as before.
+      const pause = catchingUp ? catchUpPauseMs : pollMs
+      if (pause) try { await wait(pause, undefined, { signal }) } catch (error) { if (!signal?.aborted) throw error }
     }
     await persist({ ...cursor, status: 'stopped' })
   } finally {
@@ -487,8 +500,8 @@ export async function linkedHash(query, height, verified) {
   assert(anchor !== null, `No collected block at or above ${height}`)
   if (anchor === height) return verified.get(height)
   let previous = null, found = null
-  for (let from = height; from <= anchor; from += batchSize) {
-    const to = Math.min(from + batchSize - 1, anchor)
+  for (let from = height; from <= anchor; from += defaultBatchSize) {
+    const to = Math.min(from + defaultBatchSize - 1, anchor)
     const blocks = (await query(`{blocks(range:[${from},${to}]){header{height hash prevBlockHash}}}`)).blocks
     assert(Array.isArray(blocks) && blocks.length === to - from + 1, 'Incomplete block range')
     for (const [i, block] of blocks.entries()) {

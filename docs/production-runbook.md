@@ -103,6 +103,8 @@ sudo systemctl enable --now dusk-domains-collector dusk-domains-indexer
 
 The collector needs `DUSK_DOMAINS_DEPLOYMENT_ENV_FILE` pointing at the release bundle's `indexer.env`, and `DUSK_DOMAINS_COLLECTOR_DRIVER_DIR` pointing at its `contracts/` directory. The release file supplies `DUSK_DOMAINS_FROM_BLOCK` and `DUSK_DOMAINS_EVENT_SCHEMA_VERSION=1`. Missing or invalid heights/schema versions and driver hash mismatches refuse startup. The service uses this first block without a command-line override.
 
+Catching up, the collector reads 100 blocks per batch and pauses 1 s between batches; at the finalized head it polls every 5 s. Set `DUSK_DOMAINS_COLLECTOR_BATCH_SIZE` (1-200) or `DUSK_DOMAINS_COLLECTOR_CATCH_UP_PAUSE_MS` (0-5000, 0 for no pause) in the instance env file to change that without editing the unit, or pass `--batch-size` or `--catch-up-pause-ms`.
+
 ## Run Locally
 
 ```bash

@@ -2,6 +2,8 @@ import { RESERVED_LABELS as labels, launchPolicyConfig } from '@duskdomains/sdk'
 export const RESERVED_LABELS = new Set(labels)
 export const RESERVED_REASONS = Object.fromEntries(labels.map(label => [label, 'Reserved by the registration policy.']))
 export const LUX_PER_DUSK = 1_000_000_000
+// The launch release takes roots from 1 character: a selected policy without an authenticated config is held to that.
+export const LAUNCH_MINIMUM_ROOT_BYTES = 1
 const launch = launchPolicyConfig()
 export const DEFAULT_FEE_CONFIG = { threeCharYearLux: launch.annual_lux[2], fourCharYearLux: launch.annual_lux[3],
   fivePlusYearLux: launch.annual_lux[4], premiumStartLux: launch.premium_start_lux, referralRewardBps: 2000, renewalReferralRewardBps: 1000, premiumReferralRewardBps: 0, version: 1 }

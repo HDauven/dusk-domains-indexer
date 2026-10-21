@@ -121,6 +121,8 @@ describe('a policy replaced after launch', () => {
     const read2 = await serve(await open('event-log', replacedLog(envelope(receipt(21, [setPolicy(21, other, { policyVersion: 3n })])))))
     expect((await read2('/fee-config')).body).toMatchObject({ policy: { contractId: prefixed(3), version: '3', config: null },
       threeCharYearLux: null, registrationsPaused: true })
+    // Without an authenticated config, a root is held to the launch release's minimum, 1 character, and has no price.
+    for (const query of ['a', 'ab']) expect((await read2(`/search?query=${query}`)).body, query).toMatchObject({ status: 'available', price: null, issues: [] })
   })
 
   it('prices short roots from the policy tiers and keeps names held under the launch policy registered', async () => {

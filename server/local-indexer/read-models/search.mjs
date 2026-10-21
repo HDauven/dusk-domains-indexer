@@ -1,6 +1,7 @@
 import { premiumForName } from './premium.mjs'
 import {
   DEFAULT_FEE_CONFIG,
+  LAUNCH_MINIMUM_ROOT_BYTES,
   LUX_PER_DUSK,
   RESERVED_LABELS,
   RESERVED_REASONS,
@@ -51,7 +52,7 @@ export function searchName(store, query) {
       reason,
     }
     issues.push({ tone: 'warning', text: reason })
-  } else if (label.length < (policy?.minimum_root_bytes ?? 3)) {
+  } else if (label.length < (policy?.minimum_root_bytes ?? LAUNCH_MINIMUM_ROOT_BYTES)) {
     status = 'invalid'
     issues.push({ tone: 'danger', text: 'Root label is shorter than the policy minimum.' })
   }
